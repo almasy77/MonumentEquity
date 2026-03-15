@@ -1,9 +1,51 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { getRedis } from "@/lib/db";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, BarChart3 } from "lucide-react";
+import { AddMarketCompDialog } from "@/components/comps/add-market-comp-dialog";
+import { AddRentCompDialog } from "@/components/comps/add-rent-comp-dialog";
+import { MarketCompList } from "@/components/comps/market-comp-list";
+import { RentCompList } from "@/components/comps/rent-comp-list";
+import type { MarketComp, RentComp } from "@/lib/validations";
 
-export default function CompsPage() {
+async function getMarketComps(): Promise<MarketComp[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange("comps:all", 0, -1, { rev: true });
+    if (ids.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`comp:${id}`);
+    }
+    const results = await pipeline.exec<(MarketComp | null)[]>();
+    return results.filter((r): r is MarketComp => r !== null);
+  } catch {
+    return [];
+  }
+}
+
+async function getRentComps(): Promise<RentComp[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange("rent_comps:all", 0, -1, { rev: true });
+    if (ids.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`rent_comp:${id}`);
+    }
+    const results = await pipeline.exec<(RentComp | null)[]>();
+    return results.filter((r): r is RentComp => r !== null);
+  } catch {
+    return [];
+  }
+}
+
+export default async function CompsPage() {
+  const [marketComps, rentComps] = await Promise.all([
+    getMarketComps(),
+    getRentComps(),
+  ]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -13,10 +55,10 @@ export default function CompsPage() {
             Market sales and rent comparables
           </p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Comp
-        </Button>
+        <div className="flex items-center gap-2">
+          <AddRentCompDialog />
+          <AddMarketCompDialog />
+        </div>
       </div>
 
       <Tabs defaultValue="market" className="space-y-4">
@@ -25,47 +67,22 @@ export default function CompsPage() {
             value="market"
             className="data-[state=active]:bg-slate-800 data-[state=active]:text-white"
           >
-            Market Sales
+            Market Sales ({marketComps.length})
           </TabsTrigger>
           <TabsTrigger
             value="rent"
             className="data-[state=active]:bg-slate-800 data-[state=active]:text-white"
           >
-            Rent Comps
+            Rent Comps ({rentComps.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="market">
-          <Card className="bg-slate-900 border-slate-800">
-            <CardContent className="p-8">
-              <div className="flex flex-col items-center justify-center text-center">
-                <BarChart3 className="h-12 w-12 text-slate-600 mb-3" />
-                <h3 className="text-lg font-medium text-slate-300">
-                  No market comps yet
-                </h3>
-                <p className="text-slate-500 text-sm mt-1 max-w-sm">
-                  Add comparable sales to benchmark pricing and cap rates in your
-                  target market.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <MarketCompList comps={marketComps} />
         </TabsContent>
 
         <TabsContent value="rent">
-          <Card className="bg-slate-900 border-slate-800">
-            <CardContent className="p-8">
-              <div className="flex flex-col items-center justify-center text-center">
-                <BarChart3 className="h-12 w-12 text-slate-600 mb-3" />
-                <h3 className="text-lg font-medium text-slate-300">
-                  No rent comps yet
-                </h3>
-                <p className="text-slate-500 text-sm mt-1 max-w-sm">
-                  Add rent comparables to validate underwriting assumptions.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <RentCompList comps={rentComps} />
         </TabsContent>
       </Tabs>
     </div>
