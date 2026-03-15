@@ -20,11 +20,8 @@ export async function logActivity(
 
   const redis = getRedis();
   await redis.set(`activity:${id}`, JSON.stringify(activity));
-  await addToIndex(
-    `activities:by_deal:${entry.deal_id}`,
-    id,
-    Date.now()
-  );
+  await addToIndex(`activities:by_deal:${entry.deal_id}`, id, Date.now());
+  await addToIndex("activities:all", id, Date.now());
 }
 
 export async function getActivitiesForDeal(
@@ -38,6 +35,21 @@ export async function getActivitiesForDeal(
     limit - 1,
     { rev: true }
   );
+  if (ids.length === 0) return [];
+
+  const pipeline = redis.pipeline();
+  for (const id of ids) {
+    pipeline.get(`activity:${id}`);
+  }
+  const results = await pipeline.exec<(ActivityEntry | null)[]>();
+  return results.filter((r): r is ActivityEntry => r !== null);
+}
+
+export async function getRecentActivities(
+  limit: number = 15
+): Promise<ActivityEntry[]> {
+  const redis = getRedis();
+  const ids = await redis.zrange("activities:all", 0, limit - 1, { rev: true });
   if (ids.length === 0) return [];
 
   const pipeline = redis.pipeline();

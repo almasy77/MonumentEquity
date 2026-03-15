@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DealStageSelector } from "@/components/deals/deal-stage-selector";
 import { DealStatusActions } from "@/components/deals/deal-status-actions";
+import { ShareDealButton } from "@/components/deals/share-deal-button";
 import { TaskList } from "@/components/tasks/task-list";
 import { AddTaskDialog } from "@/components/tasks/add-task-dialog";
 import { ChecklistPanel } from "@/components/checklists/checklist-panel";
@@ -156,6 +157,7 @@ export default async function DealDetailPage({
             >
               <DollarSign className="h-4 w-4" /> Underwrite
             </Link>
+            <ShareDealButton dealId={id} />
             <DealStageSelector deal={deal} />
             <DealStatusActions deal={deal} />
           </div>
