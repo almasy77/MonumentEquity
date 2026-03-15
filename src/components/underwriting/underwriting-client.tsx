@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download } from "lucide-react";
 import { MetricsBar } from "./metrics-bar";
 import { AssumptionsForm } from "./assumptions-form";
 import { ProFormaTable } from "./pro-forma-table";
@@ -163,6 +163,21 @@ export function UnderwritingClient({
             </>
           )}
         </Button>
+        {activeId && activeResult && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              window.open(
+                `/api/export/${deal.id}?scenario_id=${activeId}`,
+                "_blank"
+              );
+            }}
+            className="border-slate-700 text-green-400 hover:bg-green-900/20 ml-auto"
+          >
+            <Download className="h-3 w-3 mr-1" /> Export Excel
+          </Button>
+        )}
       </div>
 
       {/* No scenarios yet */}
