@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { DefaultAssumptionsForm } from "@/components/settings/default-assumptions-form";
 
 export default function SettingsPage() {
   return (
@@ -33,11 +33,12 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-white">Default Assumptions</CardTitle>
           <CardDescription className="text-slate-400">
-            Standard underwriting defaults that pre-fill new scenarios
+            Standard underwriting defaults that pre-fill new scenarios.
+            Changes here apply to all future scenarios.
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-slate-400 text-sm">
-          Default assumption configuration will be available here.
+        <CardContent>
+          <DefaultAssumptionsForm />
         </CardContent>
       </Card>
 

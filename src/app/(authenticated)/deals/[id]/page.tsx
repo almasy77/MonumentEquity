@@ -110,6 +110,12 @@ export default async function DealDetailPage({
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              href={`/deals/${id}/underwrite`}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+            >
+              <DollarSign className="h-4 w-4" /> Underwrite
+            </Link>
             <DealStageSelector deal={deal} />
             <DealStatusActions deal={deal} />
           </div>
