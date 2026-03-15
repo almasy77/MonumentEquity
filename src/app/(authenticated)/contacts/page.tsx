@@ -1,8 +1,29 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Plus, Users } from "lucide-react";
+import { getRedis } from "@/lib/db";
+import { AddContactDialog } from "@/components/contacts/add-contact-dialog";
+import { ContactList } from "@/components/contacts/contact-list";
+import { Users } from "lucide-react";
+import type { Contact } from "@/lib/validations";
 
-export default function ContactsPage() {
+async function getContacts(): Promise<Contact[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange("contacts:all", 0, -1, { rev: true });
+    if (ids.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`contact:${id}`);
+    }
+    const results = await pipeline.exec<(Contact | null)[]>();
+    return results.filter((r): r is Contact => r !== null);
+  } catch {
+    return [];
+  }
+}
+
+export default async function ContactsPage() {
+  const contacts = await getContacts();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -12,26 +33,23 @@ export default function ContactsPage() {
             Brokers, lenders, attorneys, and other key relationships
           </p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Contact
-        </Button>
+        <AddContactDialog />
       </div>
 
-      <Card className="bg-slate-900 border-slate-800">
-        <CardContent className="p-8">
-          <div className="flex flex-col items-center justify-center text-center">
-            <Users className="h-12 w-12 text-slate-600 mb-3" />
-            <h3 className="text-lg font-medium text-slate-300">
-              No contacts yet
-            </h3>
-            <p className="text-slate-500 text-sm mt-1 max-w-sm">
-              Add brokers, lenders, and other contacts to track relationships
-              across deals.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {contacts.length === 0 ? (
+        <div className="flex flex-col items-center justify-center text-center py-16">
+          <Users className="h-12 w-12 text-slate-600 mb-3" />
+          <h3 className="text-lg font-medium text-slate-300">
+            No contacts yet
+          </h3>
+          <p className="text-slate-500 text-sm mt-1 max-w-sm">
+            Add brokers, lenders, and other contacts to track relationships
+            across deals.
+          </p>
+        </div>
+      ) : (
+        <ContactList contacts={contacts} />
+      )}
     </div>
   );
 }
