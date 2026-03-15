@@ -54,11 +54,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   return NextResponse.json(updated);
 }
 
-// DELETE /api/tasks/[id]
+// DELETE /api/tasks/[id] (admin only)
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await ctx.params;

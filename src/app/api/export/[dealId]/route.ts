@@ -14,6 +14,9 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.user.role === "va") {
+    return NextResponse.json({ error: "VAs cannot export deals" }, { status: 403 });
+  }
 
   const { dealId } = await ctx.params;
   const scenarioId = req.nextUrl.searchParams.get("scenario_id");

@@ -19,11 +19,14 @@ export async function GET() {
   });
 }
 
-// PUT /api/settings — update user's default assumptions
+// PUT /api/settings — update user's default assumptions (admin only)
 export async function PUT(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role === "va") {
+    return NextResponse.json({ error: "VAs cannot modify settings" }, { status: 403 });
   }
 
   const body = await req.json();

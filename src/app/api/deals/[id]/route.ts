@@ -43,6 +43,16 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   const oldStage = existing.stage;
   const newStage = body.stage as DealStage | undefined;
 
+  // VA cannot change stages or status
+  if (session.user.role === "va") {
+    if (newStage && newStage !== oldStage) {
+      return NextResponse.json({ error: "VAs cannot change deal stages" }, { status: 403 });
+    }
+    if (body.status && body.status !== existing.status) {
+      return NextResponse.json({ error: "VAs cannot change deal status" }, { status: 403 });
+    }
+  }
+
   // Handle stage change
   if (newStage && newStage !== oldStage && DEAL_STAGES.includes(newStage)) {
     await removeFromIndex(`deals:by_stage:${oldStage}`, id);

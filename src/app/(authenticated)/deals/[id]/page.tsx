@@ -12,6 +12,7 @@ import { ShareDealButton } from "@/components/deals/share-deal-button";
 import { TaskList } from "@/components/tasks/task-list";
 import { AddTaskDialog } from "@/components/tasks/add-task-dialog";
 import { ChecklistPanel } from "@/components/checklists/checklist-panel";
+import { AdminOnly } from "@/components/layout/admin-only";
 import {
   ArrowLeft,
   Building2,
@@ -150,16 +151,22 @@ export default async function DealDetailPage({
               {deal.city}, {deal.state} {deal.zip || ""}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/deals/${id}/underwrite`}
               className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
             >
               <DollarSign className="h-4 w-4" /> Underwrite
             </Link>
-            <ShareDealButton dealId={id} />
-            <DealStageSelector deal={deal} />
-            <DealStatusActions deal={deal} />
+            <AdminOnly>
+              <ShareDealButton dealId={id} />
+            </AdminOnly>
+            <AdminOnly>
+              <DealStageSelector deal={deal} />
+            </AdminOnly>
+            <AdminOnly>
+              <DealStatusActions deal={deal} />
+            </AdminOnly>
           </div>
         </div>
       </div>
