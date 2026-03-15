@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DealStageSelector } from "@/components/deals/deal-stage-selector";
 import { DealStatusActions } from "@/components/deals/deal-status-actions";
+import { TaskList } from "@/components/tasks/task-list";
+import { AddTaskDialog } from "@/components/tasks/add-task-dialog";
+import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import {
   ArrowLeft,
   Building2,
@@ -16,9 +19,12 @@ import {
   DollarSign,
   Users,
   Clock,
+  CheckSquare,
+  ListTodo,
 } from "lucide-react";
-import type { Deal, Contact } from "@/lib/validations";
+import type { Deal, Contact, Task } from "@/lib/validations";
 import type { ActivityEntry } from "@/lib/activity";
+import type { ChecklistInstance } from "@/lib/checklist-templates";
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -55,6 +61,38 @@ async function getDeal(id: string): Promise<Deal | null> {
   }
 }
 
+async function getTasks(dealId: string): Promise<Task[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange(`tasks:by_deal:${dealId}`, 0, -1);
+    if (ids.length === 0) return [];
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`task:${id}`);
+    }
+    const results = await pipeline.exec<(Task | null)[]>();
+    return results.filter((r): r is Task => r !== null);
+  } catch {
+    return [];
+  }
+}
+
+async function getChecklists(dealId: string): Promise<ChecklistInstance[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange(`checklists:by_deal:${dealId}`, 0, -1);
+    if (ids.length === 0) return [];
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`checklist:${id}`);
+    }
+    const results = await pipeline.exec<(ChecklistInstance | null)[]>();
+    return results.filter((r): r is ChecklistInstance => r !== null);
+  } catch {
+    return [];
+  }
+}
+
 async function getContacts(ids: string[]): Promise<Contact[]> {
   if (ids.length === 0) return [];
   try {
@@ -79,9 +117,11 @@ export default async function DealDetailPage({
   const deal = await getDeal(id);
   if (!deal) notFound();
 
-  const [contacts, activities] = await Promise.all([
+  const [contacts, activities, tasks, checklists] = await Promise.all([
     getContacts(deal.contact_ids || []),
     getActivitiesForDeal(id, 10),
+    getTasks(id),
+    getChecklists(id),
   ]);
 
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
@@ -307,6 +347,33 @@ export default async function DealDetailPage({
               )}
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      {/* Tasks & Checklists */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Tasks */}
+        <Card className="bg-slate-900 border-slate-800">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <ListTodo className="h-4 w-4" /> Tasks
+              </CardTitle>
+              <AddTaskDialog dealId={id} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <TaskList tasks={tasks} />
+          </CardContent>
+        </Card>
+
+        {/* Checklists */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <CheckSquare className="h-4 w-4 text-white" />
+            <h3 className="text-base font-semibold text-white">Checklists</h3>
+          </div>
+          <ChecklistPanel dealId={id} checklists={checklists} />
         </div>
       </div>
     </div>
