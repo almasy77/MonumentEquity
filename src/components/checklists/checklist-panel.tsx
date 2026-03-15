@@ -10,9 +10,10 @@ import { ChevronDown, ChevronRight, Plus, Loader2 } from "lucide-react";
 import type { ChecklistInstance, ChecklistItem } from "@/lib/checklist-templates";
 
 const TYPE_LABELS: Record<string, string> = {
+  screening: "Screening",
   diligence: "Due Diligence",
   closing: "Closing",
-  onboarding: "Onboarding",
+  onboarding: "First 100 Days",
 };
 
 export function ChecklistPanel({
@@ -30,7 +31,7 @@ export function ChecklistPanel({
   >({});
 
   const existingTypes = new Set(checklists.map((c) => c.type));
-  const availableTypes = (["diligence", "closing", "onboarding"] as const).filter(
+  const availableTypes = (["screening", "diligence", "closing", "onboarding"] as const).filter(
     (t) => !existingTypes.has(t)
   );
 

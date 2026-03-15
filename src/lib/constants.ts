@@ -101,7 +101,7 @@ export const DEFAULT_ASSUMPTIONS = {
   tax_escalation_rate: 0.02,
   rent_growth_rate: 0.03,
   exit_cap_rate_spread: 0.005,
-  hold_period_years: 5,
+  hold_period_years: 5, // 3–7 year range per playbook
   reserves_per_unit: 300,
   turnover_cost_per_unit: 500,
   utilities_per_unit: 1200,
@@ -116,6 +116,37 @@ export const DEFAULT_ASSUMPTIONS = {
   closing_cost_rate: 0.02,
   selling_cost_rate: 0.02,
 } as const;
+
+// Buy Box guardrails from Durham First-Deal Playbook
+export const BUY_BOX = {
+  target_units: 12,
+  min_units: 6,
+  max_units: 20,
+  max_rehab_per_unit: 20000,
+  min_dscr: 1.25,
+  min_yield_on_cost: 0.08,
+  min_neighborhood_score: 6.75,
+  min_cash_reserve_after_close: 100000,
+  asset_condition: "B-/C+ with light-to-moderate value-add only",
+  work_scope: "Cosmetic upgrades, management cleanup, collections, expense reset",
+  avoid: "Heavy rehab, severe distress, structural uncertainty, chaotic records",
+  hold_period: "3–7 years",
+  decision_rule: "Only buy a deal that is understandable, fixable, and financeable",
+} as const;
+
+// Durham neighborhood data from playbook
+export const DURHAM_NEIGHBORHOODS = [
+  { name: "Lakewood / West End", zip: "27707 / 27701", score: 8.35, tier: 1, basis: 364650, yoy: 0.006 },
+  { name: "Walltown", zip: "27701", score: 7.85, tier: 1, basis: 352615, yoy: 0.016 },
+  { name: "Parkwood / South Durham", zip: "27713", score: 7.40, tier: 1, basis: 356093, yoy: -0.029 },
+  { name: "Old East Durham", zip: "27701 / 27703", score: 7.30, tier: 2, basis: 282503, yoy: -0.060 },
+  { name: "Duke Park", zip: "27701", score: 6.50, tier: 2, basis: 471058, yoy: -0.036 },
+  { name: "Old West Durham", zip: "27705", score: 6.45, tier: 3, basis: 499284, yoy: -0.019 },
+  { name: "Cleveland-Holloway", zip: "27701", score: 6.15, tier: 3, basis: 520522, yoy: 0.021 },
+  { name: "Morehead Hill", zip: "27701", score: 5.95, tier: 3, basis: 508854, yoy: -0.030 },
+  { name: "Trinity Park", zip: "27701", score: 5.35, tier: 4, basis: 654127, yoy: -0.016 },
+  { name: "Old North Durham", zip: "27701", score: 5.25, tier: 4, basis: 536670, yoy: -0.022 },
+] as const;
 
 export const TASK_PRIORITIES = ["low", "medium", "high", "critical"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];

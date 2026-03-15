@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
 
   if (!body.deal_id || !body.type) {
     return NextResponse.json(
-      { error: "deal_id and type (diligence|closing|onboarding) are required" },
+      { error: "deal_id and type (screening|diligence|closing|onboarding) are required" },
       { status: 400 }
     );
   }
 
-  if (!["diligence", "closing", "onboarding"].includes(body.type)) {
+  if (!["screening", "diligence", "closing", "onboarding"].includes(body.type)) {
     return NextResponse.json({ error: "Invalid type" }, { status: 400 });
   }
 

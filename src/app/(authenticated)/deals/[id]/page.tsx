@@ -13,6 +13,7 @@ import { TaskList } from "@/components/tasks/task-list";
 import { AddTaskDialog } from "@/components/tasks/add-task-dialog";
 import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
+import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import {
   ArrowLeft,
   Building2,
@@ -212,6 +213,11 @@ export default async function DealDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Buy Box Scorecard — screening tool */}
+      {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
+        <BuyBoxScorecard deal={deal} />
+      )}
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Property Details */}
