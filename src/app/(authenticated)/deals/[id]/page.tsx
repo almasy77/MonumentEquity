@@ -18,6 +18,7 @@ import { T12StatementPanel } from "@/components/deals/t12-statement";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { FinancingCalculator } from "@/components/deals/financing-calculator";
 import { DealContacts } from "@/components/deals/deal-contacts";
+import { DealCompsCard } from "@/components/deals/deal-comps-card";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
@@ -187,6 +188,14 @@ export default async function DealDetailPage({
 
       {/* Financing Calculator */}
       <FinancingCalculator deal={deal} />
+
+      {/* Comps — market sales + rent comps for this city */}
+      <DealCompsCard
+        dealCity={deal.city}
+        dealState={deal.state}
+        askingPrice={deal.asking_price}
+        units={deal.units}
+      />
 
       {/* T12 + Rent Roll section */}
       <div className="grid md:grid-cols-2 gap-6">
