@@ -228,7 +228,7 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Deal Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
           <div>
             <span className="text-slate-500">Units</span>
             <p className="text-white font-medium">{deal.units}</p>
@@ -236,6 +236,10 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
           <div>
             <span className="text-slate-500">Price / Unit</span>
             <p className="text-white font-medium">{formatCurrency(pricePerUnit)}</p>
+          </div>
+          <div>
+            <span className="text-slate-500 text-xs">Total Est. Rehab</span>
+            <p className="text-white font-medium">{formatCurrency(rehabPerUnit * deal.units)}</p>
           </div>
           <div>
             <Label className="text-slate-500 text-xs">Est. Rehab / Unit</Label>
