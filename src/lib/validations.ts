@@ -185,12 +185,27 @@ export const dealSchema = z.object({
   // Closing
   closing_date: z.string().optional(),
   final_purchase_price: z.number().optional(),
+
+  // Financing
   lender: z.string().optional(),
+  lender_contact: z.string().optional(), // name of loan officer
   loan_amount: z.number().optional(),
   loan_type: z.string().optional(), // "agency", "bank", "dscr", "bridge", "seller_finance"
-  interest_rate: z.number().optional(),
+  ltv: z.number().optional(), // 0-1, e.g. 0.75
+  interest_rate: z.number().optional(), // annual, e.g. 0.065
+  rate_type: z.string().optional(), // "fixed", "floating", "hybrid"
+  rate_index: z.string().optional(), // "SOFR", "Treasury", "Prime"
+  rate_spread: z.number().optional(), // spread over index for floating
   loan_term_years: z.number().optional(),
   amortization_years: z.number().optional(),
+  io_period_months: z.number().optional(), // interest-only period
+  origination_fee_rate: z.number().optional(), // % of loan
+  prepayment_penalty: z.string().optional(), // "yield_maintenance", "defeasance", "step_down", "none"
+  dscr_requirement: z.number().optional(), // lender minimum DSCR
+  loan_status: z.string().optional(), // "shopping", "term_sheet", "application", "approved", "closed"
+  term_sheet_date: z.string().optional(),
+  loan_closing_date: z.string().optional(),
+  monthly_debt_service: z.number().optional(), // can be computed or entered
 
   // Buy Box Scores (persisted)
   buy_box_scores: z.object({
