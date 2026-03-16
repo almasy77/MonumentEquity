@@ -14,6 +14,9 @@ import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
 import { EditableMetrics } from "@/components/deals/editable-metrics";
+import { RentRollTable } from "@/components/deals/rent-roll-table";
+import { T12StatementPanel } from "@/components/deals/t12-statement";
+import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
@@ -214,6 +217,9 @@ export default async function DealDetailPage({
             </CardContent>
           </Card>
 
+          {/* Neighborhood Links */}
+          <NeighborhoodLinks deal={deal} />
+
           {/* Activity */}
           <Card className="bg-slate-900 border-slate-800">
             <CardHeader className="pb-3">
@@ -240,6 +246,12 @@ export default async function DealDetailPage({
           </Card>
         </div>
       </div>
+
+      {/* Rent Roll */}
+      <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} />
+
+      {/* T12 Operating Statement */}
+      <T12StatementPanel dealId={id} t12={deal.t12} />
 
       {/* Tasks & Checklists */}
       <div className="grid md:grid-cols-2 gap-6">

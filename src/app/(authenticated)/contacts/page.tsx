@@ -1,6 +1,7 @@
 import { getRedis } from "@/lib/db";
 import { AddContactDialog } from "@/components/contacts/add-contact-dialog";
 import { ContactList } from "@/components/contacts/contact-list";
+import { ExportCSVButton } from "@/components/contacts/export-csv-button";
 import { Users } from "lucide-react";
 import type { Contact } from "@/lib/validations";
 
@@ -33,7 +34,10 @@ export default async function ContactsPage() {
             Brokers, lenders, attorneys, and other key relationships
           </p>
         </div>
-        <AddContactDialog />
+        <div className="flex items-center gap-2">
+          <ExportCSVButton type="contacts" />
+          <AddContactDialog />
+        </div>
       </div>
 
       {contacts.length === 0 ? (

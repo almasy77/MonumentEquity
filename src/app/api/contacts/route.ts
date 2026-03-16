@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       c.last_name = parts.slice(1).join(" ") || undefined;
     }
     if (!c.phones) c.phones = [];
+    if (!c.tags) c.tags = [];
     // Migrate single phone to phones array
     if (c.phone && c.phones.length === 0) {
       c.phones = [{ number: c.phone, label: "mobile" }];
@@ -81,11 +82,17 @@ export async function POST(req: NextRequest) {
     nickname: body.nickname || undefined,
     name: buildDisplayName({ first_name: firstName, last_name: lastName }),
     company: body.company || undefined,
+    title: body.title || undefined,
     type: body.type,
+    tags: body.tags || [],
     email: body.email || undefined,
     phone: body.phones?.[0]?.number || body.phone || undefined,
     phones: body.phones || (body.phone ? [{ number: body.phone, label: "mobile" }] : []),
     website: body.website || undefined,
+    linkedin_url: body.linkedin_url || undefined,
+    address_city: body.address_city || undefined,
+    address_state: body.address_state || undefined,
+    last_contacted_at: body.last_contacted_at || undefined,
     notes: body.notes || undefined,
     deal_ids: body.deal_ids || [],
     created_at: now,

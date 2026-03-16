@@ -8,6 +8,19 @@ import {
   USER_ROLES,
 } from "./constants";
 
+// ─── Notification Preferences ──────────────────────────────
+export const notificationPrefsSchema = z.object({
+  email_digest: z.boolean().default(false),
+  digest_frequency: z.enum(["daily", "weekly", "never"]).default("daily"),
+  stale_deal_alerts: z.boolean().default(true),
+  task_due_reminders: z.boolean().default(true),
+  task_reminder_hours: z.number().default(24),
+  dd_expiration_alerts: z.boolean().default(true),
+  closing_reminders: z.boolean().default(true),
+});
+
+export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
+
 // ─── User ───────────────────────────────────────────────────
 export const userSchema = z.object({
   id: z.string().uuid(),
@@ -16,11 +29,79 @@ export const userSchema = z.object({
   password_hash: z.string(),
   role: z.enum(USER_ROLES),
   default_assumptions: z.record(z.string(), z.number()).optional(),
+  notification_prefs: notificationPrefsSchema.optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
 
 export type User = z.infer<typeof userSchema>;
+
+// ─── Rent Roll ──────────────────────────────────────────────
+export const rentRollUnitSchema = z.object({
+  unit_number: z.string(),
+  unit_type: z.string().optional(), // "1BR/1BA", "2BR/1BA", "Studio"
+  sqft: z.number().optional(),
+  tenant_name: z.string().optional(),
+  status: z.enum(["occupied", "vacant", "notice_to_vacate", "down"]).default("occupied"),
+  lease_start: z.string().optional(),
+  lease_end: z.string().optional(),
+  move_in_date: z.string().optional(),
+  current_rent: z.number().optional(),
+  market_rent: z.number().optional(),
+  other_charges: z.number().optional(), // parking, pet, storage, utilities
+  security_deposit: z.number().optional(),
+  concessions: z.number().optional(), // monthly concession amount
+  notes: z.string().optional(),
+});
+export type RentRollUnit = z.infer<typeof rentRollUnitSchema>;
+
+// ─── T12 Operating Statement ────────────────────────────────
+export const t12MonthSchema = z.object({
+  month: z.string(), // "2025-01", "2025-02", etc.
+  // Income
+  gross_potential_rent: z.number().optional(),
+  vacancy_loss: z.number().optional(),
+  credit_loss: z.number().optional(),
+  concessions: z.number().optional(),
+  laundry_income: z.number().optional(),
+  parking_income: z.number().optional(),
+  pet_fees: z.number().optional(),
+  application_fees: z.number().optional(),
+  late_fees: z.number().optional(),
+  utility_reimbursements: z.number().optional(),
+  storage_income: z.number().optional(),
+  other_income: z.number().optional(),
+  // Expenses
+  property_taxes: z.number().optional(),
+  insurance: z.number().optional(),
+  utilities: z.number().optional(),
+  repairs_maintenance: z.number().optional(),
+  turnover_costs: z.number().optional(),
+  landscaping: z.number().optional(),
+  payroll: z.number().optional(),
+  management_fees: z.number().optional(),
+  admin_expenses: z.number().optional(),
+  marketing: z.number().optional(),
+  contract_services: z.number().optional(),
+  trash_removal: z.number().optional(),
+  pest_control: z.number().optional(),
+  other_expenses: z.number().optional(),
+});
+export type T12Month = z.infer<typeof t12MonthSchema>;
+
+export const t12StatementSchema = z.object({
+  period_start: z.string().optional(), // "2025-01"
+  period_end: z.string().optional(),   // "2025-12"
+  months: z.array(t12MonthSchema).default([]),
+  // Annual totals (can be computed or entered directly)
+  total_gpi: z.number().optional(), // Gross Potential Income
+  total_egi: z.number().optional(), // Effective Gross Income
+  total_opex: z.number().optional(),
+  total_noi: z.number().optional(),
+  source: z.string().optional(), // "seller_provided", "broker_om", "verified", "estimated"
+  notes: z.string().optional(),
+});
+export type T12Statement = z.infer<typeof t12StatementSchema>;
 
 // ─── Deal ───────────────────────────────────────────────────
 export const dealSchema = z.object({
@@ -39,6 +120,44 @@ export const dealSchema = z.object({
   year_built: z.number().int().optional(),
   property_type: z.string().optional(),
   square_footage: z.number().optional(),
+
+  // Building details (BlueChariot / listing detail fields)
+  lot_size: z.string().optional(), // e.g. "0.45 acres"
+  zoning: z.string().optional(),
+  parking_spaces: z.number().optional(),
+  parking_type: z.string().optional(), // "surface", "garage", "street"
+  construction_type: z.string().optional(), // "wood_frame", "masonry", "steel"
+  roof_type: z.string().optional(),
+  roof_condition: z.string().optional(), // "good", "fair", "poor", "replaced_recently"
+  hvac_type: z.string().optional(), // "central", "window_units", "ptac", "mini_split"
+  laundry_type: z.string().optional(), // "in_unit", "common_area", "none"
+  water_heater: z.string().optional(), // "individual", "central_boiler"
+  electrical: z.string().optional(), // "individual_meters", "master_metered"
+  plumbing: z.string().optional(), // "copper", "pex", "galvanized", "mixed"
+  foundation: z.string().optional(), // "slab", "crawl_space", "basement"
+  stories: z.number().optional(),
+  elevators: z.boolean().optional(),
+  amenities: z.array(z.string()).optional(), // ["pool", "gym", "laundry", "playground"]
+
+  // Financial data from seller / broker OM
+  current_noi: z.number().optional(), // Seller-reported current NOI
+  current_occupancy: z.number().optional(), // 0-1, e.g. 0.92
+  pro_forma_noi: z.number().optional(), // Broker pro forma NOI
+  in_place_cap_rate: z.number().optional(), // current_noi / asking_price
+  pro_forma_cap_rate: z.number().optional(),
+  grm: z.number().optional(), // Gross Rent Multiplier
+  current_annual_taxes: z.number().optional(),
+  current_annual_insurance: z.number().optional(),
+  assessed_value: z.number().optional(),
+  tax_rate: z.number().optional(), // mill rate
+
+  // Rent roll & T12
+  rent_roll: z.array(rentRollUnitSchema).optional(),
+  rent_roll_date: z.string().optional(), // date rent roll was generated
+  t12: t12StatementSchema.optional(),
+
+  // Property photos
+  photos: z.array(z.string()).optional(), // URL strings
 
   // Pricing
   asking_price: z.number().positive(),
@@ -68,6 +187,32 @@ export const dealSchema = z.object({
   final_purchase_price: z.number().optional(),
   lender: z.string().optional(),
   loan_amount: z.number().optional(),
+  loan_type: z.string().optional(), // "agency", "bank", "dscr", "bridge", "seller_finance"
+  interest_rate: z.number().optional(),
+  loan_term_years: z.number().optional(),
+  amortization_years: z.number().optional(),
+
+  // Buy Box Scores (persisted)
+  buy_box_scores: z.object({
+    qualitative_factors: z.array(z.object({
+      label: z.string(),
+      weight: z.number(),
+      score: z.number(),
+    })).optional(),
+    neighborhood_factors: z.array(z.object({
+      label: z.string(),
+      weight: z.number(),
+      score: z.number(),
+    })).optional(),
+    rehab_per_unit: z.number().optional(),
+    in_place_cap: z.number().optional(),
+    stabilized_yield: z.number().optional(),
+    dscr: z.number().optional(),
+    neighborhood_score: z.number().optional(),
+    final_score: z.number().optional(),
+    recommendation: z.string().optional(), // "PURSUE", "MAYBE", "PASS"
+    scored_at: z.string().optional(),
+  }).optional(),
 
   // Relationships
   contact_ids: z.array(z.string().uuid()).default([]),
@@ -107,11 +252,17 @@ export const contactSchema = z.object({
   // Legacy "name" kept for backward compat during migration
   name: z.string().optional(),
   company: z.string().optional(),
+  title: z.string().optional(), // "Managing Director", "Loan Officer", etc.
   type: z.enum(CONTACT_TYPES),
+  tags: z.array(z.string()).default([]), // free-form tags: ["durham", "multifamily", "responsive"]
   email: z.string().optional(),
   phone: z.string().optional(), // primary phone (legacy)
   phones: z.array(phoneEntrySchema).default([]), // multiple phones with labels
   website: z.string().optional(),
+  linkedin_url: z.string().optional(),
+  address_city: z.string().optional(),
+  address_state: z.string().optional(),
+  last_contacted_at: z.string().optional(),
   notes: z.string().optional(),
   deal_ids: z.array(z.string().uuid()).default([]),
   created_at: z.string().datetime(),

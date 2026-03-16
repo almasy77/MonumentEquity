@@ -9,11 +9,19 @@ import {
 import { Shield } from "lucide-react";
 import { DefaultAssumptionsForm } from "@/components/settings/default-assumptions-form";
 import { ProfileForm } from "@/components/settings/profile-form";
+import { NotificationPrefsForm } from "@/components/settings/notification-prefs-form";
 import { ChecklistTemplateViewer } from "@/components/settings/checklist-template-viewer";
+import { getEntity } from "@/lib/db";
+import type { User } from "@/lib/validations";
 
 export default async function SettingsPage() {
   const session = await auth();
   const isAdmin = session?.user?.role === "admin";
+
+  // Fetch full user profile for notification prefs
+  const user = session?.user?.id
+    ? await getEntity<User>(`user:${session.user.id}`)
+    : null;
 
   if (!isAdmin) {
     return (
@@ -55,6 +63,20 @@ export default async function SettingsPage() {
           <ProfileForm
             initialName={session.user.name || ""}
             email={session.user.email || ""}
+          />
+        </CardContent>
+      </Card>
+
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader>
+          <CardTitle className="text-white">Notification Preferences</CardTitle>
+          <CardDescription className="text-slate-400">
+            Configure how and when you receive alerts and reminders
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <NotificationPrefsForm
+            initialPrefs={user?.notification_prefs ?? undefined}
           />
         </CardContent>
       </Card>

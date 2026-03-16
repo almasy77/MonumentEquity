@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BUY_BOX, DURHAM_NEIGHBORHOODS } from "@/lib/constants";
@@ -50,12 +52,26 @@ function formatCurrency(n: number): string {
 }
 
 export function BuyBoxScorecard({ deal }: { deal: Deal }) {
-  const [factors, setFactors] = useState<QualFactor[]>(DEFAULT_FACTORS);
-  const [rehabPerUnit, setRehabPerUnit] = useState(15000);
-  const [inPlaceCap, setInPlaceCap] = useState(0.065);
-  const [stabilizedYield, setStabilizedYield] = useState(0.078);
-  const [dscr, setDscr] = useState(1.28);
+  const router = useRouter();
+  const saved = deal.buy_box_scores;
+
+  const [factors, setFactors] = useState<QualFactor[]>(() => {
+    const qf = saved?.qualitative_factors;
+    if (qf) {
+      return DEFAULT_FACTORS.map((def, i) => ({
+        ...def,
+        score: qf[i]?.score ?? def.score,
+      }));
+    }
+    return DEFAULT_FACTORS;
+  });
+  const [rehabPerUnit, setRehabPerUnit] = useState(saved?.rehab_per_unit ?? 15000);
+  const [inPlaceCap, setInPlaceCap] = useState(saved?.in_place_cap ?? 0.065);
+  const [stabilizedYield, setStabilizedYield] = useState(saved?.stabilized_yield ?? 0.078);
+  const [dscr, setDscr] = useState(saved?.dscr ?? 1.28);
   const [showNeighborhood, setShowNeighborhood] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
 
   // Find neighborhood match
   const neighborhood = DURHAM_NEIGHBORHOODS.find((n) =>
@@ -65,11 +81,18 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
   );
 
   const [neighborhoodScore, setNeighborhoodScore] = useState(
-    neighborhood?.score || 7.0
+    saved?.neighborhood_score ?? neighborhood?.score ?? 7.0
   );
-  const [neighborhoodFactors, setNeighborhoodFactors] = useState<NeighborhoodFactor[]>(
-    DEFAULT_NEIGHBORHOOD_FACTORS
-  );
+  const [neighborhoodFactors, setNeighborhoodFactors] = useState<NeighborhoodFactor[]>(() => {
+    const nf = saved?.neighborhood_factors;
+    if (nf) {
+      return DEFAULT_NEIGHBORHOOD_FACTORS.map((def, i) => ({
+        ...def,
+        score: nf[i]?.score ?? def.score,
+      }));
+    }
+    return DEFAULT_NEIGHBORHOOD_FACTORS;
+  });
 
   // Qualitative score (0-100)
   const qualScore = factors.reduce(
@@ -143,6 +166,39 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
     );
   }
 
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const payload = {
+        buy_box_scores: {
+          qualitative_factors: factors.map((f) => ({ label: f.label, weight: f.weight, score: f.score })),
+          neighborhood_factors: neighborhoodFactors.map((f) => ({ label: f.label, weight: f.weight, score: f.score })),
+          rehab_per_unit: rehabPerUnit,
+          in_place_cap: inPlaceCap,
+          stabilized_yield: stabilizedYield,
+          dscr,
+          neighborhood_score: neighborhoodScore,
+          final_score: finalScore,
+          recommendation,
+          scored_at: new Date().toISOString(),
+        },
+      };
+      const res = await fetch(`/api/deals/${deal.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to save scores");
+      router.refresh();
+      setShowSaved(true);
+      setTimeout(() => setShowSaved(false), 2000);
+    } catch (err) {
+      console.error("Error saving buy box scores:", err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Card className="bg-slate-900 border-slate-800">
       <CardHeader className="pb-3">
@@ -153,7 +209,21 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
               {BUY_BOX.decision_rule}
             </p>
           </div>
-          <Badge className={`${recColor} text-sm px-3`}>{recommendation}</Badge>
+          <div className="flex items-center gap-2">
+            {showSaved && (
+              <span className="text-xs text-green-400">Saved</span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSave}
+              disabled={saving}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 h-7 text-xs"
+            >
+              {saving ? "Saving..." : "Save Scores"}
+            </Button>
+            <Badge className={`${recColor} text-sm px-3`}>{recommendation}</Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

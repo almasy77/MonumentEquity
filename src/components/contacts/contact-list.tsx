@@ -31,7 +31,8 @@ export function ContactList({ contacts }: { contacts: Contact[] }) {
         const company = (c.company || "").toLowerCase();
         const email = (c.email || "").toLowerCase();
         const notes = (c.notes || "").toLowerCase();
-        return name.includes(q) || company.includes(q) || email.includes(q) || notes.includes(q);
+        const tags = (c.tags || []).join(" ").toLowerCase();
+        return name.includes(q) || company.includes(q) || email.includes(q) || notes.includes(q) || tags.includes(q);
       });
     }
 
@@ -163,6 +164,14 @@ export function ContactList({ contacts }: { contacts: Contact[] }) {
                     >
                       {CONTACT_TYPE_LABELS[contact.type]}
                     </Badge>
+                    {(contact.tags || []).map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-600/20 text-blue-400 shrink-0"
+                      >
+                        {tag}
+                      </span>
+                    ))}
                   </div>
 
                   {contact.company && (

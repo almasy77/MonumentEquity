@@ -1,6 +1,10 @@
+import Link from "next/link";
+import { GitCompareArrows } from "lucide-react";
 import { getRedis } from "@/lib/db";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { AddDealDialog } from "@/components/deals/add-deal-dialog";
+import { Button } from "@/components/ui/button";
+import { ExportCSVButton } from "@/components/contacts/export-csv-button";
 import type { Deal } from "@/lib/validations";
 
 async function getDeals(): Promise<Deal[]> {
@@ -32,7 +36,16 @@ export default async function PipelinePage() {
             Track deals through every stage
           </p>
         </div>
-        <AddDealDialog />
+        <div className="flex items-center gap-2">
+          <ExportCSVButton type="deals" />
+          <Link href="/pipeline/compare">
+            <Button variant="outline" size="sm" className="border-slate-700 text-slate-300 hover:text-white">
+              <GitCompareArrows className="h-4 w-4 mr-1.5" />
+              Compare
+            </Button>
+          </Link>
+          <AddDealDialog />
+        </div>
       </div>
 
       <KanbanBoard deals={deals} />

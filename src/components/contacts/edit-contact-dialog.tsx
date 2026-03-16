@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { CONTACT_TYPES, CONTACT_TYPE_LABELS } from "@/lib/constants";
 import type { Contact, PhoneEntry } from "@/lib/validations";
 
@@ -48,7 +49,32 @@ export function EditContactDialog({
     contact.phones?.length ? contact.phones : contact.phone ? [{ number: contact.phone, label: "mobile" }] : [{ number: "", label: "mobile" }]
   );
   const [website, setWebsite] = useState(contact.website || "");
+  const [title, setTitle] = useState(contact.title || "");
+  const [linkedinUrl, setLinkedinUrl] = useState(contact.linkedin_url || "");
+  const [addressCity, setAddressCity] = useState(contact.address_city || "");
+  const [addressState, setAddressState] = useState(contact.address_state || "");
+  const [tags, setTags] = useState<string[]>(contact.tags || []);
+  const [tagInput, setTagInput] = useState("");
   const [notes, setNotes] = useState(contact.notes || "");
+
+  function addTag() {
+    const tag = tagInput.trim().toLowerCase();
+    if (tag && !tags.includes(tag)) {
+      setTags([...tags, tag]);
+    }
+    setTagInput("");
+  }
+
+  function removeTag(tag: string) {
+    setTags(tags.filter((t) => t !== tag));
+  }
+
+  function handleTagKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addTag();
+    }
+  }
 
   function addPhone() {
     setPhones([...phones, { number: "", label: "mobile" }]);
@@ -78,10 +104,15 @@ export function EditContactDialog({
           last_name: lastName || undefined,
           nickname: nickname || undefined,
           company: company || undefined,
+          title: title || undefined,
           type,
+          tags,
           email: email || undefined,
           phones: phones.filter((p) => p.number.trim()),
           website: website || undefined,
+          linkedin_url: linkedinUrl || undefined,
+          address_city: addressCity || undefined,
+          address_state: addressState || undefined,
           notes: notes || undefined,
         }),
       });
@@ -164,6 +195,47 @@ export function EditContactDialog({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-slate-300 text-xs">Title</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+                placeholder="e.g. Managing Director"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">LinkedIn URL</Label>
+              <Input
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+                placeholder="https://linkedin.com/in/..."
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-slate-300 text-xs">City</Label>
+              <Input
+                value={addressCity}
+                onChange={(e) => setAddressCity(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">State</Label>
+              <Input
+                value={addressState}
+                onChange={(e) => setAddressState(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+                placeholder="e.g. NC"
+              />
+            </div>
+          </div>
+
           <div>
             <Label className="text-slate-300 text-xs">Email</Label>
             <Input
@@ -220,6 +292,35 @@ export function EditContactDialog({
               onChange={(e) => setWebsite(e.target.value)}
               className="bg-slate-800 border-slate-700 text-white"
               placeholder="https://example.com"
+            />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <Label className="text-slate-300 text-xs">Tags</Label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {tags.map((tag) => (
+                <Badge
+                  key={tag}
+                  className="bg-blue-600/20 text-blue-400 border-0 text-xs flex items-center gap-1 pr-1"
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="hover:text-blue-200 ml-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+            <Input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleTagKeyDown}
+              className="bg-slate-800 border-slate-700 text-white"
+              placeholder="Type a tag and press Enter"
             />
           </div>
 
