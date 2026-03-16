@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Save, Trash2, TableProperties } from "lucide-react";
@@ -183,25 +183,22 @@ export function RentRollTable({ dealId, rentRoll }: { dealId: string; rentRoll: 
   const totalMonthly = rents.reduce((a, b) => a + b, 0);
 
   return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-white text-base flex items-center gap-2">
-            <TableProperties className="h-4 w-4" /> Rent Roll
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={addUnit} className="h-7 text-xs border-slate-700 text-slate-300 hover:bg-slate-800">
-              <Plus className="h-3 w-3 mr-1" /> Add Unit
+    <CollapsibleCard
+      title="Rent Roll"
+      icon={<TableProperties className="h-4 w-4 text-purple-400" />}
+      headerRight={
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={addUnit} className="h-7 text-xs border-slate-700 text-slate-300 hover:bg-slate-800">
+            <Plus className="h-3 w-3 mr-1" /> Add Unit
+          </Button>
+          {dirty && (
+            <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white">
+              <Save className="h-3 w-3 mr-1" /> {saving ? "Saving..." : "Save"}
             </Button>
-            {dirty && (
-              <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white">
-                <Save className="h-3 w-3 mr-1" /> {saving ? "Saving..." : "Save"}
-              </Button>
-            )}
-          </div>
+          )}
         </div>
-      </CardHeader>
-      <CardContent>
+      }
+    >
         {units.length === 0 ? (
           <p className="text-sm text-slate-500">No rent roll data. Click &quot;Add Unit&quot; to begin.</p>
         ) : (
@@ -278,7 +275,6 @@ export function RentRollTable({ dealId, rentRoll }: { dealId: string; rentRoll: 
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }

@@ -31,13 +31,14 @@ export async function GET(req: NextRequest) {
     const deals = await pipeline.exec<(Deal | null)[]>();
     for (const deal of deals) {
       if (!deal) continue;
-      const searchable = `${deal.address} ${deal.city} ${deal.state} ${deal.zip || ""} ${deal.source}`.toLowerCase();
+      const searchable = `${deal.address} ${deal.city} ${deal.state} ${deal.zip || ""} ${deal.source} ${deal.property_type || ""}`.toLowerCase();
       if (searchable.includes(q)) {
+        const price = deal.asking_price ? `$${Math.round(deal.asking_price).toLocaleString("en-US")}` : "";
         results.push({
           type: "deal",
           id: deal.id,
           title: deal.address,
-          subtitle: `${deal.city}, ${deal.state} — ${STAGE_LABELS[deal.stage] || deal.stage} — ${deal.units} units`,
+          subtitle: `${deal.city}, ${deal.state} — ${STAGE_LABELS[deal.stage] || deal.stage} — ${deal.units} units${price ? ` — ${price}` : ""}`,
         });
       }
     }

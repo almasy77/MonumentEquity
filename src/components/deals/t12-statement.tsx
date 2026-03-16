@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet, Save } from "lucide-react";
 import type { T12Statement } from "@/lib/validations";
@@ -153,18 +153,15 @@ export function T12StatementPanel({ dealId, t12 }: { dealId: string; t12: T12Sta
   // Display mode
   if (hasData && !editing) {
     return (
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-white text-base flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" /> T12 Operating Statement
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="h-7 text-xs border-slate-700 text-slate-300 hover:bg-slate-800">
-              Edit
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+      <CollapsibleCard
+        title="T12 Operating Statement"
+        icon={<FileSpreadsheet className="h-4 w-4 text-orange-400" />}
+        headerRight={
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="h-7 text-xs border-slate-700 text-slate-300 hover:bg-slate-800">
+            Edit
+          </Button>
+        }
+      >
           <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-sm">
             {/* Income */}
             <div className="col-span-2 text-xs font-semibold text-slate-400 uppercase tracking-wide mt-1">Income</div>
@@ -210,20 +207,16 @@ export function T12StatementPanel({ dealId, t12 }: { dealId: string; t12: T12Sta
             {t12?.source && <span>Source: {SOURCE_LABELS[t12.source] || t12.source}</span>}
             {t12?.notes && <span>Notes: {t12.notes}</span>}
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
   // Edit / Quick Entry mode
   return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-white text-base flex items-center gap-2">
-          <FileSpreadsheet className="h-4 w-4" /> T12 Operating Statement {!hasData && <span className="text-xs text-slate-500 font-normal">- Quick Entry</span>}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <CollapsibleCard
+      title={`T12 Operating Statement${!hasData ? " - Quick Entry" : ""}`}
+      icon={<FileSpreadsheet className="h-4 w-4 text-orange-400" />}
+    >
         <div className="space-y-4">
           {/* Income Section */}
           <div>
@@ -297,7 +290,6 @@ export function T12StatementPanel({ dealId, t12 }: { dealId: string; t12: T12Sta
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }

@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getRedis } from "@/lib/db";
 import { getActivitiesForDeal } from "@/lib/activity";
-import { CONTACT_TYPE_LABELS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DealStageSelector } from "@/components/deals/deal-stage-selector";
 import { DealStatusActions } from "@/components/deals/deal-status-actions";
@@ -17,12 +16,13 @@ import { EditableMetrics } from "@/components/deals/editable-metrics";
 import { RentRollTable } from "@/components/deals/rent-roll-table";
 import { T12StatementPanel } from "@/components/deals/t12-statement";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
+import { FinancingCalculator } from "@/components/deals/financing-calculator";
+import { DealContacts } from "@/components/deals/deal-contacts";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
   Building2,
   DollarSign,
-  Users,
   Clock,
   CheckSquare,
   ListTodo,
@@ -177,81 +177,56 @@ export default async function DealDetailPage({
       {/* Editable Key Metrics */}
       <EditableMetrics deal={deal} />
 
+      {/* Property Details — full-width horizontal collapsible card */}
+      <EditablePropertyDetails deal={deal} />
+
       {/* Buy Box Scorecard — screening tool */}
       {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
         <BuyBoxScorecard deal={deal} />
       )}
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Editable Property Details */}
-        <EditablePropertyDetails deal={deal} />
+      {/* Financing Calculator */}
+      <FinancingCalculator deal={deal} />
 
-        {/* Sidebar: Contacts + Activity */}
-        <div className="space-y-6">
-          {/* Contacts */}
-          <Card className="bg-slate-900 border-slate-800">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-white text-base flex items-center gap-2">
-                <Users className="h-4 w-4" /> Contacts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contacts.length === 0 ? (
-                <p className="text-sm text-slate-500">No contacts linked</p>
-              ) : (
-                <div className="space-y-3">
-                  {contacts.map((c) => (
-                    <div key={c.id} className="text-sm">
-                      <p className="text-slate-200 font-medium">{getContactDisplayName(c)}</p>
-                      <p className="text-slate-500">
-                        {CONTACT_TYPE_LABELS[c.type]}
-                        {c.company && ` — ${c.company}`}
-                      </p>
-                      {c.email && (
-                        <p className="text-slate-400 text-xs">{c.email}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Neighborhood Links */}
-          <NeighborhoodLinks deal={deal} />
-
-          {/* Activity */}
-          <Card className="bg-slate-900 border-slate-800">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-white text-base flex items-center gap-2">
-                <Clock className="h-4 w-4" /> Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {activities.length === 0 ? (
-                <p className="text-sm text-slate-500">No activity yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {activities.map((a: ActivityEntry) => (
-                    <div key={a.id} className="text-sm border-l-2 border-slate-800 pl-3">
-                      <p className="text-slate-300">{a.action.replace(/_/g, " ")}</p>
-                      <p className="text-slate-500 text-xs">
-                        {timeAgo(a.timestamp)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* T12 + Rent Roll section */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <T12StatementPanel dealId={id} t12={deal.t12} />
+        <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} />
       </div>
 
-      {/* Rent Roll */}
-      <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} />
+      {/* Sidebar-style row: Contacts, Neighborhood, Activity */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Contacts — with add/assign */}
+        <DealContacts dealId={id} contacts={contacts} contactIds={deal.contact_ids || []} />
 
-      {/* T12 Operating Statement */}
-      <T12StatementPanel dealId={id} t12={deal.t12} />
+        {/* Neighborhood Links */}
+        <NeighborhoodLinks deal={deal} />
+
+        {/* Activity */}
+        <Card className="bg-slate-900 border-slate-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-white text-base flex items-center gap-2">
+              <Clock className="h-4 w-4" /> Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activities.length === 0 ? (
+              <p className="text-sm text-slate-500">No activity yet</p>
+            ) : (
+              <div className="space-y-3">
+                {activities.map((a: ActivityEntry) => (
+                  <div key={a.id} className="text-sm border-l-2 border-slate-800 pl-3">
+                    <p className="text-slate-300">{a.action.replace(/_/g, " ")}</p>
+                    <p className="text-slate-500 text-xs">
+                      {timeAgo(a.timestamp)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Tasks & Checklists */}
       <div className="grid md:grid-cols-2 gap-6">

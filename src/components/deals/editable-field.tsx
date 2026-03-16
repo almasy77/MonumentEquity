@@ -13,6 +13,14 @@ interface EditableFieldProps {
   placeholder?: string;
 }
 
+function formatDisplay(value: string, type: string): string {
+  if (type === "number" && value) {
+    const num = Number(value.replace(/,/g, ""));
+    if (!isNaN(num)) return num.toLocaleString("en-US");
+  }
+  return value;
+}
+
 export function EditableField({
   value,
   label,
@@ -94,7 +102,7 @@ export function EditableField({
       <span className="text-slate-500 text-xs">{label}</span>
       <div className="flex items-center gap-1">
         <p className="text-slate-200 text-sm">
-          {prefix}{value || <span className="text-slate-600 italic">{placeholder || "—"}</span>}{suffix}
+          {prefix}{value ? formatDisplay(value, type) : <span className="text-slate-600 italic">{placeholder || "—"}</span>}{suffix}
         </p>
         <button
           onClick={() => { setDraft(value); setEditing(true); }}
