@@ -10,21 +10,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // Basic URL validation
     try {
       new URL(url);
     } catch {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    const extracted = await extractDealFromUrl(url);
+
+    const fieldCount = Object.keys(extracted).length;
+    if (fieldCount === 0) {
       return NextResponse.json(
-        { error: "AI extraction is not configured. Please set ANTHROPIC_API_KEY." },
-        { status: 503 }
+        { error: "Could not extract any listing data from this URL. Try pasting the listing details manually." },
+        { status: 422 }
       );
     }
-
-    const extracted = await extractDealFromUrl(url);
 
     return NextResponse.json(extracted);
   } catch (err) {
