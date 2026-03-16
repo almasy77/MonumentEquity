@@ -2,10 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getRedis } from "@/lib/db";
 import { getActivitiesForDeal } from "@/lib/activity";
-import { STAGE_LABELS, CONTACT_TYPE_LABELS } from "@/lib/constants";
+import { CONTACT_TYPE_LABELS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { DealStageSelector } from "@/components/deals/deal-stage-selector";
 import { DealStatusActions } from "@/components/deals/deal-status-actions";
 import { ShareDealButton } from "@/components/deals/share-deal-button";
@@ -14,36 +12,22 @@ import { AddTaskDialog } from "@/components/tasks/add-task-dialog";
 import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
+import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
+import { EditableMetrics } from "@/components/deals/editable-metrics";
+import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
   Building2,
-  MapPin,
-  Calendar,
   DollarSign,
   Users,
   Clock,
   CheckSquare,
   ListTodo,
+  MapPin,
 } from "lucide-react";
 import type { Deal, Contact, Task } from "@/lib/validations";
 import type { ActivityEntry } from "@/lib/activity";
 import type { ChecklistInstance } from "@/lib/checklist-templates";
-
-function formatCurrency(n: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -127,10 +111,9 @@ export default async function DealDetailPage({
     getChecklists(id),
   ]);
 
-  const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
-  const daysSinceCreated = Math.floor(
-    (Date.now() - new Date(deal.created_at).getTime()) / 86400000
-  );
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`
+  )}`;
 
   return (
     <div className="space-y-6">
@@ -146,10 +129,26 @@ export default async function DealDetailPage({
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Building2 className="h-6 w-6 text-blue-500" />
-              {deal.address}
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-blue-400 transition-colors"
+                title="View on Google Maps"
+              >
+                {deal.address}
+              </a>
             </h1>
-            <p className="text-slate-400 mt-1">
-              {deal.city}, {deal.state} {deal.zip || ""}
+            <p className="text-slate-400 mt-1 flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" />
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-blue-400"
+              >
+                {deal.city}, {deal.state} {deal.zip || ""}
+              </a>
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -172,47 +171,8 @@ export default async function DealDetailPage({
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="pt-4 pb-3 px-4">
-            <p className="text-xs text-slate-500 mb-1">Asking Price</p>
-            <p className="text-lg font-bold text-white">
-              {formatCurrency(deal.asking_price)}
-            </p>
-          </CardContent>
-        </Card>
-        {deal.bid_price && (
-          <Card className="bg-slate-900 border-slate-800">
-            <CardContent className="pt-4 pb-3 px-4">
-              <p className="text-xs text-slate-500 mb-1">Bid Price</p>
-              <p className="text-lg font-bold text-green-400">
-                {formatCurrency(deal.bid_price)}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-        <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="pt-4 pb-3 px-4">
-            <p className="text-xs text-slate-500 mb-1">Units</p>
-            <p className="text-lg font-bold text-white">{deal.units}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="pt-4 pb-3 px-4">
-            <p className="text-xs text-slate-500 mb-1">Price / Unit</p>
-            <p className="text-lg font-bold text-white">
-              {formatCurrency(pricePerUnit)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-900 border-slate-800">
-          <CardContent className="pt-4 pb-3 px-4">
-            <p className="text-xs text-slate-500 mb-1">Days in Pipeline</p>
-            <p className="text-lg font-bold text-white">{daysSinceCreated}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Editable Key Metrics */}
+      <EditableMetrics deal={deal} />
 
       {/* Buy Box Scorecard — screening tool */}
       {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
@@ -220,92 +180,8 @@ export default async function DealDetailPage({
       )}
 
       <div className="grid md:grid-cols-3 gap-6">
-        {/* Property Details */}
-        <Card className="bg-slate-900 border-slate-800 md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-white text-base">Property Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-slate-500">Address</span>
-                <p className="text-slate-200">
-                  {deal.address}, {deal.city}, {deal.state} {deal.zip}
-                </p>
-              </div>
-              <div>
-                <span className="text-slate-500">Source</span>
-                <p className="text-slate-200">{deal.source}</p>
-              </div>
-              {deal.year_built && (
-                <div>
-                  <span className="text-slate-500">Year Built</span>
-                  <p className="text-slate-200">{deal.year_built}</p>
-                </div>
-              )}
-              {deal.property_type && (
-                <div>
-                  <span className="text-slate-500">Property Type</span>
-                  <p className="text-slate-200">{deal.property_type}</p>
-                </div>
-              )}
-              {deal.square_footage && (
-                <div>
-                  <span className="text-slate-500">Square Footage</span>
-                  <p className="text-slate-200">
-                    {deal.square_footage.toLocaleString()} SF
-                  </p>
-                </div>
-              )}
-              <div>
-                <span className="text-slate-500">Created</span>
-                <p className="text-slate-200">{formatDate(deal.created_at)}</p>
-              </div>
-            </div>
-
-            {deal.market_notes && (
-              <>
-                <Separator className="bg-slate-800" />
-                <div>
-                  <span className="text-slate-500 text-sm">Market Notes</span>
-                  <p className="text-slate-300 text-sm mt-1 whitespace-pre-wrap">
-                    {deal.market_notes}
-                  </p>
-                </div>
-              </>
-            )}
-
-            {/* LOI Details */}
-            {deal.loi_amount && (
-              <>
-                <Separator className="bg-slate-800" />
-                <h4 className="text-sm font-medium text-white">LOI Details</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-slate-500">LOI Amount</span>
-                    <p className="text-slate-200">
-                      {formatCurrency(deal.loi_amount)}
-                    </p>
-                  </div>
-                  {deal.loi_date && (
-                    <div>
-                      <span className="text-slate-500">LOI Date</span>
-                      <p className="text-slate-200">{deal.loi_date}</p>
-                    </div>
-                  )}
-                  {deal.earnest_money && (
-                    <div>
-                      <span className="text-slate-500">Earnest Money</span>
-                      <p className="text-slate-200">
-                        {formatCurrency(deal.earnest_money)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        {/* Editable Property Details */}
+        <EditablePropertyDetails deal={deal} />
 
         {/* Sidebar: Contacts + Activity */}
         <div className="space-y-6">
@@ -323,7 +199,7 @@ export default async function DealDetailPage({
                 <div className="space-y-3">
                   {contacts.map((c) => (
                     <div key={c.id} className="text-sm">
-                      <p className="text-slate-200 font-medium">{c.name}</p>
+                      <p className="text-slate-200 font-medium">{getContactDisplayName(c)}</p>
                       <p className="text-slate-500">
                         {CONTACT_TYPE_LABELS[c.type]}
                         {c.company && ` — ${c.company}`}

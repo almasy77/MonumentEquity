@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,40 +19,36 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { CONTACT_TYPES, CONTACT_TYPE_LABELS } from "@/lib/constants";
-import type { PhoneEntry } from "@/lib/validations";
+import type { Contact, PhoneEntry } from "@/lib/validations";
 
 const PHONE_LABELS = ["mobile", "office", "home", "fax", "other"];
 
-export function AddContactDialog() {
+export function EditContactDialog({
+  contact,
+  open,
+  onClose,
+}: {
+  contact: Contact;
+  open: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [company, setCompany] = useState("");
-  const [type, setType] = useState<string>("");
-  const [email, setEmail] = useState("");
-  const [phones, setPhones] = useState<PhoneEntry[]>([{ number: "", label: "mobile" }]);
-  const [website, setWebsite] = useState("");
-  const [notes, setNotes] = useState("");
-
-  function resetForm() {
-    setFirstName("");
-    setLastName("");
-    setNickname("");
-    setCompany("");
-    setType("");
-    setEmail("");
-    setPhones([{ number: "", label: "mobile" }]);
-    setWebsite("");
-    setNotes("");
-    setError("");
-  }
+  const [firstName, setFirstName] = useState(contact.first_name || "");
+  const [lastName, setLastName] = useState(contact.last_name || "");
+  const [nickname, setNickname] = useState(contact.nickname || "");
+  const [company, setCompany] = useState(contact.company || "");
+  const [type, setType] = useState(contact.type);
+  const [email, setEmail] = useState(contact.email || "");
+  const [phones, setPhones] = useState<PhoneEntry[]>(
+    contact.phones?.length ? contact.phones : contact.phone ? [{ number: contact.phone, label: "mobile" }] : [{ number: "", label: "mobile" }]
+  );
+  const [website, setWebsite] = useState(contact.website || "");
+  const [notes, setNotes] = useState(contact.notes || "");
 
   function addPhone() {
     setPhones([...phones, { number: "", label: "mobile" }]);
@@ -75,8 +70,8 @@ export function AddContactDialog() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/contacts", {
-        method: "POST",
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           first_name: firstName,
@@ -93,11 +88,10 @@ export function AddContactDialog() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to create contact");
+        throw new Error(data.error || "Failed to update contact");
       }
 
-      resetForm();
-      setOpen(false);
+      onClose();
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -107,27 +101,14 @@ export function AddContactDialog() {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        setOpen(v);
-        if (!v) resetForm();
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white" />
-        }
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Contact
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-white">Add New Contact</DialogTitle>
+          <DialogTitle className="text-white">Edit Contact</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          {/* Name fields */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <Label className="text-slate-300 text-xs">First Name *</Label>
@@ -136,7 +117,6 @@ export function AddContactDialog() {
                 onChange={(e) => setFirstName(e.target.value)}
                 required
                 className="bg-slate-800 border-slate-700 text-white"
-                placeholder="John"
               />
             </div>
             <div>
@@ -145,7 +125,7 @@ export function AddContactDialog() {
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white"
-                placeholder="JD"
+                placeholder="e.g. JD"
               />
             </div>
             <div>
@@ -154,7 +134,6 @@ export function AddContactDialog() {
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white"
-                placeholder="Smith"
               />
             </div>
           </div>
@@ -162,9 +141,9 @@ export function AddContactDialog() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-slate-300 text-xs">Type *</Label>
-              <Select value={type} onValueChange={(v) => setType(v ?? "")} required>
+              <Select value={type} onValueChange={(v) => setType(v as typeof type)} required>
                 <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
-                  <SelectValue placeholder="Select type..." />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
                   {CONTACT_TYPES.map((t) => (
@@ -181,7 +160,6 @@ export function AddContactDialog() {
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white"
-                placeholder="CBRE, Marcus & Millichap..."
               />
             </div>
           </div>
@@ -193,7 +171,6 @@ export function AddContactDialog() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="bg-slate-800 border-slate-700 text-white"
-              placeholder="john@example.com"
             />
           </div>
 
@@ -252,7 +229,6 @@ export function AddContactDialog() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 min-h-[60px]"
-              placeholder="Relationship notes..."
             />
           </div>
 
@@ -262,7 +238,7 @@ export function AddContactDialog() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={onClose}
               className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
             >
               Cancel
@@ -272,7 +248,7 @@ export function AddContactDialog() {
               disabled={loading}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Contact"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
             </Button>
           </div>
         </form>

@@ -45,10 +45,17 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     await addToIndex(`contacts:by_type:${body.type}`, id, Date.now());
   }
 
+  // Build display name from structured fields
+  const firstName = body.first_name ?? existing.first_name;
+  const lastName = body.last_name ?? existing.last_name;
+  const displayName = `${firstName || ""} ${lastName || ""}`.trim();
+
   const updated: Contact = {
     ...existing,
     ...body,
     id,
+    name: displayName,
+    phone: body.phones?.[0]?.number || body.phone || existing.phone,
     created_at: existing.created_at,
     updated_at: now,
   };

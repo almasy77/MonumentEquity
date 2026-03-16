@@ -91,13 +91,27 @@ export const createDealSchema = dealSchema.omit({
 });
 
 // ─── Contact ────────────────────────────────────────────────
+export const phoneEntrySchema = z.object({
+  number: z.string().min(1),
+  label: z.string().default("mobile"), // mobile, office, home, fax, other
+});
+
+export type PhoneEntry = z.infer<typeof phoneEntrySchema>;
+
 export const contactSchema = z.object({
   id: z.string().uuid(),
-  name: z.string().min(1),
+  // Structured name fields (new)
+  first_name: z.string().min(1),
+  last_name: z.string().optional(),
+  nickname: z.string().optional(),
+  // Legacy "name" kept for backward compat during migration
+  name: z.string().optional(),
   company: z.string().optional(),
   type: z.enum(CONTACT_TYPES),
   email: z.string().optional(),
-  phone: z.string().optional(),
+  phone: z.string().optional(), // primary phone (legacy)
+  phones: z.array(phoneEntrySchema).default([]), // multiple phones with labels
+  website: z.string().optional(),
   notes: z.string().optional(),
   deal_ids: z.array(z.string().uuid()).default([]),
   created_at: z.string().datetime(),

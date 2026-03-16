@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/card";
 import { Shield } from "lucide-react";
 import { DefaultAssumptionsForm } from "@/components/settings/default-assumptions-form";
+import { ProfileForm } from "@/components/settings/profile-form";
+import { ChecklistTemplateViewer } from "@/components/settings/checklist-template-viewer";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -38,32 +40,22 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Profile, default assumptions, and checklist templates
+          Profile, underwriting defaults, and checklist templates
         </p>
       </div>
 
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader>
-          <CardTitle className="text-white">Profile</CardTitle>
+          <CardTitle className="text-white">Profile & Security</CardTitle>
           <CardDescription className="text-slate-400">
-            Your account information
+            Update your name and password
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-slate-400 text-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <span className="text-slate-500">Name</span>
-              <p className="text-slate-200">{session.user.name}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Email</span>
-              <p className="text-slate-200">{session.user.email}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Role</span>
-              <p className="text-slate-200 capitalize">{session.user.role}</p>
-            </div>
-          </div>
+        <CardContent>
+          <ProfileForm
+            initialName={session.user.name || ""}
+            email={session.user.email || ""}
+          />
         </CardContent>
       </Card>
 
@@ -84,11 +76,12 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-white">Checklist Templates</CardTitle>
           <CardDescription className="text-slate-400">
-            Customize due diligence, closing, and onboarding checklists
+            Review the checklist templates applied to deals at each stage.
+            Sourced from the Durham First-Deal Playbook.
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-slate-400 text-sm">
-          Checklist template management will be available here.
+        <CardContent>
+          <ChecklistTemplateViewer />
         </CardContent>
       </Card>
 
