@@ -177,12 +177,7 @@ export default async function DealDetailPage({
       {/* Property Details — includes key metrics, property info, financials */}
       <EditablePropertyDetails deal={deal} />
 
-      {/* Buy Box Scorecard — screening tool */}
-      {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
-        <BuyBoxScorecard deal={deal} />
-      )}
-
-      {/* Financing Calculator */}
+      {/* Financing + Transaction */}
       <FinancingCalculator deal={deal} />
 
       {/* Comps — market sales + rent comps for this city */}
@@ -233,6 +228,11 @@ export default async function DealDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Buy Box Scorecard — above Tasks/Checklists */}
+      {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
+        <BuyBoxScorecard deal={deal} />
+      )}
 
       {/* Tasks & Checklists */}
       <div className="grid md:grid-cols-2 gap-6">

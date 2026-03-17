@@ -11,14 +11,15 @@ interface EditableFieldProps {
     prefix?: string;
     suffix?: string;
     placeholder?: string;
+    noCommas?: boolean;
 }
 
 const numberFormatter = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 0,
 });
 
-function formatDisplay(value: string, type: string): string {
-    if (type === "number" && value) {
+function formatDisplay(value: string, type: string, noCommas?: boolean): string {
+    if (type === "number" && value && !noCommas) {
           const num = Number(value.replace(/,/g, ""));
           if (!isNaN(num)) return numberFormatter.format(num);
     }
@@ -33,6 +34,7 @@ export function EditableField({
   prefix,
     suffix,
     placeholder,
+    noCommas,
 }: EditableFieldProps) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
@@ -106,7 +108,7 @@ export function EditableField({
         <span className="text-slate-500 text-xs">{label}</span>
                                           <div className="flex items-center gap-1">
                                                   <p className="text-slate-200 text-sm">
-        {prefix}{value ? formatDisplay(value, type) : <span className="text-slate-600 italic">{placeholder || "—"}</span>}{suffix}
+        {prefix}{value ? formatDisplay(value, type, noCommas) : <span className="text-slate-600 italic">{placeholder || "—"}</span>}{suffix}
     </p>
             <button
                                       onClick={() => { setDraft(value); setEditing(true); }}

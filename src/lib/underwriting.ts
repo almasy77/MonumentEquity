@@ -612,58 +612,183 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
 
 // ─── Default Scenario Inputs ─────────────────────────────────
 
+export interface DealData {
+  asking_price: number;
+  units: number;
+  loi_amount?: number;
+  bid_price?: number;
+  earnest_money?: number;
+  // Financing fields from deal
+  ltv?: number;
+  interest_rate?: number;
+  loan_term_years?: number;
+  amortization_years?: number;
+  io_period_months?: number;
+  origination_fee_rate?: number;
+  // Transaction costs
+  transaction_costs?: {
+    loan_fees?: number;
+    title_insurance?: number;
+    legal_fees?: number;
+    property_costs?: number;
+    prorations?: number;
+    third_party_reports?: number;
+    transfer_taxes?: number;
+    reserves?: number;
+  };
+  // Revenue from rent roll / T12
+  rent_roll?: Array<{
+    unit_type?: string;
+    current_rent?: number;
+    market_rent?: number;
+    status?: string;
+  }>;
+  current_occupancy?: number;
+  current_noi?: number;
+  // Expenses from T12 / deal
+  current_annual_taxes?: number;
+  current_annual_insurance?: number;
+  t12?: {
+    months?: Array<Record<string, number | string | undefined>>;
+    total_noi?: number;
+    total_opex?: number;
+    total_egi?: number;
+  };
+  // CapEx from buy box
+  buy_box_scores?: {
+    rehab_per_unit?: number;
+  };
+}
+
 export function buildDefaultInputs(
-  deal: { asking_price: number; units: number },
+  deal: DealData,
   defaults: Record<string, number>
 ): ScenarioInputs {
   const d = defaults;
+
+  // Purchase price: LOI amount > bid price > asking price
+  const purchasePrice = deal.loi_amount || deal.bid_price || deal.asking_price;
+
+  // Closing costs: sum of transaction costs if available, otherwise default rate
+  const txCosts = deal.transaction_costs;
+  const txCostTotal = txCosts
+    ? (txCosts.loan_fees || 0) + (txCosts.title_insurance || 0) + (txCosts.legal_fees || 0) +
+      (txCosts.property_costs || 0) + (txCosts.prorations || 0) + (txCosts.third_party_reports || 0) +
+      (txCosts.transfer_taxes || 0) + (txCosts.reserves || 0)
+    : 0;
+  const closingCostRate = txCostTotal > 0 && purchasePrice > 0
+    ? txCostTotal / purchasePrice
+    : d.closing_cost_rate ?? 0.02;
+
+  // Financing: feed from deal fields if available
+  const ltv = deal.ltv ?? d.ltv ?? 0.75;
+  const interestRate = deal.interest_rate ?? (d.interest_rate ? d.interest_rate : 0.065);
+  const amortYears = deal.amortization_years ?? d.amortization_years ?? 30;
+  const loanTermYears = deal.loan_term_years ?? d.loan_term_years ?? 5;
+  const ioMonths = deal.io_period_months ?? d.io_period_months ?? 0;
+  const origFeeRate = deal.origination_fee_rate ?? d.origination_fee_rate ?? 0.01;
+
+  // Revenue from rent roll
+  let unitMix: UnitMix[];
+  if (deal.rent_roll && deal.rent_roll.length > 0) {
+    // Group by unit_type
+    const typeMap = new Map<string, { count: number; totalRent: number; totalMarket: number }>();
+    for (const unit of deal.rent_roll) {
+      const type = unit.unit_type || "Average";
+      const existing = typeMap.get(type) || { count: 0, totalRent: 0, totalMarket: 0 };
+      existing.count += 1;
+      existing.totalRent += unit.current_rent || 0;
+      existing.totalMarket += unit.market_rent || unit.current_rent || 0;
+      typeMap.set(type, existing);
+    }
+    unitMix = Array.from(typeMap.entries()).map(([type, data]) => ({
+      type,
+      count: data.count,
+      current_rent: data.count > 0 ? Math.round(data.totalRent / data.count) : 1000,
+      market_rent: data.count > 0 ? Math.round(data.totalMarket / data.count) : 1100,
+      renovated_rent_premium: 200,
+    }));
+  } else {
+    unitMix = [{
+      type: "Average",
+      count: deal.units,
+      current_rent: 1000,
+      market_rent: 1100,
+      renovated_rent_premium: 200,
+    }];
+  }
+
+  // Vacancy from deal occupancy
+  const vacancyRate = deal.current_occupancy
+    ? 1 - deal.current_occupancy
+    : d.vacancy_rate ?? 0.07;
+
+  // Expenses from deal / T12
+  const t12Months = deal.t12?.months || [];
+  const annualTaxes = deal.current_annual_taxes || sumT12Field(t12Months, "property_taxes") || 0;
+  const annualInsurance = deal.current_annual_insurance || sumT12Field(t12Months, "insurance") || 0;
+  const insurancePerUnit = annualInsurance > 0 && deal.units > 0
+    ? annualInsurance / deal.units
+    : d.insurance_per_unit ?? 600;
+  const payrollAnnual = sumT12Field(t12Months, "payroll") || 0;
+  const utilitiesTotal = sumT12Field(t12Months, "utilities") +
+    sumT12Field(t12Months, "utilities_water") +
+    sumT12Field(t12Months, "utilities_electric") +
+    sumT12Field(t12Months, "utilities_gas");
+  const utilitiesPerUnit = utilitiesTotal > 0 && deal.units > 0
+    ? utilitiesTotal / deal.units
+    : d.utilities_per_unit ?? 1200;
+  const repairsTotal = sumT12Field(t12Months, "repairs_maintenance");
+  const repairsPerUnit = repairsTotal > 0 && deal.units > 0
+    ? repairsTotal / deal.units
+    : d.repairs_maintenance_per_unit ?? 750;
+  const turnoverTotal = sumT12Field(t12Months, "turnover_costs");
+  const turnoverPerUnit = turnoverTotal > 0 && deal.units > 0
+    ? turnoverTotal / deal.units
+    : d.turnover_cost_per_unit ?? 500;
+
+  // CapEx from buy box scores
+  const rehabPerUnit = deal.buy_box_scores?.rehab_per_unit || 0;
+
   return {
     purchase: {
-      purchase_price: deal.asking_price,
-      closing_cost_rate: d.closing_cost_rate ?? 0.02,
-      earnest_money: 0,
+      purchase_price: purchasePrice,
+      closing_cost_rate: closingCostRate,
+      earnest_money: deal.earnest_money || 0,
     },
     financing: {
-      ltv: d.ltv ?? 0.75,
-      interest_rate: d.interest_rate ?? 0.065,
-      amortization_years: d.amortization_years ?? 30,
-      loan_term_years: d.loan_term_years ?? 5,
-      io_period_months: d.io_period_months ?? 0,
-      origination_fee_rate: d.origination_fee_rate ?? 0.01,
+      ltv,
+      interest_rate: interestRate,
+      amortization_years: amortYears,
+      loan_term_years: loanTermYears,
+      io_period_months: ioMonths,
+      origination_fee_rate: origFeeRate,
     },
     revenue: {
-      unit_mix: [
-        {
-          type: "Average",
-          count: deal.units,
-          current_rent: 1000,
-          market_rent: 1100,
-          renovated_rent_premium: 200,
-        },
-      ],
+      unit_mix: unitMix,
       other_income_monthly: 0,
-      vacancy_rate: d.vacancy_rate ?? 0.07,
+      vacancy_rate: vacancyRate,
       bad_debt_rate: d.bad_debt_rate ?? 0.02,
       concessions_rate: d.concessions_rate ?? 0,
       rent_growth_rate: d.rent_growth_rate ?? 0.03,
     },
     expenses: {
       management_fee_rate: d.management_fee_rate ?? 0.08,
-      payroll_annual: 0,
-      repairs_maintenance_per_unit: d.repairs_maintenance_per_unit ?? 750,
-      turnover_cost_per_unit: d.turnover_cost_per_unit ?? 500,
-      insurance_per_unit: d.insurance_per_unit ?? 600,
-      property_tax_total: 0,
+      payroll_annual: payrollAnnual,
+      repairs_maintenance_per_unit: repairsPerUnit,
+      turnover_cost_per_unit: turnoverPerUnit,
+      insurance_per_unit: insurancePerUnit,
+      property_tax_total: annualTaxes,
       tax_escalation_rate: d.tax_escalation_rate ?? 0.02,
-      utilities_per_unit: d.utilities_per_unit ?? 1200,
+      utilities_per_unit: utilitiesPerUnit,
       admin_legal_marketing: d.admin_legal_marketing ?? 0,
       contract_services: d.contract_services ?? 0,
       reserves_per_unit: d.reserves_per_unit ?? 300,
     },
     capex: {
-      per_unit_cost: 0,
-      units_to_renovate: 0,
-      units_per_month: 0,
+      per_unit_cost: rehabPerUnit,
+      units_to_renovate: rehabPerUnit > 0 ? deal.units : 0,
+      units_per_month: rehabPerUnit > 0 ? Math.max(1, Math.ceil(deal.units / 12)) : 0,
       projects: [],
     },
     exit: {
@@ -672,4 +797,9 @@ export function buildDefaultInputs(
       selling_cost_rate: d.selling_cost_rate ?? 0.02,
     },
   };
+}
+
+/** Sum a numeric field across T12 months */
+function sumT12Field(months: Array<Record<string, number | string | undefined>>, field: string): number {
+  return months.reduce((sum, m) => sum + (typeof m[field] === "number" ? (m[field] as number) : 0), 0);
 }

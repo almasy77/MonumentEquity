@@ -66,7 +66,27 @@ export async function POST(req: NextRequest) {
 
     // Build default inputs from deal data + user defaults
     const defaultInputs = buildDefaultInputs(
-      { asking_price: deal.asking_price, units: deal.units },
+      {
+        asking_price: deal.asking_price,
+        units: deal.units,
+        loi_amount: deal.loi_amount,
+        bid_price: deal.bid_price,
+        earnest_money: deal.earnest_money,
+        ltv: deal.ltv,
+        interest_rate: deal.interest_rate,
+        loan_term_years: deal.loan_term_years,
+        amortization_years: deal.amortization_years,
+        io_period_months: deal.io_period_months,
+        origination_fee_rate: deal.origination_fee_rate,
+        transaction_costs: deal.transaction_costs,
+        rent_roll: deal.rent_roll,
+        current_occupancy: deal.current_occupancy,
+        current_noi: deal.current_noi,
+        current_annual_taxes: deal.current_annual_taxes,
+        current_annual_insurance: deal.current_annual_insurance,
+        t12: deal.t12,
+        buy_box_scores: deal.buy_box_scores,
+      },
       defaults
     );
 

@@ -58,6 +58,12 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     ? deal.current_noi / deal.asking_price
     : null;
 
+  // Compute loan amount the same way as the Financing card
+  const financingBasis = deal.bid_price || deal.asking_price;
+  const computedLoanAmount = deal.ltv
+    ? financingBasis * deal.ltv
+    : deal.loan_amount || 0;
+
   return (
     <CollapsibleCard
       title="Property Details"
@@ -100,10 +106,10 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
                 <p className="text-slate-200 text-sm">{(deal.current_occupancy * 100).toFixed(0)}%</p>
               </div>
             )}
-            {deal.loan_amount && (
+            {computedLoanAmount > 0 && (
               <div>
                 <span className="text-slate-500 text-xs">Loan Amount</span>
-                <p className="text-slate-200 text-sm">{formatCurrency(deal.loan_amount)}</p>
+                <p className="text-slate-200 text-sm">{formatCurrency(computedLoanAmount)}</p>
               </div>
             )}
             {deal.monthly_debt_service && (
@@ -124,7 +130,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="State" value={deal.state} onSave={(v) => updateDeal("state", v)} />
           <EditableField label="Zip" value={deal.zip || ""} onSave={(v) => updateDeal("zip", v)} placeholder="Enter zip" />
           <EditableField label="Source" value={deal.source} onSave={(v) => updateDeal("source", v)} />
-          <EditableField label="Year Built" value={deal.year_built?.toString() || ""} onSave={(v) => updateDeal("year_built", v)} type="number" placeholder="e.g. 1985" />
+          <EditableField label="Year Built" value={deal.year_built?.toString() || ""} onSave={(v) => updateDeal("year_built", v)} type="number" placeholder="e.g. 1985" noCommas />
           <EditableField label="Property Type" value={deal.property_type || ""} onSave={(v) => updateDeal("property_type", v)} placeholder="e.g. Multifamily" />
           <EditableField label="Square Footage" value={deal.square_footage?.toString() || ""} onSave={(v) => updateDeal("square_footage", v)} type="number" suffix=" SF" placeholder="Total SF" />
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
