@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Link as LinkIcon } from "lucide-react";
+import { Plus, Loader2, Link as LinkIcon, ClipboardPaste } from "lucide-react";
 import { DEAL_SOURCES } from "@/lib/constants";
 
 export function AddDealDialog() {
@@ -157,19 +157,42 @@ export function AddDealDialog() {
           <TabsContent value="url" className="mt-4">
             <div className="space-y-3">
               <Label className="text-slate-300">Listing URL</Label>
+              <Input
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                placeholder="https://www.loopnet.com/listing/..."
+                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                type="url"
+                inputMode="url"
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
               <div className="flex gap-2">
-                <Input
-                  value={importUrl}
-                  onChange={(e) => setImportUrl(e.target.value)}
-                  placeholder="https://www.loopnet.com/listing/..."
-                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-                />
                 <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      if (text) {
+                        setImportUrl(text.trim());
+                      }
+                    } catch {
+                      // Clipboard API not available — user can paste manually
+                    }
+                  }}
+                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  <ClipboardPaste className="h-4 w-4 mr-2" />
+                  Paste URL
+                </Button>
+                <Button
+                  type="button"
                   onClick={handleUrlImport}
                   disabled={importing || !importUrl}
-                  className="bg-blue-600 hover:bg-blue-700 shrink-0"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
                 >
-                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Extract"}
+                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Extract Details"}
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
