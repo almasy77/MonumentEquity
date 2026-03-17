@@ -7,6 +7,14 @@ export const metadata: Metadata = {
   description:
     "Multifamily real estate deal management — source, track, underwrite, close.",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Monument Equity",
+  },
+  icons: {
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export const viewport: Viewport = {

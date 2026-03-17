@@ -125,11 +125,20 @@ function StatusCell({ status, onChange }: { status: string; onChange: (v: string
   );
 }
 
-export function RentRollTable({ dealId, rentRoll }: { dealId: string; rentRoll: RentRollUnit[] }) {
+export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string; rentRoll: RentRollUnit[]; dealUnits: number }) {
   const router = useRouter();
   const [units, setUnits] = useState<RentRollUnit[]>(rentRoll || []);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  function initializeUnits() {
+    const newUnits: RentRollUnit[] = [];
+    for (let i = 1; i <= dealUnits; i++) {
+      newUnits.push({ ...emptyUnit(), unit_number: i.toString() });
+    }
+    setUnits(newUnits);
+    setDirty(true);
+  }
 
   const updateUnit = useCallback((idx: number, field: keyof RentRollUnit, raw: string) => {
     setUnits((prev) => {
@@ -200,7 +209,15 @@ export function RentRollTable({ dealId, rentRoll }: { dealId: string; rentRoll: 
       }
     >
         {units.length === 0 ? (
-          <p className="text-sm text-slate-500">No rent roll data. Click &quot;Add Unit&quot; to begin.</p>
+          <div className="text-center py-4 space-y-2">
+            <p className="text-sm text-slate-500">No rent roll data.</p>
+            {dealUnits > 0 && (
+              <Button variant="outline" size="sm" onClick={initializeUnits} className="border-slate-700 text-slate-300 hover:bg-slate-800">
+                <Plus className="h-3 w-3 mr-1" /> Create {dealUnits} Units
+              </Button>
+            )}
+            <p className="text-xs text-slate-600">Or click &quot;Add Unit&quot; to add one at a time.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
