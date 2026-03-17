@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import crypto from "crypto";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+    return new Resend(process.env.RESEND_API_KEY);
+}
 
 export async function POST(req: Request) {
     try {
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
           const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
       // Send email via Resend
-      await resend.emails.send({
+      await getResend().emails.send({
               from: "Monument Equity <onboarding@resend.dev>",
               to: email,
               subject: "Reset your password — Monument Equity",

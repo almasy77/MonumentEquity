@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
-import { Save, Calculator } from "lucide-react";
+import { Save, Calculator, ChevronDown, ChevronRight } from "lucide-react";
 import type { Deal } from "@/lib/validations";
 
 const currencyFmt = new Intl.NumberFormat("en-US", {
@@ -103,9 +103,32 @@ function FieldInput({ label, value, onChange, prefix, suffix, readOnly = false, 
   );
 }
 
+interface TransactionCosts {
+  loan_fees: number;
+  title_insurance: number;
+  legal_fees: number;
+  property_costs: number;
+  prorations: number;
+  third_party_reports: number;
+  transfer_taxes: number;
+  reserves: number;
+}
+
+const TRANSACTION_COST_LABELS: { key: keyof TransactionCosts; label: string; hint: string }[] = [
+  { key: "loan_fees", label: "Loan Fees", hint: "Origination fees (0.5-1% of loan), application fees, points" },
+  { key: "title_insurance", label: "Title Insurance", hint: "Lender's and owner's title insurance policies" },
+  { key: "legal_fees", label: "Legal Fees", hint: "Real estate attorneys for document review and closing" },
+  { key: "property_costs", label: "Property Costs", hint: "Appraisal fees and property surveys" },
+  { key: "prorations", label: "Prorations", hint: "Prepaid property taxes and insurance" },
+  { key: "third_party_reports", label: "Third-Party Reports", hint: "Inspections, environmental reports, zoning reports" },
+  { key: "transfer_taxes", label: "Transfer Taxes", hint: "Municipal or state taxes, if applicable" },
+  { key: "reserves", label: "Reserves", hint: "Initial capital reserves often required by lenders" },
+];
+
 export function FinancingCalculator({ deal }: { deal: Deal }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [showTransactionCosts, setShowTransactionCosts] = useState(false);
 
   const [bidPrice, setBidPrice] = useState(
     (deal.bid_price || deal.asking_price).toString()
@@ -120,10 +143,25 @@ export function FinancingCalculator({ deal }: { deal: Deal }) {
     deal.loan_term_years ? (deal.loan_term_years * 12).toString() : "360"
   );
 
+  // Transaction costs state
+  const savedTxCosts = deal.transaction_costs;
+  const [txCosts, setTxCosts] = useState<TransactionCosts>({
+    loan_fees: savedTxCosts?.loan_fees ?? 0,
+    title_insurance: savedTxCosts?.title_insurance ?? 0,
+    legal_fees: savedTxCosts?.legal_fees ?? 0,
+    property_costs: savedTxCosts?.property_costs ?? 0,
+    prorations: savedTxCosts?.prorations ?? 0,
+    third_party_reports: savedTxCosts?.third_party_reports ?? 0,
+    transfer_taxes: savedTxCosts?.transfer_taxes ?? 0,
+    reserves: savedTxCosts?.reserves ?? 0,
+  });
+
   const price = parseFloat(stripCommas(bidPrice)) || 0;
   const downPaymentPct = parseFloat(downPct) || 0;
   const interestRate = parseFloat(rate) || 0;
   const term = parseInt(termMonths) || 360;
+
+  const totalTransactionCosts = Object.values(txCosts).reduce((sum, v) => sum + (v || 0), 0);
 
   const computed = useMemo(() => {
     const downPayment = price * (downPaymentPct / 100);
@@ -142,6 +180,10 @@ export function FinancingCalculator({ deal }: { deal: Deal }) {
     return { downPayment, loanAmount, monthlyPayment };
   }, [price, downPaymentPct, interestRate, term]);
 
+  function updateTxCost(key: keyof TransactionCosts, value: string) {
+    setTxCosts((prev) => ({ ...prev, [key]: parseFloat(stripCommas(value)) || 0 }));
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -152,6 +194,7 @@ export function FinancingCalculator({ deal }: { deal: Deal }) {
         interest_rate: interestRate ? interestRate / 100 : undefined,
         loan_term_years: term ? term / 12 : undefined,
         monthly_debt_service: computed.monthlyPayment || undefined,
+        transaction_costs: txCosts,
       };
       const res = await fetch(`/api/deals/${deal.id}`, {
         method: "PUT",
@@ -169,7 +212,7 @@ export function FinancingCalculator({ deal }: { deal: Deal }) {
 
   return (
     <CollapsibleCard
-      title="Financing"
+      title="Financing + Transaction"
       icon={<Calculator className="h-4 w-4 text-blue-400" />}
       headerRight={
         <Button
@@ -253,6 +296,55 @@ export function FinancingCalculator({ deal }: { deal: Deal }) {
           )}
         </div>
       )}
+
+      {/* Transaction Costs Sub-Card */}
+      <div className="mt-4 border-t border-slate-800 pt-4">
+        <button
+          onClick={() => setShowTransactionCosts(!showTransactionCosts)}
+          className="flex items-center gap-2 text-sm font-medium text-slate-200 hover:text-white transition-colors w-full"
+        >
+          {showTransactionCosts ? (
+            <ChevronDown className="h-4 w-4 text-slate-500" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-slate-500" />
+          )}
+          Expected Transaction Costs
+          {totalTransactionCosts > 0 && (
+            <span className="text-xs text-slate-400 ml-auto">
+              Total: {fmt(totalTransactionCosts)}
+            </span>
+          )}
+        </button>
+
+        {showTransactionCosts && (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-slate-500">
+              Estimated costs associated with closing the transaction.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {TRANSACTION_COST_LABELS.map(({ key, label, hint }) => (
+                <div key={key} className="group">
+                  <CurrencyInput
+                    label={label}
+                    value={txCosts[key]?.toString() || "0"}
+                    onChange={(v) => updateTxCost(key, v)}
+                    prefix="$"
+                  />
+                  <p className="text-[10px] text-slate-600 mt-0.5 hidden group-hover:block">
+                    {hint}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <span className="text-sm text-slate-400">Total Transaction Costs</span>
+              <span className="text-sm font-bold text-white">
+                {fmt(totalTransactionCosts)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
     </CollapsibleCard>
   );
 }

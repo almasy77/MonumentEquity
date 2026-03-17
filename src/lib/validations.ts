@@ -211,6 +211,18 @@ export const dealSchema = z.object({
   loan_closing_date: z.string().optional(),
   monthly_debt_service: z.number().optional(), // can be computed or entered
 
+  // Transaction Costs
+  transaction_costs: z.object({
+    loan_fees: z.number().optional(),
+    title_insurance: z.number().optional(),
+    legal_fees: z.number().optional(),
+    property_costs: z.number().optional(), // appraisal + survey
+    prorations: z.number().optional(), // prepaid taxes + insurance
+    third_party_reports: z.number().optional(), // inspections, environmental, zoning
+    transfer_taxes: z.number().optional(),
+    reserves: z.number().optional(), // initial capital reserves
+  }).optional(),
+
   // Buy Box Scores (persisted)
   buy_box_scores: z.object({
     qualitative_factors: z.array(z.object({

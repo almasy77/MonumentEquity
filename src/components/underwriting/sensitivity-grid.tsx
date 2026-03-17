@@ -55,6 +55,9 @@ export function SensitivityGrid({
         <p className="text-xs text-slate-500">
           Purchase price (rows) vs. exit cap rate (columns)
         </p>
+        <p className="text-[10px] text-slate-600 mt-0.5">
+          Column percentages represent cap rates at exit.
+        </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -63,6 +66,7 @@ export function SensitivityGrid({
               <th className="text-left py-2 pr-4 font-medium">Price</th>
               {capRates.map((cap) => (
                 <th key={cap} className="text-center py-2 px-2 font-medium">
+                  <span className="block text-[10px] text-slate-600">Cap Rate</span>
                   {(cap * 100).toFixed(1)}%
                 </th>
               ))}

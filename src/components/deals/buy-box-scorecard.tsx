@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Shield } from "lucide-react";
+import { Target } from "lucide-react";
 import { BUY_BOX, DURHAM_NEIGHBORHOODS } from "@/lib/constants";
 import type { Deal } from "@/lib/validations";
 
@@ -203,7 +203,7 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
   return (
     <CollapsibleCard
       title="Buy Box Scorecard"
-      icon={<Shield className="h-4 w-4 text-green-400" />}
+      icon={<Target className="h-4 w-4 text-green-400" />}
       headerRight={
         <div className="flex items-center gap-2">
           {showSaved && (
