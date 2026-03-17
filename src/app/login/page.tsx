@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,6 +83,9 @@ function LoginForm() {
           "Sign In"
         )}
       </Button>
+      <Link href="/forgot-password" className="block text-center">
+        <span className="text-slate-400 text-sm hover:text-slate-300">Forgot password?</span>
+      </Link>
     </form>
   );
 }
