@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Shield } from "lucide-react";
 import { BUY_BOX, DURHAM_NEIGHBORHOODS } from "@/lib/constants";
 import type { Deal } from "@/lib/validations";
 
@@ -200,33 +201,29 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
   }
 
   return (
-    <Card className="bg-slate-900 border-slate-800">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-white text-base">Buy Box Scorecard</CardTitle>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {BUY_BOX.decision_rule}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {showSaved && (
-              <span className="text-xs text-green-400">Saved</span>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleSave}
-              disabled={saving}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800 h-7 text-xs"
-            >
-              {saving ? "Saving..." : "Save Scores"}
-            </Button>
-            <Badge className={`${recColor} text-sm px-3`}>{recommendation}</Badge>
-          </div>
+    <CollapsibleCard
+      title="Buy Box Scorecard"
+      icon={<Shield className="h-4 w-4 text-green-400" />}
+      headerRight={
+        <div className="flex items-center gap-2">
+          {showSaved && (
+            <span className="text-xs text-green-400">Saved</span>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={saving}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800 h-7 text-xs"
+          >
+            {saving ? "Saving..." : "Save Scores"}
+          </Button>
+          <Badge className={`${recColor} text-sm px-3`}>{recommendation}</Badge>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-slate-500">{BUY_BOX.decision_rule}</p>
         {/* Deal Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
           <div>
@@ -425,7 +422,7 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
             <span className="text-white font-bold text-lg">{finalScore.toFixed(0)}</span>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   );
 }

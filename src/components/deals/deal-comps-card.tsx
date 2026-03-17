@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Building2, Home, MapPin, Calendar, Plus } from "lucide-react";
+import { BarChart3, Building2, Home, MapPin, Calendar, Plus, ExternalLink } from "lucide-react";
 import { AddMarketCompDialog } from "@/components/comps/add-market-comp-dialog";
 import { AddRentCompDialog } from "@/components/comps/add-rent-comp-dialog";
 import type { MarketComp, RentComp } from "@/lib/validations";
@@ -25,10 +25,11 @@ interface DealCompsCardProps {
   dealState: string;
   askingPrice: number;
   units: number;
+  dealAddress?: string;
 }
 
-export function DealCompsCard({ dealCity, dealState, askingPrice, units }: DealCompsCardProps) {
-  const [tab, setTab] = useState<"market" | "rent">("market");
+export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAddress }: DealCompsCardProps) {
+  const [tab, setTab] = useState<"market" | "rent" | "crexi">("market");
   const [marketComps, setMarketComps] = useState<MarketComp[]>([]);
   const [rentComps, setRentComps] = useState<RentComp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,6 +95,14 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units }: DealC
           }`}
         >
           Rent Comps ({rentComps.length})
+        </button>
+        <button
+          onClick={() => setTab("crexi")}
+          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
+            tab === "crexi" ? "bg-purple-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          Crexi Search
         </button>
       </div>
 
@@ -211,6 +220,58 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units }: DealC
             </div>
           )}
         </>
+      )}
+
+      {/* Crexi Search */}
+      {tab === "crexi" && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-400">
+            Search Crexi for comparable multifamily properties near this deal.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <a
+              href={`https://www.crexi.com/properties?propertyTypes=multifamily&locations=${encodeURIComponent(`${dealCity}, ${dealState}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-3 rounded bg-slate-800 hover:bg-slate-700 transition-colors text-sm text-purple-400 hover:text-purple-300"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              Multifamily in {dealCity}
+            </a>
+            <a
+              href={`https://www.crexi.com/properties?propertyTypes=multifamily&locations=${encodeURIComponent(`${dealCity}, ${dealState}`)}&listingTypes=recentlySold`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-3 rounded bg-slate-800 hover:bg-slate-700 transition-colors text-sm text-purple-400 hover:text-purple-300"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              Recently Sold in {dealCity}
+            </a>
+            <a
+              href={`https://www.crexi.com/properties?propertyTypes=multifamily&locations=${encodeURIComponent(`${dealCity}, ${dealState}`)}&maxUnits=${Math.ceil(units * 1.5)}&minUnits=${Math.max(1, Math.floor(units * 0.5))}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 p-3 rounded bg-slate-800 hover:bg-slate-700 transition-colors text-sm text-purple-400 hover:text-purple-300"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              Similar Size ({Math.max(1, Math.floor(units * 0.5))}–{Math.ceil(units * 1.5)} units)
+            </a>
+            {dealAddress && (
+              <a
+                href={`https://www.crexi.com/properties?propertyTypes=multifamily&locations=${encodeURIComponent(dealAddress + ', ' + dealCity + ', ' + dealState)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 p-3 rounded bg-slate-800 hover:bg-slate-700 transition-colors text-sm text-purple-400 hover:text-purple-300"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                Near This Property
+              </a>
+            )}
+          </div>
+          <p className="text-xs text-slate-600">
+            Found a comp on Crexi? Add it using the Market Sales or Rent Comps tabs above.
+          </p>
+        </div>
       )}
     </CollapsibleCard>
   );

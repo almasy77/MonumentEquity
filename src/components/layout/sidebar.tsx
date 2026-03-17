@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -11,6 +12,7 @@ import {
   CheckSquare,
   Settings,
   Building2,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -60,6 +62,17 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        {/* Logout */}
+        <div className="px-3 py-4 border-t border-slate-800">
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800/50 hover:text-red-400 transition-colors w-full"
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            Sign Out
+          </button>
+        </div>
       </aside>
 
       {/* Mobile bottom tab bar */}
