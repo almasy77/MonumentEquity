@@ -73,9 +73,9 @@ export function EditableField({
   if (editing) {
         return (
                 <div>
-                        <span className="text-slate-500 text-xs">{label}</span>span>
+                        <span className="text-slate-500 text-xs">{label}</span>
                         <div className="flex items-center gap-1 mt-0.5">
-                          {prefix && <span className="text-slate-400 text-sm">{prefix}</span>span>}
+                          {prefix && <span className="text-slate-400 text-sm">{prefix}</span>}
                                   <input
                                                 ref={inputRef}
                                                 type={type}
@@ -85,7 +85,7 @@ export function EditableField({
                                                 className="bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-sm text-white w-full outline-none focus:border-blue-500"
                                                 placeholder={placeholder}
                                               />
-                          {suffix && <span className="text-slate-400 text-sm">{suffix}</span>span>}
+                          {suffix && <span className="text-slate-400 text-sm">{suffix}</span>}
                                   <button
                                                 onClick={handleSave}
                                                 disabled={saving}
@@ -97,7 +97,7 @@ export function EditableField({
                                               <X className="h-3.5 w-3.5" />
                                   </button>
                         </div>
-                </div>div>
+                </div>
               );
   }
   
@@ -114,8 +114,8 @@ export function EditableField({
                         title={`Edit ${label}`}
                       >
                       <Pencil className="h-3 w-3" />
-            </button>button>
-                                          </div>div>
-      </div>div>
+            </button>
+                                          </div>
+      </div>
                 );
-}</div>
+}
