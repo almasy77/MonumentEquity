@@ -153,6 +153,7 @@ export const dealSchema = z.object({
   current_annual_insurance: z.number().optional(),
   assessed_value: z.number().optional(),
   tax_rate: z.number().optional(), // mill rate
+  tax_record_url: z.string().url().optional(), // county tax assessor link
 
   // Rent roll & T12
   rent_roll: z.array(rentRollUnitSchema).optional(),
