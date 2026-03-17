@@ -12,7 +12,7 @@ export async function POST(req: Request) {
               return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
       }
 
-      const { getRedis, getEntity, saveEntity } = await import("@/lib/db");
+      const { getRedis, getEntity, setEntity } = await import("@/lib/db");
           const redis = getRedis();
 
       // Look up the reset token
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
                   return NextResponse.json({ error: "User not found" }, { status: 404 });
           }
 
-      await saveEntity(`user:${userId}`, { ...user, password_hash });
+      await setEntity(`user:${userId}`, { ...user, password_hash });
 
       // Delete the reset token so it can't be reused
       await redis.del(`reset:${token}`);

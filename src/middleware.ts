@@ -7,6 +7,8 @@ export default auth((req) => {
   // Allow public routes
   if (
     pathname.startsWith("/login") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
     pathname.startsWith("/share/") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/webhooks") ||
