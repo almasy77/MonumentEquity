@@ -3,8 +3,11 @@ import { getRedis } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
 // POST /api/seed — one-time admin user creation
-// Protected by a simple check: only works if no users exist yet
-export async function POST(req: NextRequest) {
+// Only works if no admin user exists yet
+export async function POST(_req: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Seed disabled in production" }, { status: 403 });
+  }
   const redis = getRedis();
 
   const email = "admin@monumentequity.com";

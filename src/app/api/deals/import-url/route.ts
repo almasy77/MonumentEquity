@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { extractDealFromUrl } from "@/lib/ai-extract";
 
 export async function POST(req: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { url } = body;

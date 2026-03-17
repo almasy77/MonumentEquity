@@ -3,6 +3,9 @@ import { getRedis, addToIndex } from "@/lib/db";
 
 // POST /api/seed/brokers — seed Durham broker contacts from the workbook
 export async function POST() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Seed disabled in production" }, { status: 403 });
+  }
   const redis = getRedis();
 
   const brokers = [

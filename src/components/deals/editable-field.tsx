@@ -110,7 +110,7 @@ export function EditableField({
     </p>
             <button
                                       onClick={() => { setDraft(value); setEditing(true); }}
-                        className="p-0.5 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="p-0.5 text-slate-600 hover:text-blue-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         title={`Edit ${label}`}
                       >
                       <Pencil className="h-3 w-3" />
