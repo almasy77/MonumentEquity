@@ -7,6 +7,14 @@ import { EditableField } from "./editable-field";
 import { Building2 } from "lucide-react";
 import type { Deal } from "@/lib/validations";
 
+function formatCurrency(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
     month: "short",
@@ -42,12 +50,73 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`
   )}`;
 
+  const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
+  const daysSinceCreated = Math.floor(
+    (Date.now() - new Date(deal.created_at).getTime()) / 86400000
+  );
+  const inPlaceCap = deal.current_noi && deal.asking_price > 0
+    ? deal.current_noi / deal.asking_price
+    : null;
+
   return (
     <CollapsibleCard
       title="Property Details"
       icon={<Building2 className="h-4 w-4 text-blue-400" />}
     >
       <div className="space-y-3">
+        {/* Key Metrics — inline with property details */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+          <EditableField label="Asking Price" value={deal.asking_price.toString()} onSave={(v) => updateDeal("asking_price", v)} type="number" prefix="$" />
+          <EditableField label="Bid Price" value={deal.bid_price?.toString() || ""} onSave={(v) => updateDeal("bid_price", v)} type="number" prefix="$" placeholder="Enter bid" />
+          <EditableField label="Units" value={deal.units.toString()} onSave={(v) => updateDeal("units", v)} type="number" />
+          <div>
+            <span className="text-slate-500 text-xs">Price / Unit</span>
+            <p className="text-slate-200 text-sm">{formatCurrency(pricePerUnit)}</p>
+          </div>
+          <div>
+            <span className="text-slate-500 text-xs">Days in Pipeline</span>
+            <p className="text-slate-200 text-sm">{daysSinceCreated}</p>
+          </div>
+        </div>
+
+        {/* Secondary metrics row */}
+        {(inPlaceCap !== null || deal.current_noi || deal.loan_amount || deal.current_occupancy !== undefined) && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+            {inPlaceCap !== null && (
+              <div>
+                <span className="text-slate-500 text-xs">In-Place Cap</span>
+                <p className="text-slate-200 text-sm">{(inPlaceCap * 100).toFixed(2)}%</p>
+              </div>
+            )}
+            {deal.current_noi && (
+              <div>
+                <span className="text-slate-500 text-xs">Current NOI</span>
+                <p className="text-slate-200 text-sm">{formatCurrency(deal.current_noi)}</p>
+              </div>
+            )}
+            {deal.current_occupancy !== undefined && deal.current_occupancy !== null && (
+              <div>
+                <span className="text-slate-500 text-xs">Occupancy</span>
+                <p className="text-slate-200 text-sm">{(deal.current_occupancy * 100).toFixed(0)}%</p>
+              </div>
+            )}
+            {deal.loan_amount && (
+              <div>
+                <span className="text-slate-500 text-xs">Loan Amount</span>
+                <p className="text-slate-200 text-sm">{formatCurrency(deal.loan_amount)}</p>
+              </div>
+            )}
+            {deal.monthly_debt_service && (
+              <div>
+                <span className="text-slate-500 text-xs">Monthly P&I</span>
+                <p className="text-slate-200 text-sm">{formatCurrency(deal.monthly_debt_service)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <Separator className="bg-slate-800" />
+
         {/* Core property info — horizontal layout */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <EditableField label="Address" value={deal.address} onSave={(v) => updateDeal("address", v)} />

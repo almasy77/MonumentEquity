@@ -12,7 +12,7 @@ import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
-import { EditableMetrics } from "@/components/deals/editable-metrics";
+// EditableMetrics merged into EditablePropertyDetails
 import { RentRollTable } from "@/components/deals/rent-roll-table";
 import { T12StatementPanel } from "@/components/deals/t12-statement";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
@@ -25,7 +25,6 @@ import {
   Building2,
   DollarSign,
   Clock,
-  CheckSquare,
   ListTodo,
   MapPin,
 } from "lucide-react";
@@ -175,10 +174,7 @@ export default async function DealDetailPage({
         </div>
       </div>
 
-      {/* Editable Key Metrics */}
-      <EditableMetrics deal={deal} />
-
-      {/* Property Details — full-width horizontal collapsible card */}
+      {/* Property Details — includes key metrics, property info, financials */}
       <EditablePropertyDetails deal={deal} />
 
       {/* Buy Box Scorecard — screening tool */}
@@ -195,12 +191,13 @@ export default async function DealDetailPage({
         dealState={deal.state}
         askingPrice={deal.asking_price}
         units={deal.units}
+        dealAddress={deal.address}
       />
 
       {/* T12 + Rent Roll section */}
       <div className="grid md:grid-cols-2 gap-6">
-        <T12StatementPanel dealId={id} t12={deal.t12} />
-        <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} />
+        <T12StatementPanel dealId={id} t12={deal.t12} rentRoll={deal.rent_roll || []} units={deal.units} />
+        <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} dealUnits={deal.units} />
       </div>
 
       {/* Sidebar-style row: Contacts, Neighborhood, Activity */}
@@ -255,13 +252,7 @@ export default async function DealDetailPage({
         </Card>
 
         {/* Checklists */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <CheckSquare className="h-4 w-4 text-white" />
-            <h3 className="text-base font-semibold text-white">Checklists</h3>
-          </div>
-          <ChecklistPanel dealId={id} checklists={checklists} />
-        </div>
+        <ChecklistPanel dealId={id} checklists={checklists} />
       </div>
     </div>
   );

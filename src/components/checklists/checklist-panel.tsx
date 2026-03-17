@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight, Plus, Loader2, Archive, Pencil, Check, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Loader2, Archive, Pencil, Check, X, CheckSquare } from "lucide-react";
 import type { ChecklistInstance, ChecklistItem } from "@/lib/checklist-templates";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -166,64 +166,79 @@ export function ChecklistPanel({
   const visibleChecklists = checklists.filter((c) => !archivedIds.has(c.id));
   const archivedChecklists = checklists.filter((c) => archivedIds.has(c.id));
 
+  // Overall progress
+  const totalItems = checklists.reduce((sum, cl) => sum + cl.items.length, 0);
+  const totalCompleted = checklists.reduce((sum, cl) => sum + cl.items.filter((i) => i.completed).length, 0);
+
   return (
-    <div className="space-y-4">
-      {availableTypes.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          {availableTypes.map((type) => (
-            <Button
-              key={type}
-              variant="outline"
-              size="sm"
-              onClick={() => createChecklist(type)}
-              disabled={creating !== null}
-              className="border-slate-700 text-slate-400 hover:bg-slate-800"
-            >
-              {creating === type ? (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              ) : (
-                <Plus className="h-3 w-3 mr-1" />
-              )}
-              {TYPE_LABELS[type]}
-            </Button>
-          ))}
-        </div>
-      )}
+    <CollapsibleCard
+      title="Checklists"
+      icon={<CheckSquare className="h-4 w-4 text-blue-400" />}
+      headerRight={
+        totalItems > 0 ? (
+          <span className="text-xs text-slate-400">{totalCompleted}/{totalItems} complete</span>
+        ) : undefined
+      }
+    >
+      <div className="space-y-4">
+        {/* Create buttons */}
+        {availableTypes.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {availableTypes.map((type) => (
+              <Button
+                key={type}
+                variant="outline"
+                size="sm"
+                onClick={() => createChecklist(type)}
+                disabled={creating !== null}
+                className="border-slate-700 text-slate-400 hover:bg-slate-800"
+              >
+                {creating === type ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3 mr-1" />
+                )}
+                {TYPE_LABELS[type]}
+              </Button>
+            ))}
+          </div>
+        )}
 
-      {visibleChecklists.length === 0 && (
-        <p className="text-sm text-slate-500 text-center py-6">
-          No checklists yet. Create one above to get started.
-        </p>
-      )}
+        {visibleChecklists.length === 0 && (
+          <p className="text-sm text-slate-500 text-center py-4">
+            No checklists yet. Create one above to get started.
+          </p>
+        )}
 
-      {visibleChecklists.map((cl) => {
-        const completedCount = cl.items.filter((i) => i.completed).length;
-        const totalCount = cl.items.length;
-        const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-        const groups = groupByCategory(cl.items);
-        const isCollapsed = collapsed[cl.id] ?? false;
+        {/* Each checklist as a subcard */}
+        {visibleChecklists.map((cl) => {
+          const completedCount = cl.items.filter((i) => i.completed).length;
+          const totalCount = cl.items.length;
+          const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+          const groups = groupByCategory(cl.items);
+          const isCollapsed = collapsed[cl.id] ?? false;
 
-        return (
-          <Card key={cl.id} className="bg-slate-900 border-slate-800">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+          return (
+            <div key={cl.id} className="bg-slate-800/50 border border-slate-800 rounded-lg">
+              {/* Subcard header */}
+              <div className="flex items-center justify-between px-3 py-2">
                 <button
                   onClick={() => toggleCollapsed(cl.id)}
                   className="flex items-center gap-2 text-left group"
                 >
                   {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 text-slate-500 group-hover:text-slate-300" />
+                    <ChevronRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-slate-300" />
                   ) : (
-                    <ChevronDown className="h-4 w-4 text-slate-500 group-hover:text-slate-300" />
+                    <ChevronDown className="h-3.5 w-3.5 text-slate-500 group-hover:text-slate-300" />
                   )}
-                  <CardTitle className="text-white text-base">
+                  <span className="text-sm font-medium text-white">
                     {TYPE_LABELS[cl.type]}
-                  </CardTitle>
+                  </span>
                 </button>
                 <div className="flex items-center gap-2">
                   <Badge
                     variant="outline"
-                    className={`text-xs ${
+                    className={`text-[10px] ${
                       pct === 100
                         ? "border-green-600 text-green-400"
                         : pct >= 50
@@ -233,174 +248,174 @@ export function ChecklistPanel({
                   >
                     {completedCount}/{totalCount} ({pct}%)
                   </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  <button
                     onClick={() => setAddingTo(addingTo === cl.id ? null : cl.id)}
-                    className="h-6 w-6 p-0 text-slate-500 hover:text-slate-300"
+                    className="p-1 text-slate-500 hover:text-slate-300"
                     title="Add item"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  </button>
+                  <button
                     onClick={() => setArchivedIds((prev) => new Set([...prev, cl.id]))}
-                    className="h-6 w-6 p-0 text-slate-500 hover:text-yellow-400"
+                    className="p-1 text-slate-500 hover:text-yellow-400"
                     title="Archive checklist"
                   >
                     <Archive className="h-3.5 w-3.5" />
-                  </Button>
+                  </button>
                 </div>
               </div>
+
               {/* Progress bar */}
-              <div className="w-full bg-slate-800 rounded-full h-1.5 mt-2">
-                <div
-                  className={`h-1.5 rounded-full transition-all ${
-                    pct === 100
-                      ? "bg-green-500"
-                      : pct >= 50
-                      ? "bg-blue-500"
-                      : "bg-slate-600"
-                  }`}
-                  style={{ width: `${pct}%` }}
-                />
+              <div className="px-3 pb-1">
+                <div className="w-full bg-slate-800 rounded-full h-1">
+                  <div
+                    className={`h-1 rounded-full transition-all ${
+                      pct === 100
+                        ? "bg-green-500"
+                        : pct >= 50
+                        ? "bg-blue-500"
+                        : "bg-slate-600"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
               </div>
-            </CardHeader>
 
-            {!isCollapsed && (
-              <CardContent className="pt-2">
-                {/* Add item form */}
-                {addingTo === cl.id && (
-                  <div className="mb-3 p-2 border border-slate-800 rounded space-y-2">
-                    <Input
-                      value={newItemLabel}
-                      onChange={(e) => setNewItemLabel(e.target.value)}
-                      placeholder="New item label..."
-                      className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
-                      autoFocus
-                      onKeyDown={(e) => { if (e.key === "Enter") addItem(cl.id); }}
-                    />
-                    <div className="flex gap-2">
+              {/* Subcard content */}
+              {!isCollapsed && (
+                <div className="px-3 pb-3 pt-1">
+                  {/* Add item form */}
+                  {addingTo === cl.id && (
+                    <div className="mb-3 p-2 border border-slate-700 rounded space-y-2">
                       <Input
-                        value={newItemCategory}
-                        onChange={(e) => setNewItemCategory(e.target.value)}
-                        placeholder="Category (optional)"
+                        value={newItemLabel}
+                        onChange={(e) => setNewItemLabel(e.target.value)}
+                        placeholder="New item label..."
                         className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
+                        autoFocus
+                        onKeyDown={(e) => { if (e.key === "Enter") addItem(cl.id); }}
                       />
-                      <Button size="sm" onClick={() => addItem(cl.id)} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white">
-                        Add
-                      </Button>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newItemCategory}
+                          onChange={(e) => setNewItemCategory(e.target.value)}
+                          placeholder="Category (optional)"
+                          className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
+                        />
+                        <Button size="sm" onClick={() => addItem(cl.id)} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white">
+                          Add
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {Object.entries(groups).map(([category, items]) => {
-                  const catKey = `${cl.id}:${category}`;
-                  const isExpanded = expandedCategories[catKey] !== false;
-                  const catCompleted = items.filter((i) => i.completed).length;
+                  {Object.entries(groups).map(([category, items]) => {
+                    const catKey = `${cl.id}:${category}`;
+                    const isExpanded = expandedCategories[catKey] !== false;
+                    const catCompleted = items.filter((i) => i.completed).length;
 
-                  return (
-                    <div key={catKey} className="mb-2">
-                      <button
-                        onClick={() => toggleCategory(catKey)}
-                        className="flex items-center gap-1 w-full text-left py-1.5 text-xs font-medium text-slate-400 hover:text-slate-300"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3" />
+                    return (
+                      <div key={catKey} className="mb-1.5">
+                        <button
+                          onClick={() => toggleCategory(catKey)}
+                          className="flex items-center gap-1 w-full text-left py-1 text-xs font-medium text-slate-400 hover:text-slate-300"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-3 w-3" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3" />
+                          )}
+                          {category}
+                          <span className="text-slate-600 ml-1">
+                            ({catCompleted}/{items.length})
+                          </span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="ml-4 space-y-0.5">
+                            {items.map((item) => (
+                              <div key={item.id} className="flex items-center gap-2 py-0.5 group">
+                                <Checkbox
+                                  checked={item.completed}
+                                  onCheckedChange={() => toggleItem(cl.id, item.id)}
+                                  className="border-slate-600"
+                                />
+                                {editingItem === item.id ? (
+                                  <div className="flex items-center gap-1 flex-1">
+                                    <Input
+                                      value={editLabel}
+                                      onChange={(e) => setEditLabel(e.target.value)}
+                                      className="bg-slate-800 border-slate-700 text-white h-6 text-xs flex-1"
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") saveItemEdit(cl.id, item.id);
+                                        if (e.key === "Escape") setEditingItem(null);
+                                      }}
+                                    />
+                                    <button onClick={() => saveItemEdit(cl.id, item.id)} className="p-0.5 text-green-400 hover:text-green-300">
+                                      <Check className="h-3 w-3" />
+                                    </button>
+                                    <button onClick={() => setEditingItem(null)} className="p-0.5 text-slate-500 hover:text-slate-300">
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <span
+                                      className={`text-xs flex-1 ${
+                                        item.completed
+                                          ? "text-slate-500 line-through"
+                                          : "text-slate-300"
+                                      }`}
+                                    >
+                                      {item.label}
+                                    </span>
+                                    <button
+                                      onClick={() => { setEditingItem(item.id); setEditLabel(item.label); }}
+                                      className="p-0.5 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="Edit item"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         )}
-                        {category}
-                        <span className="text-slate-600 ml-1">
-                          ({catCompleted}/{items.length})
-                        </span>
-                      </button>
-
-                      {isExpanded && (
-                        <div className="ml-4 space-y-1">
-                          {items.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2 py-1 group">
-                              <Checkbox
-                                checked={item.completed}
-                                onCheckedChange={() => toggleItem(cl.id, item.id)}
-                                className="border-slate-600"
-                              />
-                              {editingItem === item.id ? (
-                                <div className="flex items-center gap-1 flex-1">
-                                  <Input
-                                    value={editLabel}
-                                    onChange={(e) => setEditLabel(e.target.value)}
-                                    className="bg-slate-800 border-slate-700 text-white h-6 text-xs flex-1"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") saveItemEdit(cl.id, item.id);
-                                      if (e.key === "Escape") setEditingItem(null);
-                                    }}
-                                  />
-                                  <button onClick={() => saveItemEdit(cl.id, item.id)} className="p-0.5 text-green-400 hover:text-green-300">
-                                    <Check className="h-3 w-3" />
-                                  </button>
-                                  <button onClick={() => setEditingItem(null)} className="p-0.5 text-slate-500 hover:text-slate-300">
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <span
-                                    className={`text-sm flex-1 ${
-                                      item.completed
-                                        ? "text-slate-500 line-through"
-                                        : "text-slate-300"
-                                    }`}
-                                  >
-                                    {item.label}
-                                  </span>
-                                  <button
-                                    onClick={() => { setEditingItem(item.id); setEditLabel(item.label); }}
-                                    className="p-0.5 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    title="Edit item"
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </CardContent>
-            )}
-          </Card>
-        );
-      })}
-
-      {/* Archived checklists */}
-      {archivedChecklists.length > 0 && (
-        <div className="border-t border-slate-800 pt-3">
-          <p className="text-xs text-slate-500 mb-2">Archived ({archivedChecklists.length})</p>
-          <div className="space-y-1">
-            {archivedChecklists.map((cl) => (
-              <div key={cl.id} className="flex items-center justify-between text-xs text-slate-500">
-                <span>{TYPE_LABELS[cl.type]}</span>
-                <button
-                  onClick={() => setArchivedIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(cl.id);
-                    return next;
+                      </div>
+                    );
                   })}
-                  className="text-blue-400 hover:text-blue-300"
-                >
-                  Restore
-                </button>
-              </div>
-            ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Archived checklists */}
+        {archivedChecklists.length > 0 && (
+          <div className="border-t border-slate-800 pt-3">
+            <p className="text-xs text-slate-500 mb-2">Archived ({archivedChecklists.length})</p>
+            <div className="space-y-1">
+              {archivedChecklists.map((cl) => (
+                <div key={cl.id} className="flex items-center justify-between text-xs text-slate-500">
+                  <span>{TYPE_LABELS[cl.type]}</span>
+                  <button
+                    onClick={() => setArchivedIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(cl.id);
+                      return next;
+                    })}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </CollapsibleCard>
   );
 }
