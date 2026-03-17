@@ -139,6 +139,8 @@ interface T12FormState {
   total_egi: string;
   property_taxes: string;
   insurance: string;
+  utilities_total_override: string; // fillable total if no breakdown
+  utilities_use_override: boolean;  // true = use override, false = use breakdown
   utilities_water: string;
   utilities_electric: string;
   utilities_gas: string;
@@ -166,6 +168,10 @@ function t12ToForm(t12: T12Statement | undefined, rentRoll: RentRollUnit[]): T12
   const egi = gpi - vacLoss + (m?.other_income ?? 0);
   const mgmtPct = egi > 0 ? ((mgmt / egi) * 100) : 8;
 
+  // Determine if we have a breakdown or just a total
+  const hasBreakdown = !!(m?.utilities_water || m?.utilities_electric || m?.utilities_gas);
+  const utilitiesTotal = m?.utilities ?? 0;
+
   return {
     total_gpi: gpi ? gpi.toString() : "",
     vacancy_loss_pct: vacPct ? vacPct.toFixed(1) : "5",
@@ -174,6 +180,8 @@ function t12ToForm(t12: T12Statement | undefined, rentRoll: RentRollUnit[]): T12
     total_egi: t12?.total_egi?.toString() || "",
     property_taxes: m?.property_taxes?.toString() || "",
     insurance: m?.insurance?.toString() || "",
+    utilities_total_override: hasBreakdown ? "" : (utilitiesTotal ? utilitiesTotal.toString() : ""),
+    utilities_use_override: !hasBreakdown && utilitiesTotal > 0,
     utilities_water: m?.utilities_water?.toString() || "",
     utilities_electric: m?.utilities_electric?.toString() || "",
     utilities_gas: m?.utilities_gas?.toString() || "",
@@ -208,10 +216,13 @@ function recalc(next: T12FormState): T12FormState {
   const water = parseFloat(next.utilities_water) || 0;
   const electric = parseFloat(next.utilities_electric) || 0;
   const gas = parseFloat(next.utilities_gas) || 0;
+  const utilitiesFromBreakdown = water + electric + gas;
+  const utilitiesOverride = parseFloat(next.utilities_total_override) || 0;
+  const totalUtilities = next.utilities_use_override ? utilitiesOverride : utilitiesFromBreakdown;
   const rm = parseFloat(next.repairs_maintenance) || 0;
   const pay = parseFloat(next.payroll) || 0;
   const otherExp = parseFloat(next.other_expenses) || 0;
-  const opex = taxes + ins + water + electric + gas + rm + mgmt + pay + otherExp;
+  const opex = taxes + ins + totalUtilities + rm + mgmt + pay + otherExp;
   next.total_opex = opex.toString();
   next.total_noi = (egi - opex).toString();
 
@@ -259,7 +270,8 @@ export function T12StatementPanel({ dealId, t12, rentRoll, units }: T12Props) {
       const water = parseFloat(form.utilities_water) || 0;
       const electric = parseFloat(form.utilities_electric) || 0;
       const gas = parseFloat(form.utilities_gas) || 0;
-      const totalUtilities = water + electric + gas;
+      const utilitiesOverride = parseFloat(form.utilities_total_override) || 0;
+      const totalUtilities = form.utilities_use_override ? utilitiesOverride : (water + electric + gas);
 
       const t12Data: T12Statement = {
         total_gpi: parseFloat(form.total_gpi) || undefined,
@@ -311,7 +323,9 @@ export function T12StatementPanel({ dealId, t12, rentRoll, units }: T12Props) {
   const water = parseFloat(form.utilities_water) || (t12?.months?.[0]?.utilities_water ?? 0);
   const electric = parseFloat(form.utilities_electric) || (t12?.months?.[0]?.utilities_electric ?? 0);
   const gas = parseFloat(form.utilities_gas) || (t12?.months?.[0]?.utilities_gas ?? 0);
-  const totalUtilities = water + electric + gas;
+  const utilitiesFromBreakdown = water + electric + gas;
+  const utilitiesOverrideVal = parseFloat(form.utilities_total_override) || (t12?.months?.[0]?.utilities ?? 0);
+  const totalUtilities = form.utilities_use_override ? utilitiesOverrideVal : utilitiesFromBreakdown;
   const rm = parseFloat(form.repairs_maintenance) || (t12?.months?.[0]?.repairs_maintenance ?? 0);
   const mgmt = parseFloat(form.management_fees) || (t12?.months?.[0]?.management_fees ?? 0);
   const pay = parseFloat(form.payroll) || (t12?.months?.[0]?.payroll ?? 0);
@@ -422,43 +436,80 @@ export function T12StatementPanel({ dealId, t12, rentRoll, units }: T12Props) {
               units={units}
               egi={egi}
             />
-            <LineItemRow
-              label="Utilities — Water/Sewer"
-              value={form.utilities_water}
-              onChange={(v) => updateField("utilities_water", v)}
-              editing={editing}
-              annual={water}
-              units={units}
-              egi={egi}
-              indent
-            />
-            <LineItemRow
-              label="Utilities — Electric"
-              value={form.utilities_electric}
-              onChange={(v) => updateField("utilities_electric", v)}
-              editing={editing}
-              annual={electric}
-              units={units}
-              egi={egi}
-              indent
-            />
-            <LineItemRow
-              label="Utilities — Gas"
-              value={form.utilities_gas}
-              onChange={(v) => updateField("utilities_gas", v)}
-              editing={editing}
-              annual={gas}
-              units={units}
-              egi={egi}
-              indent
-            />
-            {totalUtilities > 0 && !editing && (
-              <tr className="hover:bg-slate-800/30">
-                <td className="py-1 text-xs text-slate-500 italic pl-5">Total Utilities</td>
-                <td className="py-1 text-xs text-right pr-3 text-slate-500 italic">{fmt(totalUtilities)}</td>
-                <td className="py-1 text-xs text-right pr-3 text-slate-600 italic">{perUnit(totalUtilities, units)}</td>
-                <td className="py-1 text-xs text-right pr-2 text-slate-600 italic">{pctOfEgi(totalUtilities, egi)}</td>
-              </tr>
+            {/* ── Utilities ─────────────────────── */}
+            <tr>
+              <td colSpan={4} className="pt-3 pb-1 pl-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Utilities</span>
+                  {editing && (
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.utilities_use_override}
+                        onChange={(e) => {
+                          setForm((prev) => recalc({ ...prev, utilities_use_override: e.target.checked }));
+                        }}
+                        className="h-3 w-3 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                      />
+                      Enter total only
+                    </label>
+                  )}
+                </div>
+              </td>
+            </tr>
+
+            {form.utilities_use_override ? (
+              <LineItemRow
+                label="Total Utilities"
+                value={form.utilities_total_override}
+                onChange={(v) => updateField("utilities_total_override", v)}
+                editing={editing}
+                annual={totalUtilities}
+                units={units}
+                egi={egi}
+                indent
+              />
+            ) : (
+              <>
+                <LineItemRow
+                  label="Water / Sewer"
+                  value={form.utilities_water}
+                  onChange={(v) => updateField("utilities_water", v)}
+                  editing={editing}
+                  annual={water}
+                  units={units}
+                  egi={egi}
+                  indent
+                />
+                <LineItemRow
+                  label="Electric"
+                  value={form.utilities_electric}
+                  onChange={(v) => updateField("utilities_electric", v)}
+                  editing={editing}
+                  annual={electric}
+                  units={units}
+                  egi={egi}
+                  indent
+                />
+                <LineItemRow
+                  label="Gas"
+                  value={form.utilities_gas}
+                  onChange={(v) => updateField("utilities_gas", v)}
+                  editing={editing}
+                  annual={gas}
+                  units={units}
+                  egi={egi}
+                  indent
+                />
+                {totalUtilities > 0 && (
+                  <tr className="border-t border-slate-800/30 hover:bg-slate-800/30">
+                    <td className="py-1.5 text-xs text-slate-400 font-medium pl-5">Utilities Subtotal</td>
+                    <td className="py-1.5 text-xs text-right pr-3 text-slate-400 font-medium">{fmt(totalUtilities)}</td>
+                    <td className="py-1.5 text-xs text-right pr-3 text-slate-600">{perUnit(totalUtilities, units)}</td>
+                    <td className="py-1.5 text-xs text-right pr-2 text-slate-600">{pctOfEgi(totalUtilities, egi)}</td>
+                  </tr>
+                )}
+              </>
             )}
             <LineItemRow
               label="Repairs & Maintenance"

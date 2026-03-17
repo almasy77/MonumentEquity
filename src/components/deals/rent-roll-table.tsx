@@ -5,8 +5,13 @@ import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Save, Trash2, TableProperties } from "lucide-react";
+import { Plus, Save, Trash2, TableProperties, ChevronDown, ChevronRight } from "lucide-react";
 import type { RentRollUnit } from "@/lib/validations";
+
+interface OtherIncomeItem {
+  label: string;
+  amount: number | undefined; // monthly
+}
 
 const STATUS_STYLES: Record<string, string> = {
   occupied: "bg-green-900/50 text-green-400 border-green-800",
@@ -130,6 +135,8 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
   const [units, setUnits] = useState<RentRollUnit[]>(rentRoll || []);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [otherIncomeItems, setOtherIncomeItems] = useState<OtherIncomeItem[]>([]);
+  const [otherIncomeExpanded, setOtherIncomeExpanded] = useState(false);
 
   function initializeUnits() {
     const newUnits: RentRollUnit[] = [];
@@ -165,6 +172,32 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
     setDirty(true);
   }
 
+  function addOtherIncomeItem() {
+    setOtherIncomeItems((prev) => [...prev, { label: "", amount: undefined }]);
+    setOtherIncomeExpanded(true);
+    setDirty(true);
+  }
+
+  function updateOtherIncomeItem(idx: number, field: keyof OtherIncomeItem, value: string) {
+    setOtherIncomeItems((prev) => {
+      const next = [...prev];
+      if (field === "amount") {
+        next[idx] = { ...next[idx], amount: value ? Number(value) : undefined };
+      } else {
+        next[idx] = { ...next[idx], label: value };
+      }
+      return next;
+    });
+    setDirty(true);
+  }
+
+  function removeOtherIncomeItem(idx: number) {
+    setOtherIncomeItems((prev) => prev.filter((_, i) => i !== idx));
+    setDirty(true);
+  }
+
+  const totalOtherIncomeMonthly = otherIncomeItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -193,7 +226,7 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
 
   return (
     <CollapsibleCard
-      title="Rent Roll"
+      title="Revenue + Rent Roll"
       icon={<TableProperties className="h-4 w-4 text-purple-400" />}
       headerRight={
         <div className="flex items-center gap-2">
@@ -292,6 +325,82 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
             </div>
           </div>
         )}
+
+        {/* ── Other Income Sub-Card ──────────────────────── */}
+        <div className="mt-4 border border-slate-800 rounded-lg bg-slate-900/50">
+          <button
+            onClick={() => setOtherIncomeExpanded(!otherIncomeExpanded)}
+            className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/50 rounded-t-lg"
+          >
+            <div className="flex items-center gap-2">
+              {otherIncomeExpanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+              <span className="font-medium">Other Income</span>
+              {totalOtherIncomeMonthly > 0 && (
+                <span className="text-xs text-slate-500 ml-2">{fmt(totalOtherIncomeMonthly)}/mo</span>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); addOtherIncomeItem(); }}
+              className="h-6 text-[11px] border-slate-700 text-slate-400 hover:bg-slate-800 px-2"
+            >
+              <Plus className="h-3 w-3 mr-1" /> Add Item
+            </Button>
+          </button>
+
+          {otherIncomeExpanded && (
+            <div className="px-3 pb-3">
+              {otherIncomeItems.length === 0 ? (
+                <p className="text-xs text-slate-600 py-2 text-center">No other income items. Click &quot;Add Item&quot; to add laundry, parking, pet fees, etc.</p>
+              ) : (
+                <table className="w-full text-xs mt-1">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500">
+                      <th className="text-left py-1.5 px-1 font-medium">Revenue Item</th>
+                      <th className="text-right py-1.5 px-1 font-medium w-28">Amount (Monthly)</th>
+                      <th className="py-1.5 px-1 w-6"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {otherIncomeItems.map((item, idx) => (
+                      <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                        <td className="py-1 px-1">
+                          <EditableCell
+                            value={item.label}
+                            onChange={(v) => updateOtherIncomeItem(idx, "label", v)}
+                          />
+                        </td>
+                        <td className="py-1 px-1 text-right">
+                          <EditableCell
+                            value={item.amount?.toString() || ""}
+                            onChange={(v) => updateOtherIncomeItem(idx, "amount", v)}
+                            type="number"
+                            className="text-right"
+                          />
+                        </td>
+                        <td className="py-1 px-1">
+                          <button onClick={() => removeOtherIncomeItem(idx)} className="text-slate-600 hover:text-red-400 p-0.5" title="Remove item">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {otherIncomeItems.length > 1 && (
+                    <tfoot>
+                      <tr className="border-t border-slate-700/50">
+                        <td className="py-1.5 px-1 text-xs text-slate-400 font-medium">Total Other Income</td>
+                        <td className="py-1.5 px-1 text-xs text-right text-slate-300 font-medium">{fmt(totalOtherIncomeMonthly)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              )}
+            </div>
+          )}
+        </div>
     </CollapsibleCard>
   );
 }
