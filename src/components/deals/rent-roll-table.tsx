@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Button } from "@/components/ui/button";
@@ -53,9 +53,10 @@ interface EditableCellProps {
   type?: "text" | "number" | "date" | "select";
   options?: { value: string; label: string }[];
   className?: string;
+  placeholder?: string;
 }
 
-function EditableCell({ value, onChange, type = "text", options, className = "" }: EditableCellProps) {
+function EditableCell({ value, onChange, type = "text", options, className = "", placeholder }: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -83,6 +84,7 @@ function EditableCell({ value, onChange, type = "text", options, className = "" 
         onBlur={() => { onChange(draft); setEditing(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { onChange(draft); setEditing(false); } if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
         autoFocus
+        placeholder={placeholder}
         className="bg-slate-800 border border-slate-600 rounded px-1 py-0.5 text-xs text-white w-full outline-none focus:border-blue-500"
       />
     );
@@ -94,7 +96,7 @@ function EditableCell({ value, onChange, type = "text", options, className = "" 
       className={`cursor-pointer hover:bg-slate-800 rounded px-1 py-0.5 block min-h-[1.25rem] ${className}`}
       title="Click to edit"
     >
-      {value || <span className="text-slate-600 italic text-xs">--</span>}
+      {value || <span className="text-slate-600 italic text-xs">{placeholder || "--"}</span>}
     </span>
   );
 }
@@ -130,6 +132,20 @@ function StatusCell({ status, onChange }: { status: string; onChange: (v: string
   );
 }
 
+const COLUMNS: readonly { key: string; label: string; align: string; defaultWidth: number; resizable?: boolean }[] = [
+  { key: "unit_number", label: "Unit #", align: "left", defaultWidth: 60 },
+  { key: "unit_type", label: "Beds/Baths", align: "left", defaultWidth: 90 },
+  { key: "sqft", label: "SqFt", align: "right", defaultWidth: 60 },
+  { key: "status", label: "Status", align: "left", defaultWidth: 80 },
+  { key: "tenant_name", label: "Tenant", align: "left", defaultWidth: 120 },
+  { key: "current_rent", label: "Current Rent", align: "right", defaultWidth: 95 },
+  { key: "market_rent", label: "Market Rent", align: "right", defaultWidth: 95 },
+  { key: "lease_start", label: "Lease Start", align: "left", defaultWidth: 95 },
+  { key: "lease_end", label: "Lease End", align: "left", defaultWidth: 95 },
+  { key: "other_charges", label: "Other", align: "right", defaultWidth: 65 },
+  { key: "actions", label: "", align: "left", defaultWidth: 24, resizable: false },
+];
+
 export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string; rentRoll: RentRollUnit[]; dealUnits: number }) {
   const router = useRouter();
   const [units, setUnits] = useState<RentRollUnit[]>(rentRoll || []);
@@ -137,6 +153,35 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
   const [dirty, setDirty] = useState(false);
   const [otherIncomeItems, setOtherIncomeItems] = useState<OtherIncomeItem[]>([]);
   const [otherIncomeExpanded, setOtherIncomeExpanded] = useState(false);
+
+  // Column resize state
+  const [colWidths, setColWidths] = useState<number[]>(COLUMNS.map((c) => c.defaultWidth));
+  const resizing = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  const onResizeStart = useCallback((colIdx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = colWidths[colIdx];
+    resizing.current = { colIdx, startX, startW };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizing.current) return;
+      const diff = ev.clientX - resizing.current.startX;
+      const newW = Math.max(30, resizing.current.startW + diff);
+      setColWidths((prev) => {
+        const next = [...prev];
+        next[resizing.current!.colIdx] = newW;
+        return next;
+      });
+    };
+    const onUp = () => {
+      resizing.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [colWidths]);
 
   function initializeUnits() {
     const newUnits: RentRollUnit[] = [];
@@ -253,20 +298,28 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+              <colgroup>
+                {colWidths.map((w, i) => (
+                  <col key={i} style={{ width: w }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400">
-                  <th className="text-left py-2 px-1 font-medium">Unit #</th>
-                  <th className="text-left py-2 px-1 font-medium">Type</th>
-                  <th className="text-right py-2 px-1 font-medium">SqFt</th>
-                  <th className="text-left py-2 px-1 font-medium">Status</th>
-                  <th className="text-left py-2 px-1 font-medium">Tenant</th>
-                  <th className="text-right py-2 px-1 font-medium">Current Rent</th>
-                  <th className="text-right py-2 px-1 font-medium">Market Rent</th>
-                  <th className="text-left py-2 px-1 font-medium">Lease Start</th>
-                  <th className="text-left py-2 px-1 font-medium">Lease End</th>
-                  <th className="text-right py-2 px-1 font-medium">Other</th>
-                  <th className="py-2 px-1 w-6"></th>
+                  {COLUMNS.map((col, i) => (
+                    <th
+                      key={col.key}
+                      className={`py-2 px-1 font-medium relative select-none ${col.align === "right" ? "text-right" : "text-left"}`}
+                    >
+                      {col.label}
+                      {col.resizable !== false && (
+                        <span
+                          onMouseDown={(e) => onResizeStart(i, e)}
+                          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40"
+                        />
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -276,7 +329,7 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
                       <EditableCell value={unit.unit_number} onChange={(v) => updateUnit(idx, "unit_number", v)} />
                     </td>
                     <td className="py-1 px-1">
-                      <EditableCell value={unit.unit_type || ""} onChange={(v) => updateUnit(idx, "unit_type", v)} />
+                      <EditableCell value={unit.unit_type || ""} onChange={(v) => updateUnit(idx, "unit_type", v)} placeholder="1BR/1BA" />
                     </td>
                     <td className="py-1 px-1 text-right">
                       <EditableCell value={unit.sqft?.toString() || ""} onChange={(v) => updateUnit(idx, "sqft", v)} type="number" className="text-right" />

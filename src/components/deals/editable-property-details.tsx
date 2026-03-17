@@ -127,6 +127,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Year Built" value={deal.year_built?.toString() || ""} onSave={(v) => updateDeal("year_built", v)} type="number" placeholder="e.g. 1985" />
           <EditableField label="Property Type" value={deal.property_type || ""} onSave={(v) => updateDeal("property_type", v)} placeholder="e.g. Multifamily" />
           <EditableField label="Square Footage" value={deal.square_footage?.toString() || ""} onSave={(v) => updateDeal("square_footage", v)} type="number" suffix=" SF" placeholder="Total SF" />
+          <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
         </div>
 
         {/* Links row */}
@@ -169,7 +170,13 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Occupancy" value={deal.current_occupancy ? (deal.current_occupancy * 100).toFixed(1) : ""} onSave={(v) => updateDeal("current_occupancy", (Number(v) / 100).toString())} type="number" suffix="%" placeholder="e.g. 92" />
           <EditableField label="Annual Taxes" value={deal.current_annual_taxes?.toString() || ""} onSave={(v) => updateDeal("current_annual_taxes", v)} type="number" prefix="$" placeholder="Property taxes" />
           <EditableField label="Annual Insurance" value={deal.current_annual_insurance?.toString() || ""} onSave={(v) => updateDeal("current_annual_insurance", v)} type="number" prefix="$" placeholder="Insurance premium" />
+          <EditableField label="Tax Records URL" value={deal.tax_record_url || ""} onSave={(v) => updateDeal("tax_record_url", v)} type="url" placeholder="County tax assessor link" />
         </div>
+        {deal.tax_record_url && (
+          <a href={deal.tax_record_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs inline-flex items-center gap-1">
+            View Tax Records
+          </a>
+        )}
 
         {/* DD & Closing */}
         <Separator className="bg-slate-800" />
