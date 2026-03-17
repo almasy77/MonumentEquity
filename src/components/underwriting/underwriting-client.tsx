@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff } from "lucide-react";
 import { MetricsBar } from "./metrics-bar";
 import { AssumptionsForm } from "./assumptions-form";
 import { ProFormaTable } from "./pro-forma-table";
@@ -25,11 +25,14 @@ export function UnderwritingClient({
 }) {
   const [scenarios, setScenarios] = useState<Scenario[]>(initialScenarios);
   const [activeId, setActiveId] = useState<string | null>(
-    initialScenarios[0]?.id ?? null
+    initialScenarios.find((s) => s.is_active !== false)?.id ?? null
   );
   const [activeResult, setActiveResult] = useState<UnderwritingResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ id: string; type: "delete" | "archive" } | null>(null);
 
   const loadScenario = useCallback(async (id: string) => {
     setLoading(true);
@@ -115,12 +118,51 @@ export function UnderwritingClient({
     }
   }
 
+  async function archiveScenario(id: string) {
+    try {
+      const res = await fetch(`/api/scenarios/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: false }),
+      });
+      if (res.ok) {
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, is_active: false } : s))
+        );
+        if (activeId === id) {
+          const remaining = scenarios.filter((s) => s.id !== id && s.is_active !== false);
+          setActiveId(remaining[0]?.id ?? null);
+          setActiveResult(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to archive scenario:", err);
+    }
+  }
+
+  async function unarchiveScenario(id: string) {
+    try {
+      const res = await fetch(`/api/scenarios/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      if (res.ok) {
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, is_active: true } : s))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to unarchive scenario:", err);
+    }
+  }
+
   async function deleteScenario(id: string) {
     try {
       await fetch(`/api/scenarios/${id}`, { method: "DELETE" });
       setScenarios((prev) => prev.filter((s) => s.id !== id));
       if (activeId === id) {
-        const remaining = scenarios.filter((s) => s.id !== id);
+        const remaining = scenarios.filter((s) => s.id !== id && s.is_active !== false);
         setActiveId(remaining[0]?.id ?? null);
         setActiveResult(null);
       }
@@ -129,24 +171,127 @@ export function UnderwritingClient({
     }
   }
 
+  function handleConfirmedAction() {
+    if (!confirmAction) return;
+    if (confirmAction.type === "delete") {
+      deleteScenario(confirmAction.id);
+    } else {
+      archiveScenario(confirmAction.id);
+    }
+    setConfirmAction(null);
+    setMenuOpenId(null);
+  }
+
   const activeScenario = scenarios.find((s) => s.id === activeId);
+  const activeScenarios = scenarios.filter((s) => s.is_active !== false);
+  const archivedScenarios = scenarios.filter((s) => s.is_active === false);
+  const visibleScenarios = showArchived ? scenarios : activeScenarios;
 
   return (
     <div className="space-y-4">
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setConfirmAction(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 max-w-sm mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-white font-medium mb-2">
+              {confirmAction.type === "delete" ? "Delete Scenario" : "Archive Scenario"}
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              {confirmAction.type === "delete"
+                ? "This will permanently delete this scenario and all its data. This cannot be undone."
+                : "This will archive the scenario. You can restore it later from the archived list."}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmAction(null)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmedAction}
+                className={confirmAction.type === "delete" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-yellow-600 hover:bg-yellow-700 text-white"}
+              >
+                {confirmAction.type === "delete" ? "Delete" : "Archive"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scenario Tabs */}
       <div className="flex items-center gap-2 flex-wrap">
-        {scenarios.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setActiveId(s.id)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              activeId === s.id
-                ? "bg-blue-600 text-white"
-                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-            }`}
-          >
-            {s.name}
-          </button>
+        {visibleScenarios.map((s) => (
+          <div key={s.id} className="relative">
+            <div className="flex items-center">
+              <button
+                onClick={() => { if (s.is_active !== false) setActiveId(s.id); }}
+                className={`px-3 py-1.5 text-sm rounded-l-md transition-colors ${
+                  s.is_active === false
+                    ? "bg-slate-800/50 text-slate-600 line-through"
+                    : activeId === s.id
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                }`}
+              >
+                {s.name}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === s.id ? null : s.id); }}
+                className={`px-1 py-1.5 text-sm rounded-r-md border-l transition-colors ${
+                  s.is_active === false
+                    ? "bg-slate-800/50 text-slate-600 border-slate-700/50"
+                    : activeId === s.id
+                      ? "bg-blue-600 text-white/70 hover:text-white border-blue-500"
+                      : "bg-slate-800 text-slate-500 hover:text-slate-300 border-slate-700"
+                }`}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {/* Context Menu */}
+            {menuOpenId === s.id && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMenuOpenId(null)} />
+                <div className="absolute right-0 top-full mt-1 z-40 bg-slate-800 border border-slate-700 rounded-md shadow-lg py-1 min-w-[140px]">
+                  {s.is_active === false ? (
+                    <>
+                      <button
+                        onClick={() => { unarchiveScenario(s.id); setMenuOpenId(null); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 text-left"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> Restore
+                      </button>
+                      <button
+                        onClick={() => { setConfirmAction({ id: s.id, type: "delete" }); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-slate-700 text-left"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete Forever
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { setConfirmAction({ id: s.id, type: "archive" }); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-yellow-400 hover:bg-slate-700 text-left"
+                      >
+                        <Archive className="h-3.5 w-3.5" /> Archive
+                      </button>
+                      <button
+                        onClick={() => { setConfirmAction({ id: s.id, type: "delete" }); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-slate-700 text-left"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         ))}
         <Button
           variant="outline"
@@ -163,6 +308,15 @@ export function UnderwritingClient({
             </>
           )}
         </Button>
+        {archivedScenarios.length > 0 && (
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-400 ml-1"
+          >
+            {showArchived ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            {showArchived ? "Hide" : "Show"} archived ({archivedScenarios.length})
+          </button>
+        )}
         {activeId && activeResult && (
           <Button
             variant="outline"
