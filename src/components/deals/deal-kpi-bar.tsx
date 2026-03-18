@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
 import type { DealMetrics } from "@/lib/underwriting";
+import type { Scenario } from "@/lib/validations";
 
 function fmt(n: number | null | undefined, type: "pct" | "money" | "mult"): string {
   if (n == null) return "—";
@@ -26,22 +27,22 @@ interface ScenarioWithResult {
   underwriting: { metrics: DealMetrics };
 }
 
-export function DealKPIBar({ scenarioIds }: { scenarioIds: string[] }) {
+export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
+  const [selectedId, setSelectedId] = useState<string>(scenarios[0]?.id ?? "");
   const [metrics, setMetrics] = useState<DealMetrics | null>(null);
   const [loading, setLoading] = useState(false);
-  const [scenarioName, setScenarioName] = useState<string>("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
-    if (scenarioIds.length === 0) return;
+    if (!selectedId) return;
 
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/scenarios/${scenarioIds[0]}`);
+        const res = await fetch(`/api/scenarios/${selectedId}`);
         if (res.ok) {
-          const data: ScenarioWithResult & { scenario: { name: string } } = await res.json();
+          const data: ScenarioWithResult = await res.json();
           setMetrics(data.underwriting.metrics);
-          setScenarioName(data.scenario.name);
         }
       } catch {
         // ignore
@@ -50,9 +51,11 @@ export function DealKPIBar({ scenarioIds }: { scenarioIds: string[] }) {
       }
     }
     load();
-  }, [scenarioIds]);
+  }, [selectedId]);
 
-  if (scenarioIds.length === 0) return null;
+  if (scenarios.length === 0) return null;
+
+  const selectedScenario = scenarios.find((s) => s.id === selectedId);
 
   if (loading || !metrics) {
     return (
@@ -108,11 +111,43 @@ export function DealKPIBar({ scenarioIds }: { scenarioIds: string[] }) {
 
   return (
     <div>
-      {scenarioName && (
-        <p className="text-[10px] text-slate-500 mb-1.5">
-          KPIs from scenario: <span className="text-slate-400">{scenarioName}</span>
-        </p>
-      )}
+      {/* Scenario selector */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] text-slate-500 uppercase tracking-wider">KPIs from:</span>
+        {scenarios.length === 1 ? (
+          <span className="text-xs text-slate-400">{selectedScenario?.name}</span>
+        ) : (
+          <div className="relative">
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              {selectedScenario?.name || "Select scenario"}
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {dropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setDropdownOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-40 bg-slate-800 border border-slate-700 rounded-md shadow-lg py-1 min-w-[160px]">
+                  {scenarios.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => { setSelectedId(s.id); setDropdownOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                        s.id === selectedId
+                          ? "bg-blue-600/20 text-blue-400"
+                          : "text-slate-300 hover:bg-slate-700"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {items.map((item) => (
           <Card key={item.label} className="bg-slate-800/50 border-slate-700/50">

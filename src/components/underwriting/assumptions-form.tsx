@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X } from "lucide-react";
-import type { Scenario } from "@/lib/validations";
+import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
+import type { Scenario, T12Statement } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject } from "@/lib/underwriting";
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
   onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
   onDelete: () => void;
   loading: boolean;
+  dealT12?: T12Statement;
+  dealUnits?: number;
 }
 
 function Section({
@@ -77,7 +79,7 @@ function NumField({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealUnits }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -209,6 +211,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading }: Props
           </div>
         </Section>
 
+        {/* Bid & LOI */}
+        <Section title="Bid & LOI">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <NumField label="Bid Price" value={p.bid_price || 0} onChange={(v) => { setP({ ...p, bid_price: v }); markDirty(); }} />
+            <NumField label="LOI Amount" value={p.loi_amount || 0} onChange={(v) => { setP({ ...p, loi_amount: v }); markDirty(); }} />
+            <div>
+              <Label className="text-xs text-slate-400">LOI Date</Label>
+              <Input
+                type="date"
+                value={p.loi_date || ""}
+                onChange={(e) => { setP({ ...p, loi_date: e.target.value }); markDirty(); }}
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+            <NumField label="Earnest Money" value={p.earnest_money} onChange={(v) => { setP({ ...p, earnest_money: v }); markDirty(); }} />
+          </div>
+        </Section>
+
         {/* Revenue & Rent Roll */}
         <Section title="Revenue & Rent Roll">
           <div className="space-y-3">
@@ -257,6 +277,75 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading }: Props
             </div>
           </div>
         </Section>
+
+        {/* T12 Operating Statement — import from deal */}
+        {dealT12 && dealT12.months && dealT12.months.length > 0 && (
+          <Section title="T12 Operating Statement">
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500">
+                Annual totals from the deal&apos;s T12 statement. Click &quot;Import to Expenses&quot; to populate expense fields.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                {(() => {
+                  const months = dealT12.months;
+                  const sum = (field: string) => months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+                  const units = dealUnits || 1;
+                  const taxes = sum("property_taxes");
+                  const insurance = sum("insurance");
+                  const utilities = sum("utilities") + sum("utilities_water") + sum("utilities_electric") + sum("utilities_gas");
+                  const repairs = sum("repairs_maintenance");
+                  const payroll = sum("payroll");
+                  const mgmt = sum("management_fees");
+                  const admin = sum("admin_expenses") + sum("marketing");
+                  const contracts = sum("contract_services");
+                  const fmt = (n: number) => n > 0 ? `$${n.toLocaleString()}` : "—";
+                  return (
+                    <>
+                      <div><span className="text-slate-500 text-xs">Taxes</span><p className="text-slate-200">{fmt(taxes)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Insurance</span><p className="text-slate-200">{fmt(insurance)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Utilities</span><p className="text-slate-200">{fmt(utilities)}</p></div>
+                      <div><span className="text-slate-500 text-xs">R&M</span><p className="text-slate-200">{fmt(repairs)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Payroll</span><p className="text-slate-200">{fmt(payroll)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Management</span><p className="text-slate-200">{fmt(mgmt)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Admin/Mktg</span><p className="text-slate-200">{fmt(admin)}</p></div>
+                      <div><span className="text-slate-500 text-xs">Contract Svcs</span><p className="text-slate-200">{fmt(contracts)}</p></div>
+                    </>
+                  );
+                })()}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const months = dealT12.months;
+                  const sum = (field: string) => months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+                  const units = dealUnits || 1;
+                  const taxes = sum("property_taxes");
+                  const insurance = sum("insurance");
+                  const utilities = sum("utilities") + sum("utilities_water") + sum("utilities_electric") + sum("utilities_gas");
+                  const repairs = sum("repairs_maintenance");
+                  const payroll = sum("payroll");
+                  const admin = sum("admin_expenses") + sum("marketing");
+                  const contracts = sum("contract_services");
+                  setE({
+                    ...e,
+                    property_tax_total: taxes,
+                    insurance_per_unit: units > 0 ? Math.round(insurance / units) : 0,
+                    utilities_per_unit: units > 0 ? Math.round(utilities / units) : 0,
+                    repairs_maintenance_per_unit: units > 0 ? Math.round(repairs / units) : 0,
+                    payroll_annual: payroll,
+                    admin_legal_marketing: admin,
+                    contract_services: contracts,
+                  });
+                  markDirty();
+                }}
+                className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
+              >
+                <Download className="h-3 w-3 mr-1" /> Import to Expenses
+              </Button>
+            </div>
+          </Section>
+        )}
 
         {/* Operating Expenses */}
         <Section title="Operating Expenses">

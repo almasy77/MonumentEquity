@@ -13,6 +13,11 @@ export interface PurchaseAssumptions {
   purchase_price: number;
   closing_cost_rate: number; // % of purchase price
   earnest_money: number;
+  // Scenario-level deal terms (metadata, not used in calculations)
+  bid_price?: number;
+  loi_amount?: number;
+  loi_date?: string;
+  loi_expiration?: string;
 }
 
 export interface FinancingAssumptions {

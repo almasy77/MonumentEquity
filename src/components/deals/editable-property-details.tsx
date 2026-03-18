@@ -29,9 +29,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
   async function updateDeal(field: string, value: string) {
     let parsed: unknown = value;
     const numericFields = [
-      "units", "year_built", "square_footage", "asking_price", "bid_price",
-      "loi_amount", "earnest_money", "final_purchase_price",
-      "current_noi", "current_occupancy", "current_annual_taxes", "current_annual_insurance",
+      "units", "year_built", "square_footage", "asking_price",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -62,9 +60,8 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     >
       <div className="space-y-3">
         {/* Key deal info — pricing and units */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <EditableField label="Asking Price" value={deal.asking_price.toString()} onSave={(v) => updateDeal("asking_price", v)} type="number" prefix="$" />
-          <EditableField label="Bid Price" value={deal.bid_price?.toString() || ""} onSave={(v) => updateDeal("bid_price", v)} type="number" prefix="$" placeholder="Enter bid" />
           <EditableField label="Units" value={deal.units.toString()} onSave={(v) => updateDeal("units", v)} type="number" />
           <div>
             <span className="text-slate-500 text-xs">Price / Unit</span>
@@ -110,44 +107,9 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
         <Separator className="bg-slate-800" />
         <EditableField label="Listing URL" value={deal.source_url || ""} onSave={(v) => updateDeal("source_url", v)} type="url" placeholder="Paste listing URL..." />
 
-        {/* Market Notes */}
+        {/* Notes */}
         <Separator className="bg-slate-800" />
-        <EditableField label="Market Notes" value={deal.market_notes || ""} onSave={(v) => updateDeal("market_notes", v)} placeholder="Add market notes..." />
-
-        {/* LOI Details */}
-        <Separator className="bg-slate-800" />
-        <h4 className="text-sm font-medium text-white">LOI Details</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <EditableField label="LOI Amount" value={deal.loi_amount?.toString() || ""} onSave={(v) => updateDeal("loi_amount", v)} type="number" prefix="$" placeholder="Enter amount" />
-          <EditableField label="LOI Date" value={deal.loi_date || ""} onSave={(v) => updateDeal("loi_date", v)} type="date" placeholder="YYYY-MM-DD" />
-          <EditableField label="Earnest Money" value={deal.earnest_money?.toString() || ""} onSave={(v) => updateDeal("earnest_money", v)} type="number" prefix="$" placeholder="Enter amount" />
-        </div>
-
-        {/* Seller / Broker Financials */}
-        <Separator className="bg-slate-800" />
-        <h4 className="text-sm font-medium text-white">Seller / Broker Financials</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <EditableField label="Current NOI" value={deal.current_noi?.toString() || ""} onSave={(v) => updateDeal("current_noi", v)} type="number" prefix="$" placeholder="Annual NOI" />
-          <EditableField label="Occupancy" value={deal.current_occupancy ? (deal.current_occupancy * 100).toFixed(1) : ""} onSave={(v) => updateDeal("current_occupancy", (Number(v) / 100).toString())} type="number" suffix="%" placeholder="e.g. 92" />
-          <EditableField label="Annual Taxes" value={deal.current_annual_taxes?.toString() || ""} onSave={(v) => updateDeal("current_annual_taxes", v)} type="number" prefix="$" placeholder="Property taxes" />
-          <EditableField label="Annual Insurance" value={deal.current_annual_insurance?.toString() || ""} onSave={(v) => updateDeal("current_annual_insurance", v)} type="number" prefix="$" placeholder="Insurance premium" />
-          <EditableField label="Tax Records URL" value={deal.tax_record_url || ""} onSave={(v) => updateDeal("tax_record_url", v)} type="url" placeholder="County tax assessor link" />
-        </div>
-        {deal.tax_record_url && (
-          <a href={deal.tax_record_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs inline-flex items-center gap-1">
-            View Tax Records
-          </a>
-        )}
-
-        {/* DD & Closing */}
-        <Separator className="bg-slate-800" />
-        <h4 className="text-sm font-medium text-white">Due Diligence & Closing</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <EditableField label="DD Start Date" value={deal.dd_start_date || ""} onSave={(v) => updateDeal("dd_start_date", v)} type="date" />
-          <EditableField label="DD End Date" value={deal.dd_end_date || ""} onSave={(v) => updateDeal("dd_end_date", v)} type="date" />
-          <EditableField label="Closing Date" value={deal.closing_date || ""} onSave={(v) => updateDeal("closing_date", v)} type="date" />
-          <EditableField label="Final Purchase Price" value={deal.final_purchase_price?.toString() || ""} onSave={(v) => updateDeal("final_purchase_price", v)} type="number" prefix="$" placeholder="Agreed price" />
-        </div>
+        <EditableField label="Notes" value={deal.market_notes || ""} onSave={(v) => updateDeal("market_notes", v)} placeholder="Add notes..." />
 
         {/* Building Details */}
         <Separator className="bg-slate-800" />

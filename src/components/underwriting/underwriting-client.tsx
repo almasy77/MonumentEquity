@@ -3,14 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Save, Settings2 } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil } from "lucide-react";
+import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
-import type { UnderwritingResult, ScenarioInputs } from "@/lib/underwriting";
+import type { UnderwritingResult } from "@/lib/underwriting";
 
 interface ScenarioWithResult {
   scenario: Scenario;
@@ -34,6 +33,8 @@ export function UnderwritingClient({
   const [showArchived, setShowArchived] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ id: string; type: "delete" | "archive" } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const loadScenario = useCallback(async (id: string) => {
     setLoading(true);
@@ -172,6 +173,56 @@ export function UnderwritingClient({
     }
   }
 
+  async function cloneScenario(id: string) {
+    setCreating(true);
+    try {
+      const source = scenarios.find((s) => s.id === id);
+      const res = await fetch("/api/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deal_id: deal.id,
+          clone_from: id,
+        }),
+      });
+
+      if (res.ok) {
+        const data: ScenarioWithResult = await res.json();
+        setScenarios((prev) => [...prev, data.scenario]);
+        setActiveId(data.scenario.id);
+        setActiveResult(data.underwriting);
+      }
+    } catch (err) {
+      console.error("Failed to clone scenario:", err);
+    } finally {
+      setCreating(false);
+      setMenuOpenId(null);
+    }
+  }
+
+  async function renameScenario(id: string, newName: string) {
+    if (!newName.trim()) return;
+    try {
+      const res = await fetch(`/api/scenarios/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      if (res.ok) {
+        const data: ScenarioWithResult = await res.json();
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === id ? data.scenario : s))
+        );
+        if (id === activeId) {
+          setActiveResult(data.underwriting);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to rename scenario:", err);
+    }
+    setRenamingId(null);
+  }
+
   function handleConfirmedAction() {
     if (!confirmAction) return;
     if (confirmAction.type === "delete") {
@@ -228,18 +279,34 @@ export function UnderwritingClient({
         {visibleScenarios.map((s) => (
           <div key={s.id} className="relative">
             <div className="flex items-center">
-              <button
-                onClick={() => { if (s.is_active !== false) setActiveId(s.id); }}
-                className={`px-3 py-1.5 text-sm rounded-l-md transition-colors ${
-                  s.is_active === false
-                    ? "bg-slate-800/50 text-slate-600 line-through"
-                    : activeId === s.id
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-                }`}
-              >
-                {s.name}
-              </button>
+              {renamingId === s.id ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); renameScenario(s.id, renameValue); }}
+                  className="flex items-center"
+                >
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={() => renameScenario(s.id, renameValue)}
+                    onKeyDown={(e) => { if (e.key === "Escape") setRenamingId(null); }}
+                    className="px-2 py-1 text-sm bg-slate-700 border border-blue-500 rounded-l-md text-white outline-none w-32"
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => { if (s.is_active !== false) setActiveId(s.id); }}
+                  className={`px-3 py-1.5 text-sm rounded-l-md transition-colors ${
+                    s.is_active === false
+                      ? "bg-slate-800/50 text-slate-600 line-through"
+                      : activeId === s.id
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                  }`}
+                >
+                  {s.name}
+                </button>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === s.id ? null : s.id); }}
                 className={`px-1 py-1.5 text-sm rounded-r-md border-l transition-colors ${
@@ -275,6 +342,18 @@ export function UnderwritingClient({
                     </>
                   ) : (
                     <>
+                      <button
+                        onClick={() => { setRenamingId(s.id); setRenameValue(s.name); setMenuOpenId(null); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 text-left"
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Rename
+                      </button>
+                      <button
+                        onClick={() => { cloneScenario(s.id); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-blue-400 hover:bg-slate-700 text-left"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Clone
+                      </button>
                       <button
                         onClick={() => { setConfirmAction({ id: s.id, type: "archive" }); }}
                         className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-yellow-400 hover:bg-slate-700 text-left"
@@ -389,23 +468,6 @@ export function UnderwritingClient({
 
 // ─── Scenario Analysis Sub-Component ─────────────────────────
 
-interface RevenueAssumptions {
-  vacancy_rate?: number;
-  bad_debt_rate?: number;
-  rent_growth_rate?: number;
-}
-
-interface ExpenseAssumptions {
-  tax_escalation_rate?: number;
-  management_fee_rate?: number;
-}
-
-interface ExitAssumptions {
-  hold_period_years?: number;
-  exit_cap_rate?: number;
-  selling_cost_rate?: number;
-}
-
 function ScenarioAnalysis({
   scenario,
   result,
@@ -419,50 +481,6 @@ function ScenarioAnalysis({
   loading: boolean;
   onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
 }) {
-  const revenue = (scenario.revenue_assumptions ?? {}) as RevenueAssumptions;
-  const expenses = (scenario.expense_assumptions ?? {}) as ExpenseAssumptions;
-  const exit = (scenario.exit_assumptions ?? {}) as ExitAssumptions;
-
-  const [rentGrowth, setRentGrowth] = useState((revenue.rent_growth_rate ?? 0.03) * 100);
-  const [taxEscalation, setTaxEscalation] = useState((expenses.tax_escalation_rate ?? 0.02) * 100);
-  const [vacancy, setVacancy] = useState((revenue.vacancy_rate ?? 0.07) * 100);
-  const [exitCap, setExitCap] = useState((exit.exit_cap_rate ?? 0.07) * 100);
-  const [holdPeriod, setHoldPeriod] = useState(exit.hold_period_years ?? 5);
-  const [dirty, setDirty] = useState(false);
-
-  // Reset local state when scenario changes
-  useEffect(() => {
-    const rev = (scenario.revenue_assumptions ?? {}) as RevenueAssumptions;
-    const exp = (scenario.expense_assumptions ?? {}) as ExpenseAssumptions;
-    const ex = (scenario.exit_assumptions ?? {}) as ExitAssumptions;
-    setRentGrowth((rev.rent_growth_rate ?? 0.03) * 100);
-    setTaxEscalation((exp.tax_escalation_rate ?? 0.02) * 100);
-    setVacancy((rev.vacancy_rate ?? 0.07) * 100);
-    setExitCap((ex.exit_cap_rate ?? 0.07) * 100);
-    setHoldPeriod(ex.hold_period_years ?? 5);
-    setDirty(false);
-  }, [scenario.id, scenario.revenue_assumptions, scenario.expense_assumptions, scenario.exit_assumptions]);
-
-  async function recalculate() {
-    await onUpdate({
-      revenue_assumptions: {
-        ...revenue,
-        rent_growth_rate: rentGrowth / 100,
-        vacancy_rate: vacancy / 100,
-      },
-      expense_assumptions: {
-        ...expenses,
-        tax_escalation_rate: taxEscalation / 100,
-      },
-      exit_assumptions: {
-        ...exit,
-        exit_cap_rate: exitCap / 100,
-        hold_period_years: holdPeriod,
-      },
-    });
-    setDirty(false);
-  }
-
   return (
     <div className="space-y-4">
       {/* Warnings */}
@@ -481,87 +499,15 @@ function ScenarioAnalysis({
         </Card>
       )}
 
-      {/* Scenario Key Assumptions — quick edit */}
-      <Card className="bg-slate-900 border-slate-800">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4 text-blue-400" />
-              <h3 className="text-sm font-medium text-white">Scenario Assumptions</h3>
-              <span className="text-xs text-slate-500">— adjust to compare outcomes</span>
-            </div>
-            {dirty && (
-              <Button
-                onClick={recalculate}
-                disabled={loading}
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {loading ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="h-3 w-3 mr-1" /> Recalculate
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <div>
-              <Label className="text-xs text-slate-400">Rent Growth <span className="text-slate-600">%/yr</span></Label>
-              <Input
-                type="number"
-                value={rentGrowth || ""}
-                onChange={(e) => { setRentGrowth(parseFloat(e.target.value) || 0); setDirty(true); }}
-                step="0.5"
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-slate-400">Expense Escalation <span className="text-slate-600">%/yr</span></Label>
-              <Input
-                type="number"
-                value={taxEscalation || ""}
-                onChange={(e) => { setTaxEscalation(parseFloat(e.target.value) || 0); setDirty(true); }}
-                step="0.5"
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-slate-400">Vacancy <span className="text-slate-600">%</span></Label>
-              <Input
-                type="number"
-                value={vacancy || ""}
-                onChange={(e) => { setVacancy(parseFloat(e.target.value) || 0); setDirty(true); }}
-                step="0.5"
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-slate-400">Exit Cap Rate <span className="text-slate-600">%</span></Label>
-              <Input
-                type="number"
-                value={exitCap || ""}
-                onChange={(e) => { setExitCap(parseFloat(e.target.value) || 0); setDirty(true); }}
-                step="0.25"
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-slate-400">Hold Period <span className="text-slate-600">yrs</span></Label>
-              <Input
-                type="number"
-                value={holdPeriod || ""}
-                onChange={(e) => { setHoldPeriod(parseInt(e.target.value) || 5); setDirty(true); }}
-                min="1"
-                max="30"
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Full Assumptions Form */}
+      <AssumptionsForm
+        scenario={scenario}
+        onUpdate={onUpdate}
+        onDelete={() => {}}
+        loading={loading}
+        dealT12={deal.t12}
+        dealUnits={deal.units}
+      />
 
       {/* Key Metrics */}
       <MetricsBar metrics={result.metrics} />
