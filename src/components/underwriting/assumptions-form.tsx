@@ -196,6 +196,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        {/* Growth Rates */}
+        <Section title="Growth Rates" defaultOpen>
+          <div className="grid grid-cols-3 gap-3">
+            <NumField label="Rent Growth" value={r.rent_growth_rate * 100} suffix="%/yr" step="0.5" onChange={(v) => { setR({ ...r, rent_growth_rate: v / 100 }); markDirty(); }} />
+            <NumField label="Expense Growth" value={(e.expense_escalation_rate || 0) * 100} suffix="%/yr" step="0.5" onChange={(v) => { setE({ ...e, expense_escalation_rate: v / 100 }); markDirty(); }} />
+            <NumField label="Tax Escalation" value={e.tax_escalation_rate * 100} suffix="%/yr" step="0.5" onChange={(v) => { setE({ ...e, tax_escalation_rate: v / 100 }); markDirty(); }} />
+          </div>
+          <p className="text-xs text-slate-500 pt-1">
+            Rent growth applies to all units annually. Expense growth applies to all operating expenses except taxes. Tax escalation applies to property taxes only.
+          </p>
+        </Section>
+
         {/* Purchase & Financing */}
         <Section title="Purchase & Financing" defaultOpen>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -273,20 +285,85 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               <NumField label="Other Income" value={r.other_income_monthly} suffix="/mo" onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
               <NumField label="Vacancy" value={r.vacancy_rate * 100} suffix="%" step="0.5" onChange={(v) => { setR({ ...r, vacancy_rate: v / 100 }); markDirty(); }} />
               <NumField label="Bad Debt" value={r.bad_debt_rate * 100} suffix="%" step="0.5" onChange={(v) => { setR({ ...r, bad_debt_rate: v / 100 }); markDirty(); }} />
-              <NumField label="Rent Growth" value={r.rent_growth_rate * 100} suffix="%/yr" step="0.5" onChange={(v) => { setR({ ...r, rent_growth_rate: v / 100 }); markDirty(); }} />
             </div>
           </div>
         </Section>
 
-        {/* T12 Operating Statement — editable annual totals, import to expenses */}
-        <T12Section
-          dealT12={dealT12}
-          dealUnits={dealUnits || 1}
-          onImport={(t12Expenses) => {
-            setE({ ...e, ...t12Expenses });
-            markDirty();
-          }}
-        />
+        {/* T12 Operating Statement — scenario-local baseline */}
+        <Section title="T12 Operating Statement">
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Trailing 12-month baseline for this scenario. Edit values below, then import to populate expense assumptions.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <NumField label="Gross Potential Rent" value={e.t12_baseline?.gross_potential_rent || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, gross_potential_rent: v } }); markDirty(); }} />
+              <NumField label="Vacancy Loss" value={e.t12_baseline?.vacancy_loss || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, vacancy_loss: v } }); markDirty(); }} />
+              <NumField label="Other Income" value={e.t12_baseline?.other_income || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, other_income: v } }); markDirty(); }} />
+              <NumField label="Property Taxes" value={e.t12_baseline?.property_taxes || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, property_taxes: v } }); markDirty(); }} />
+              <NumField label="Insurance" value={e.t12_baseline?.insurance || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, insurance: v } }); markDirty(); }} />
+              <NumField label="Utilities" value={e.t12_baseline?.utilities || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, utilities: v } }); markDirty(); }} />
+              <NumField label="R&M" value={e.t12_baseline?.repairs_maintenance || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, repairs_maintenance: v } }); markDirty(); }} />
+              <NumField label="Payroll" value={e.t12_baseline?.payroll || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, payroll: v } }); markDirty(); }} />
+              <NumField label="Management Fees" value={e.t12_baseline?.management_fees || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, management_fees: v } }); markDirty(); }} />
+              <NumField label="Admin/Marketing" value={e.t12_baseline?.admin_marketing || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, admin_marketing: v } }); markDirty(); }} />
+              <NumField label="Contract Svcs" value={e.t12_baseline?.contract_services || 0} suffix="/yr" onChange={(v) => { setE({ ...e, t12_baseline: { ...e.t12_baseline, contract_services: v } }); markDirty(); }} />
+            </div>
+            <div className="flex gap-2">
+              {dealT12 && dealT12.months && dealT12.months.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const t12Sum = (field: string) =>
+                      dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+                    setE({
+                      ...e,
+                      t12_baseline: {
+                        gross_potential_rent: t12Sum("gross_potential_rent") || t12Sum("rental_income"),
+                        vacancy_loss: t12Sum("vacancy_loss"),
+                        other_income: t12Sum("other_income"),
+                        property_taxes: t12Sum("property_taxes"),
+                        insurance: t12Sum("insurance"),
+                        utilities: t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"),
+                        repairs_maintenance: t12Sum("repairs_maintenance"),
+                        payroll: t12Sum("payroll"),
+                        management_fees: t12Sum("management_fees"),
+                        admin_marketing: t12Sum("admin_expenses") + t12Sum("marketing"),
+                        contract_services: t12Sum("contract_services"),
+                      },
+                    });
+                    markDirty();
+                  }}
+                  className="border-slate-700 text-slate-400 hover:bg-slate-800"
+                >
+                  <Download className="h-3 w-3 mr-1" /> Load from Deal T12
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const t = e.t12_baseline || {};
+                  const units = dealUnits || 1;
+                  setE({
+                    ...e,
+                    property_tax_total: t.property_taxes || e.property_tax_total,
+                    insurance_per_unit: t.insurance ? Math.round(t.insurance / units) : e.insurance_per_unit,
+                    utilities_per_unit: t.utilities ? Math.round(t.utilities / units) : e.utilities_per_unit,
+                    repairs_maintenance_per_unit: t.repairs_maintenance ? Math.round(t.repairs_maintenance / units) : e.repairs_maintenance_per_unit,
+                    payroll_annual: t.payroll || e.payroll_annual,
+                    admin_legal_marketing: t.admin_marketing || e.admin_legal_marketing,
+                    contract_services: t.contract_services || e.contract_services,
+                  });
+                  markDirty();
+                }}
+                className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
+              >
+                <Download className="h-3 w-3 mr-1" /> Import to Expenses
+              </Button>
+            </div>
+          </div>
+        </Section>
 
         {/* Operating Expenses */}
         <Section title="Operating Expenses">
@@ -297,7 +374,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             <NumField label="Turnover" value={e.turnover_cost_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, turnover_cost_per_unit: v }); markDirty(); }} />
             <NumField label="Insurance" value={e.insurance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, insurance_per_unit: v }); markDirty(); }} />
             <NumField label="Property Tax" value={e.property_tax_total} suffix="/yr total" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
-            <NumField label="Tax Escalation" value={e.tax_escalation_rate * 100} suffix="%/yr" step="0.5" onChange={(v) => { setE({ ...e, tax_escalation_rate: v / 100 }); markDirty(); }} />
             <NumField label="Utilities" value={e.utilities_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, utilities_per_unit: v }); markDirty(); }} />
             <NumField label="Admin/Legal/Mktg" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
             <NumField label="Contract Svcs" value={e.contract_services} suffix="/yr" onChange={(v) => { setE({ ...e, contract_services: v }); markDirty(); }} />
@@ -366,93 +442,3 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   );
 }
 
-// ─── T12 Section ─────────────────────────────────────────────
-
-interface T12Expenses {
-  property_tax_total: number;
-  insurance_per_unit: number;
-  utilities_per_unit: number;
-  repairs_maintenance_per_unit: number;
-  payroll_annual: number;
-  admin_legal_marketing: number;
-  contract_services: number;
-}
-
-function T12Section({
-  dealT12,
-  dealUnits,
-  onImport,
-}: {
-  dealT12?: T12Statement;
-  dealUnits: number;
-  onImport: (expenses: T12Expenses) => void;
-}) {
-  // Compute T12 totals from deal data if available
-  const hasT12 = dealT12?.months && dealT12.months.length > 0;
-  const t12Sum = (field: string) => {
-    if (!hasT12) return 0;
-    return dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
-  };
-
-  const defaults = {
-    taxes: t12Sum("property_taxes"),
-    insurance: t12Sum("insurance"),
-    utilities: t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"),
-    repairs: t12Sum("repairs_maintenance"),
-    payroll: t12Sum("payroll"),
-    mgmt: t12Sum("management_fees"),
-    admin: t12Sum("admin_expenses") + t12Sum("marketing"),
-    contracts: t12Sum("contract_services"),
-  };
-
-  const [taxes, setTaxes] = useState(defaults.taxes);
-  const [insurance, setInsurance] = useState(defaults.insurance);
-  const [utilities, setUtilities] = useState(defaults.utilities);
-  const [repairs, setRepairs] = useState(defaults.repairs);
-  const [payroll, setPayroll] = useState(defaults.payroll);
-  const [admin, setAdmin] = useState(defaults.admin);
-  const [contracts, setContracts] = useState(defaults.contracts);
-
-  const units = dealUnits || 1;
-
-  function handleImport() {
-    onImport({
-      property_tax_total: taxes,
-      insurance_per_unit: units > 0 ? Math.round(insurance / units) : 0,
-      utilities_per_unit: units > 0 ? Math.round(utilities / units) : 0,
-      repairs_maintenance_per_unit: units > 0 ? Math.round(repairs / units) : 0,
-      payroll_annual: payroll,
-      admin_legal_marketing: admin,
-      contract_services: contracts,
-    });
-  }
-
-  return (
-    <Section title="T12 Operating Statement">
-      <div className="space-y-3">
-        <p className="text-xs text-slate-500">
-          {hasT12
-            ? "Annual totals from the deal\u2019s T12 statement. Edit values below, then import to expenses."
-            : "Enter annual T12 operating totals, then import to populate expense assumptions."}
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <NumField label="Taxes" value={taxes} suffix="/yr" onChange={setTaxes} />
-          <NumField label="Insurance" value={insurance} suffix="/yr" onChange={setInsurance} />
-          <NumField label="Utilities" value={utilities} suffix="/yr" onChange={setUtilities} />
-          <NumField label="R&M" value={repairs} suffix="/yr" onChange={setRepairs} />
-          <NumField label="Payroll" value={payroll} suffix="/yr" onChange={setPayroll} />
-          <NumField label="Admin/Mktg" value={admin} suffix="/yr" onChange={setAdmin} />
-          <NumField label="Contract Svcs" value={contracts} suffix="/yr" onChange={setContracts} />
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleImport}
-          className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
-        >
-          <Download className="h-3 w-3 mr-1" /> Import to Expenses
-        </Button>
-      </div>
-    </Section>
-  );
-}
