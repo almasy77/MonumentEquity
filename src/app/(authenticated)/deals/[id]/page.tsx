@@ -18,7 +18,6 @@ import { T12StatementPanel } from "@/components/deals/t12-statement";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
-import { DealAssumptionsPanel } from "@/components/deals/deal-assumptions-panel";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
@@ -198,9 +197,6 @@ export default async function DealDetailPage({
 
       {/* Property Details — property info, LOI, DD, building details */}
       <EditablePropertyDetails deal={deal} />
-
-      {/* Underwriting Assumptions — scenario-level inputs for the financial model */}
-      <DealAssumptionsPanel deal={deal} initialScenarios={scenarios} />
 
       {/* Comps — market sales + rent comps for this city */}
       <DealCompsCard
