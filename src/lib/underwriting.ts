@@ -12,7 +12,7 @@ import { calculateIRR } from "./irr";
 export interface PurchaseAssumptions {
   purchase_price: number;
   closing_cost_rate: number; // % of purchase price
-  earnest_money: number;
+  earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
   bid_price?: number;
   loi_amount?: number;

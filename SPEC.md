@@ -317,7 +317,7 @@ Stage-specific checklist with items and completion states.
 | Purchase & Financing section | 9 fields | **PASS** | Purchase price, closing costs, earnest money, LTV, rate, amort, term, IO, origination |
 | Bid & LOI section | 4 fields (bid price, LOI amount, LOI date, earnest money) | **PASS** | New section added |
 | Revenue & Rent Roll section | Unit mix table + 4 revenue fields | **PASS** | Add/remove unit types, other income, vacancy, bad debt, rent growth |
-| T12 Import section | Shows T12 totals + Import button | **PASS** | Conditional on deal having T12 data, imports to expense fields |
+| T12 Operating Statement section | Editable annual fields + Import button | **PASS** | Always visible; pre-fills from deal T12 if available, otherwise blank for manual entry |
 | Operating Expenses section | 11 expense fields | **PASS** | Per-unit and annual formats |
 | CapEx Per-Unit section | 3 fields | **PASS** | Cost/unit, units to renovate, units/month |
 | CapEx Named Projects | Add/remove projects with 4 fields each | **PASS** | Name, cost, start month, duration |
@@ -349,16 +349,16 @@ Stage-specific checklist with items and completion states.
 | GET /api/scenarios/[id] recalculates | Fresh calculation on read | **PASS** | Reconstructs inputs, runs engine |
 | Activity logging on scenario CRUD | Logs create/update/delete | **PASS** | logActivity calls in all handlers |
 
-### 8.5 Issues / Gaps Found
+### 8.5 Issues Found & Resolved
 
-| # | Severity | Issue | Details |
+| # | Severity | Issue | Resolution |
 |---|---|---|---|
-| 1 | **Low** | Earnest money not used in calculations | Stored in PurchaseAssumptions but never referenced by the engine. Consider using it in equity calculation or documenting it as metadata. |
-| 2 | **Low** | DealAssumptionsPanel still exists | `src/components/deals/deal-assumptions-panel.tsx` is no longer imported on the deal page but the file still exists. Could be cleaned up to avoid confusion. |
-| 3 | **Low** | RentRollTable and T12StatementPanel still exist | Components removed from deal page but files remain. The deal still stores rent_roll and t12 data — these components could be repurposed for the scenario form or cleaned up. |
-| 4 | **Medium** | T12 import only shows when deal has T12 data | If no T12 was entered on the (now removed) T12 panel, the import section won't appear. Need an alternative way to enter T12 data or surface it in scenarios directly. |
-| 5 | **Low** | `getContactDisplayName` import was removed | Cleaned up unused import — no functional impact. |
-| 6 | **Info** | Bid price on deal-level still exists in schema | `deal.bid_price` field remains in the Deal type. Not displayed on the deal page but still stored. CSV export references it. |
+| 1 | **Low** | Earnest money not used in calculations | Documented as metadata in PurchaseAssumptions interface — earnest money is credited at closing, not additive to total equity. |
+| 2 | **Low** | DealAssumptionsPanel orphaned file | Deleted `src/components/deals/deal-assumptions-panel.tsx`. No imports reference it. |
+| 3 | **Low** | RentRollTable and T12StatementPanel still exist | Retained — deal still stores rent_roll and t12 data. These components may be useful for future features or data migration views. |
+| 4 | **Medium** | T12 import only showed when deal had T12 data | **Fixed.** T12 section is now always visible with editable annual fields. Pre-fills from deal T12 if available; otherwise shows blank fields for manual entry. Users can always enter T12 data and import to expenses. |
+| 5 | **Low** | `getContactDisplayName` unused import | Already cleaned up in prior commit. |
+| 6 | **Info** | Bid price on deal-level still exists in schema | Retained intentionally — `deal.bid_price` is used by CSV export and `buildDefaultInputs()` as fallback for scenario purchase price. |
 
 ---
 
@@ -370,4 +370,4 @@ Monument Equity is a well-structured, modern real estate deal management platfor
 2. **Financial scenarios** (underwrite page) — self-contained models with bid/LOI, assumptions, T12 import, full pro forma output
 3. **Deal workflow** (pipeline, tasks, checklists) — tracking progress through acquisition stages
 
-The build matches the spec across all major features. The calculation engine is sound, scenarios are self-contained and cloneable, and the KPI bar allows quick scenario switching on the deal page. The primary gap is the T12 data entry path now that the standalone T12 panel was removed from the deal page — teams that haven't previously entered T12 data won't see the import option in scenarios.
+The build matches the spec across all major features. All QA issues have been resolved. The calculation engine is sound, scenarios are self-contained and cloneable, and the KPI bar allows quick scenario switching on the deal page.

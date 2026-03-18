@@ -278,74 +278,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
-        {/* T12 Operating Statement — import from deal */}
-        {dealT12 && dealT12.months && dealT12.months.length > 0 && (
-          <Section title="T12 Operating Statement">
-            <div className="space-y-3">
-              <p className="text-xs text-slate-500">
-                Annual totals from the deal&apos;s T12 statement. Click &quot;Import to Expenses&quot; to populate expense fields.
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                {(() => {
-                  const months = dealT12.months;
-                  const sum = (field: string) => months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
-                  const units = dealUnits || 1;
-                  const taxes = sum("property_taxes");
-                  const insurance = sum("insurance");
-                  const utilities = sum("utilities") + sum("utilities_water") + sum("utilities_electric") + sum("utilities_gas");
-                  const repairs = sum("repairs_maintenance");
-                  const payroll = sum("payroll");
-                  const mgmt = sum("management_fees");
-                  const admin = sum("admin_expenses") + sum("marketing");
-                  const contracts = sum("contract_services");
-                  const fmt = (n: number) => n > 0 ? `$${n.toLocaleString()}` : "—";
-                  return (
-                    <>
-                      <div><span className="text-slate-500 text-xs">Taxes</span><p className="text-slate-200">{fmt(taxes)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Insurance</span><p className="text-slate-200">{fmt(insurance)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Utilities</span><p className="text-slate-200">{fmt(utilities)}</p></div>
-                      <div><span className="text-slate-500 text-xs">R&M</span><p className="text-slate-200">{fmt(repairs)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Payroll</span><p className="text-slate-200">{fmt(payroll)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Management</span><p className="text-slate-200">{fmt(mgmt)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Admin/Mktg</span><p className="text-slate-200">{fmt(admin)}</p></div>
-                      <div><span className="text-slate-500 text-xs">Contract Svcs</span><p className="text-slate-200">{fmt(contracts)}</p></div>
-                    </>
-                  );
-                })()}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const months = dealT12.months;
-                  const sum = (field: string) => months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
-                  const units = dealUnits || 1;
-                  const taxes = sum("property_taxes");
-                  const insurance = sum("insurance");
-                  const utilities = sum("utilities") + sum("utilities_water") + sum("utilities_electric") + sum("utilities_gas");
-                  const repairs = sum("repairs_maintenance");
-                  const payroll = sum("payroll");
-                  const admin = sum("admin_expenses") + sum("marketing");
-                  const contracts = sum("contract_services");
-                  setE({
-                    ...e,
-                    property_tax_total: taxes,
-                    insurance_per_unit: units > 0 ? Math.round(insurance / units) : 0,
-                    utilities_per_unit: units > 0 ? Math.round(utilities / units) : 0,
-                    repairs_maintenance_per_unit: units > 0 ? Math.round(repairs / units) : 0,
-                    payroll_annual: payroll,
-                    admin_legal_marketing: admin,
-                    contract_services: contracts,
-                  });
-                  markDirty();
-                }}
-                className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
-              >
-                <Download className="h-3 w-3 mr-1" /> Import to Expenses
-              </Button>
-            </div>
-          </Section>
-        )}
+        {/* T12 Operating Statement — editable annual totals, import to expenses */}
+        <T12Section
+          dealT12={dealT12}
+          dealUnits={dealUnits || 1}
+          onImport={(t12Expenses) => {
+            setE({ ...e, ...t12Expenses });
+            markDirty();
+          }}
+        />
 
         {/* Operating Expenses */}
         <Section title="Operating Expenses">
@@ -422,5 +363,96 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         </Section>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── T12 Section ─────────────────────────────────────────────
+
+interface T12Expenses {
+  property_tax_total: number;
+  insurance_per_unit: number;
+  utilities_per_unit: number;
+  repairs_maintenance_per_unit: number;
+  payroll_annual: number;
+  admin_legal_marketing: number;
+  contract_services: number;
+}
+
+function T12Section({
+  dealT12,
+  dealUnits,
+  onImport,
+}: {
+  dealT12?: T12Statement;
+  dealUnits: number;
+  onImport: (expenses: T12Expenses) => void;
+}) {
+  // Compute T12 totals from deal data if available
+  const hasT12 = dealT12?.months && dealT12.months.length > 0;
+  const t12Sum = (field: string) => {
+    if (!hasT12) return 0;
+    return dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+  };
+
+  const defaults = {
+    taxes: t12Sum("property_taxes"),
+    insurance: t12Sum("insurance"),
+    utilities: t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"),
+    repairs: t12Sum("repairs_maintenance"),
+    payroll: t12Sum("payroll"),
+    mgmt: t12Sum("management_fees"),
+    admin: t12Sum("admin_expenses") + t12Sum("marketing"),
+    contracts: t12Sum("contract_services"),
+  };
+
+  const [taxes, setTaxes] = useState(defaults.taxes);
+  const [insurance, setInsurance] = useState(defaults.insurance);
+  const [utilities, setUtilities] = useState(defaults.utilities);
+  const [repairs, setRepairs] = useState(defaults.repairs);
+  const [payroll, setPayroll] = useState(defaults.payroll);
+  const [admin, setAdmin] = useState(defaults.admin);
+  const [contracts, setContracts] = useState(defaults.contracts);
+
+  const units = dealUnits || 1;
+
+  function handleImport() {
+    onImport({
+      property_tax_total: taxes,
+      insurance_per_unit: units > 0 ? Math.round(insurance / units) : 0,
+      utilities_per_unit: units > 0 ? Math.round(utilities / units) : 0,
+      repairs_maintenance_per_unit: units > 0 ? Math.round(repairs / units) : 0,
+      payroll_annual: payroll,
+      admin_legal_marketing: admin,
+      contract_services: contracts,
+    });
+  }
+
+  return (
+    <Section title="T12 Operating Statement">
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          {hasT12
+            ? "Annual totals from the deal\u2019s T12 statement. Edit values below, then import to expenses."
+            : "Enter annual T12 operating totals, then import to populate expense assumptions."}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <NumField label="Taxes" value={taxes} suffix="/yr" onChange={setTaxes} />
+          <NumField label="Insurance" value={insurance} suffix="/yr" onChange={setInsurance} />
+          <NumField label="Utilities" value={utilities} suffix="/yr" onChange={setUtilities} />
+          <NumField label="R&M" value={repairs} suffix="/yr" onChange={setRepairs} />
+          <NumField label="Payroll" value={payroll} suffix="/yr" onChange={setPayroll} />
+          <NumField label="Admin/Mktg" value={admin} suffix="/yr" onChange={setAdmin} />
+          <NumField label="Contract Svcs" value={contracts} suffix="/yr" onChange={setContracts} />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleImport}
+          className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
+        >
+          <Download className="h-3 w-3 mr-1" /> Import to Expenses
+        </Button>
+      </div>
+    </Section>
   );
 }
