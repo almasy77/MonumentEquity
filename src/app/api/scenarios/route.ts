@@ -48,8 +48,77 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "deal_id is required" }, { status: 400 });
     }
 
-    // Fetch deal for defaults
     const redis = getRedis();
+
+    // Clone from existing scenario
+    if (body.clone_from) {
+      const source = await redis.get<Scenario>(`scenario:${body.clone_from}`);
+      if (!source) {
+        return NextResponse.json({ error: "Source scenario not found" }, { status: 404 });
+      }
+
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const cloneName = body.name || `${source.name} (Copy)`;
+
+      const inputs = {
+        purchase: source.purchase_assumptions,
+        financing: source.financing_assumptions,
+        revenue: source.revenue_assumptions,
+        expenses: source.expense_assumptions,
+        capex: source.capex_assumptions,
+        exit: source.exit_assumptions,
+      } as unknown as ScenarioInputs;
+
+      const result = calculateUnderwriting(inputs);
+
+      const cloned: Scenario = {
+        ...source,
+        id,
+        name: cloneName,
+        version: 1,
+        is_active: true,
+        monthly_pro_forma: result.monthly,
+        calculated_metrics: {
+          irr: result.metrics.irr ?? undefined,
+          cash_on_cash: result.metrics.average_cash_on_cash,
+          dscr: result.metrics.year1_dscr,
+          equity_multiple: result.metrics.equity_multiple,
+          going_in_cap: result.metrics.going_in_cap,
+          stabilized_cap: result.metrics.stabilized_cap,
+        },
+        created_at: now,
+        updated_at: now,
+      };
+
+      await redis.set(`scenario:${id}`, JSON.stringify(cloned));
+      await addToIndex(`scenarios:by_deal:${source.deal_id}`, id, Date.now());
+
+      await logActivity({
+        deal_id: source.deal_id,
+        action: "scenario_created",
+        entity_type: "scenario",
+        entity_id: id,
+        details: { name: cloned.name, type: cloned.type, cloned_from: source.name },
+        user_id: session.user.id,
+      });
+
+      return NextResponse.json(
+        {
+          scenario: cloned,
+          underwriting: {
+            monthly: result.monthly,
+            annual: result.annual,
+            metrics: result.metrics,
+            sensitivity: result.sensitivity,
+            warnings: result.warnings,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
+    // Fetch deal for defaults
     const deal = await redis.get<Deal>(`deal:${body.deal_id}`);
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });

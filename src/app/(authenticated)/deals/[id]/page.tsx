@@ -12,15 +12,12 @@ import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
-// EditableMetrics merged into EditablePropertyDetails
-import { RentRollTable } from "@/components/deals/rent-roll-table";
-import { T12StatementPanel } from "@/components/deals/t12-statement";
+import { SellerBrokerFinancials } from "@/components/deals/seller-broker-financials";
+import { DueDiligenceClosing } from "@/components/deals/due-diligence-closing";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
-import { DealAssumptionsPanel } from "@/components/deals/deal-assumptions-panel";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
-import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
   Building2,
@@ -193,14 +190,17 @@ export default async function DealDetailPage({
         </div>
       </div>
 
-      {/* Dynamic KPIs — from active scenario */}
-      <DealKPIBar scenarioIds={scenarios.filter(s => s.is_active !== false).map(s => s.id)} />
+      {/* Dynamic KPIs — from active scenario with selector */}
+      <DealKPIBar scenarios={scenarios.filter(s => s.is_active !== false)} />
 
-      {/* Property Details — property info, LOI, DD, building details */}
+      {/* Property Details — property facts only */}
       <EditablePropertyDetails deal={deal} />
 
-      {/* Underwriting Assumptions — scenario-level inputs for the financial model */}
-      <DealAssumptionsPanel deal={deal} initialScenarios={scenarios} />
+      {/* Seller / Broker Financials */}
+      <SellerBrokerFinancials deal={deal} />
+
+      {/* Due Diligence & Closing */}
+      <DueDiligenceClosing deal={deal} />
 
       {/* Comps — market sales + rent comps for this city */}
       <DealCompsCard
@@ -210,12 +210,6 @@ export default async function DealDetailPage({
         units={deal.units}
         dealAddress={deal.address}
       />
-
-      {/* T12 + Rent Roll section */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <T12StatementPanel dealId={id} t12={deal.t12} rentRoll={deal.rent_roll || []} units={deal.units} />
-        <RentRollTable dealId={id} rentRoll={deal.rent_roll || []} dealUnits={deal.units} />
-      </div>
 
       {/* Sidebar-style row: Contacts, Neighborhood, Activity */}
       <div className="grid md:grid-cols-3 gap-6">

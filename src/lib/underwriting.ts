@@ -12,7 +12,12 @@ import { calculateIRR } from "./irr";
 export interface PurchaseAssumptions {
   purchase_price: number;
   closing_cost_rate: number; // % of purchase price
-  earnest_money: number;
+  earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
+  // Scenario-level deal terms (metadata, not used in calculations)
+  bid_price?: number;
+  loi_amount?: number;
+  loi_date?: string;
+  loi_expiration?: string;
 }
 
 export interface FinancingAssumptions {
@@ -48,11 +53,26 @@ export interface ExpenseAssumptions {
   turnover_cost_per_unit: number; // annual
   insurance_per_unit: number; // annual
   property_tax_total: number; // annual
-  tax_escalation_rate: number; // annual
+  tax_escalation_rate: number; // annual, applied to property taxes only
+  expense_escalation_rate: number; // annual, applied to all non-tax expenses
   utilities_per_unit: number; // annual
   admin_legal_marketing: number; // annual
   contract_services: number; // annual
   reserves_per_unit: number; // annual
+  // T12 baseline — scenario-local operating history used to seed expense fields
+  t12_baseline?: {
+    gross_potential_rent?: number;
+    vacancy_loss?: number;
+    other_income?: number;
+    property_taxes?: number;
+    insurance?: number;
+    utilities?: number;
+    repairs_maintenance?: number;
+    payroll?: number;
+    management_fees?: number;
+    admin_marketing?: number;
+    contract_services?: number;
+  };
 }
 
 export interface CapexProject {
@@ -226,17 +246,18 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
     // OpEx (annualized per-unit costs → monthly)
     const annualTaxEscalation = Math.pow(1 + expenses.tax_escalation_rate, yearIndex);
+    const annualExpEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex);
     const monthlyOpex =
       egi * expenses.management_fee_rate +
-      expenses.payroll_annual / 12 +
-      (totalUnits * expenses.repairs_maintenance_per_unit) / 12 +
-      (totalUnits * expenses.turnover_cost_per_unit) / 12 +
-      (totalUnits * expenses.insurance_per_unit) / 12 +
+      (expenses.payroll_annual * annualExpEscalation) / 12 +
+      (totalUnits * expenses.repairs_maintenance_per_unit * annualExpEscalation) / 12 +
+      (totalUnits * expenses.turnover_cost_per_unit * annualExpEscalation) / 12 +
+      (totalUnits * expenses.insurance_per_unit * annualExpEscalation) / 12 +
       (expenses.property_tax_total * annualTaxEscalation) / 12 +
-      (totalUnits * expenses.utilities_per_unit) / 12 +
-      expenses.admin_legal_marketing / 12 +
-      expenses.contract_services / 12 +
-      (totalUnits * expenses.reserves_per_unit) / 12;
+      (totalUnits * expenses.utilities_per_unit * annualExpEscalation) / 12 +
+      (expenses.admin_legal_marketing * annualExpEscalation) / 12 +
+      (expenses.contract_services * annualExpEscalation) / 12 +
+      (totalUnits * expenses.reserves_per_unit * annualExpEscalation) / 12;
 
     const noi = egi - monthlyOpex;
 
@@ -557,17 +578,18 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       + revenue.other_income_monthly * 12;
 
     const taxEscalation = Math.pow(1 + expenses.tax_escalation_rate, y);
+    const expEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), y);
     const annualOpex =
       annualEGI * expenses.management_fee_rate +
-      expenses.payroll_annual +
-      totalUnits * expenses.repairs_maintenance_per_unit +
-      totalUnits * expenses.turnover_cost_per_unit +
-      totalUnits * expenses.insurance_per_unit +
+      expenses.payroll_annual * expEscalation +
+      totalUnits * expenses.repairs_maintenance_per_unit * expEscalation +
+      totalUnits * expenses.turnover_cost_per_unit * expEscalation +
+      totalUnits * expenses.insurance_per_unit * expEscalation +
       expenses.property_tax_total * taxEscalation +
-      totalUnits * expenses.utilities_per_unit +
-      expenses.admin_legal_marketing +
-      expenses.contract_services +
-      totalUnits * expenses.reserves_per_unit;
+      totalUnits * expenses.utilities_per_unit * expEscalation +
+      expenses.admin_legal_marketing * expEscalation +
+      expenses.contract_services * expEscalation +
+      totalUnits * expenses.reserves_per_unit * expEscalation;
 
     const annualNOI = annualEGI - annualOpex;
 
@@ -594,13 +616,14 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const exitEGI = exitNOI * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
     + revenue.other_income_monthly * 12;
   const taxEsc = Math.pow(1 + expenses.tax_escalation_rate, exit.hold_period_years - 1);
+  const expEsc = Math.pow(1 + (expenses.expense_escalation_rate || 0), exit.hold_period_years - 1);
   const exitOpex =
     exitEGI * expenses.management_fee_rate +
-    expenses.payroll_annual +
+    expenses.payroll_annual * expEsc +
     totalUnits * (expenses.repairs_maintenance_per_unit + expenses.turnover_cost_per_unit +
-      expenses.insurance_per_unit + expenses.utilities_per_unit + expenses.reserves_per_unit) +
+      expenses.insurance_per_unit + expenses.utilities_per_unit + expenses.reserves_per_unit) * expEsc +
     expenses.property_tax_total * taxEsc +
-    expenses.admin_legal_marketing + expenses.contract_services;
+    (expenses.admin_legal_marketing + expenses.contract_services) * expEsc;
   exitNOI = exitEGI - exitOpex;
 
   const loanBalance = calculateLoanBalance(
@@ -780,10 +803,27 @@ export function buildDefaultInputs(
       insurance_per_unit: insurancePerUnit,
       property_tax_total: annualTaxes,
       tax_escalation_rate: d.tax_escalation_rate ?? 0.02,
+      expense_escalation_rate: d.expense_escalation_rate ?? 0.02,
       utilities_per_unit: utilitiesPerUnit,
       admin_legal_marketing: d.admin_legal_marketing ?? 0,
       contract_services: d.contract_services ?? 0,
       reserves_per_unit: d.reserves_per_unit ?? 300,
+      t12_baseline: t12Months.length > 0 ? {
+        gross_potential_rent: sumT12Field(t12Months, "gross_potential_rent"),
+        vacancy_loss: sumT12Field(t12Months, "vacancy_loss"),
+        other_income: sumT12Field(t12Months, "laundry_income") + sumT12Field(t12Months, "parking_income") +
+          sumT12Field(t12Months, "pet_fees") + sumT12Field(t12Months, "application_fees") +
+          sumT12Field(t12Months, "late_fees") + sumT12Field(t12Months, "utility_reimbursements") +
+          sumT12Field(t12Months, "storage_income") + sumT12Field(t12Months, "other_income"),
+        property_taxes: annualTaxes,
+        insurance: annualInsurance,
+        utilities: utilitiesTotal,
+        repairs_maintenance: repairsTotal,
+        payroll: payrollAnnual,
+        management_fees: sumT12Field(t12Months, "management_fees"),
+        admin_marketing: sumT12Field(t12Months, "admin_expenses") + sumT12Field(t12Months, "marketing"),
+        contract_services: sumT12Field(t12Months, "contract_services"),
+      } : undefined,
     },
     capex: {
       per_unit_cost: rehabPerUnit,
