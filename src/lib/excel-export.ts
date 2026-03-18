@@ -53,7 +53,6 @@ const BOLD_FONT: Partial<ExcelJS.Font> = { bold: true, size: 10 };
 const NORMAL_FONT: Partial<ExcelJS.Font> = { size: 10 };
 
 const CURRENCY_FMT = '$#,##0';
-const CURRENCY_DETAIL_FMT = '$#,##0.00';
 const PCT_FMT = '0.0%';
 const NUMBER_FMT = '#,##0';
 const MULT_FMT = '0.00"x"';
@@ -81,7 +80,7 @@ export async function generateExcelWorkbook(
   buildAssumptionsSheet(wb, inputs);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
-  buildReturnsSheet(wb, result, inputs);
+  buildReturnsSheet(wb, result);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix);
   buildCapexSheet(wb, inputs.capex);
@@ -428,7 +427,6 @@ function buildAnnualSheet(
 function buildReturnsSheet(
   wb: ExcelJS.Workbook,
   result: UnderwritingResult,
-  inputs: ScenarioInputs
 ) {
   const ws = wb.addWorksheet("Returns");
   ws.columns = [{ width: 28 }, { width: 18 }];
@@ -562,9 +560,6 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
   ]);
   styleHeaderRow(headerRow, 7);
 
-  let totalUnits = 0;
-  let totalAnnualGPR = 0;
-
   for (let i = 0; i < unitMix.length; i++) {
     const u = unitMix[i];
     const rowNum = i + 2;
@@ -586,8 +581,6 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
       row.getCell(c).border = THIN_BORDER;
     }
 
-    totalUnits += u.count;
-    totalAnnualGPR += u.count * u.current_rent * 12;
   }
 
   // Totals row

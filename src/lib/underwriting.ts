@@ -296,7 +296,6 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
     // GPR: sum across unit mix, accounting for renovated units
     let gpr = 0;
-    let renovatedUnitsUsed = 0;
     const totalRenovated = renovatedByMonth[m - 1];
 
     for (const unit of revenue.unit_mix) {
@@ -307,7 +306,6 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
         unit.count
       );
       const unrenovatedInType = unit.count - renovatedInType;
-      renovatedUnitsUsed += renovatedInType;
 
       const baseRent = unit.current_rent * monthlyRentGrowth;
       const renovatedRent = (unit.current_rent + unit.renovated_rent_premium) * monthlyRentGrowth;
@@ -496,7 +494,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   };
 
   // ── Sensitivity ──
-  const sensitivity = buildSensitivityGrid(inputs, totalEquity);
+  const sensitivity = buildSensitivityGrid(inputs);
 
   // ── Sanity Checks ──
   if (goingInCap < 0.03) warnings.push("Going-in cap rate below 3% — verify pricing");
@@ -613,7 +611,6 @@ function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
 
 function buildSensitivityGrid(
   inputs: ScenarioInputs,
-  baseEquity: number
 ): SensitivityCell[] {
   const priceDeltaOptions = [-0.10, -0.05, 0, 0.05, 0.10];
   const capRateDeltas = [-0.01, -0.005, 0, 0.005, 0.01];

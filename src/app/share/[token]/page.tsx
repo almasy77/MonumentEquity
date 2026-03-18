@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { getRedis } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Building2, DollarSign, TrendingUp, Shield } from "lucide-react";
+import { Building2, TrendingUp, Shield } from "lucide-react";
 import { STAGE_LABELS } from "@/lib/constants";
 import type { Deal, Scenario, ShareLink } from "@/lib/validations";
 
@@ -32,6 +31,7 @@ export default async function SharePage({
   if (!share) return notFound();
 
   // Check expiration
+  // eslint-disable-next-line react-hooks/purity -- server component, not a client render
   if (new Date(share.expires_at).getTime() < Date.now()) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">

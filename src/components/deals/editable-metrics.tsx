@@ -29,6 +29,7 @@ export function EditableMetrics({ deal }: { deal: Deal }) {
 
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
   const daysSinceCreated = Math.floor(
+    // eslint-disable-next-line react-hooks/purity -- stable per mount, days granularity
     (Date.now() - new Date(deal.created_at).getTime()) / 86400000
   );
   const inPlaceCap = deal.current_noi && deal.asking_price > 0

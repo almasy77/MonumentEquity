@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { BarChart3, Building2, Home, MapPin, Calendar, Plus, ExternalLink } from "lucide-react";
+import { BarChart3, Building2, Home, ExternalLink } from "lucide-react";
 import { AddMarketCompDialog } from "@/components/comps/add-market-comp-dialog";
 import { AddRentCompDialog } from "@/components/comps/add-rent-comp-dialog";
 import type { MarketComp, RentComp } from "@/lib/validations";

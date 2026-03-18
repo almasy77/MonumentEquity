@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, ClosingCostBreakdown, UtilitiesBreakdown, ServicesBreakdown, DepreciationAssumptions } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions } from "@/lib/underwriting";
 
 interface Props {
   scenario: Scenario;
@@ -99,6 +99,7 @@ function PctField({
   label,
   value,
   onChange,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   step,
   suffix,
 }: {
