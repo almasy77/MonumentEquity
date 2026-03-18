@@ -196,6 +196,11 @@ export default async function DealDetailPage({
       {/* Property Details — property facts only */}
       <EditablePropertyDetails deal={deal} />
 
+      {/* Buy Box Scorecard — early-stage screening */}
+      {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
+        <BuyBoxScorecard deal={deal} />
+      )}
+
       {/* Seller / Broker Financials */}
       <SellerBrokerFinancials deal={deal} />
 
@@ -211,44 +216,11 @@ export default async function DealDetailPage({
         dealAddress={deal.address}
       />
 
-      {/* Sidebar-style row: Contacts, Neighborhood, Activity */}
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Contacts — with add/assign */}
+      {/* Contacts & Neighborhood */}
+      <div className="grid md:grid-cols-2 gap-6">
         <DealContacts dealId={id} contacts={contacts} contactIds={deal.contact_ids || []} />
-
-        {/* Neighborhood Links */}
         <NeighborhoodLinks deal={deal} />
-
-        {/* Activity */}
-        <Card className="bg-slate-900 border-slate-800">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-white text-base flex items-center gap-2">
-              <Clock className="h-4 w-4" /> Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activities.length === 0 ? (
-              <p className="text-sm text-slate-500">No activity yet</p>
-            ) : (
-              <div className="space-y-3">
-                {activities.map((a: ActivityEntry) => (
-                  <div key={a.id} className="text-sm border-l-2 border-slate-800 pl-3">
-                    <p className="text-slate-300">{a.action.replace(/_/g, " ")}</p>
-                    <p className="text-slate-500 text-xs">
-                      {timeAgo(a.timestamp)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
-
-      {/* Buy Box Scorecard — above Tasks/Checklists */}
-      {(deal.stage === "lead" || deal.stage === "screening" || deal.stage === "analysis") && (
-        <BuyBoxScorecard deal={deal} />
-      )}
 
       {/* Tasks & Checklists */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -270,6 +242,31 @@ export default async function DealDetailPage({
         {/* Checklists */}
         <ChecklistPanel dealId={id} checklists={checklists} />
       </div>
+
+      {/* Activity Log */}
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white text-base flex items-center gap-2">
+            <Clock className="h-4 w-4" /> Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {activities.length === 0 ? (
+            <p className="text-sm text-slate-500">No activity yet</p>
+          ) : (
+            <div className="space-y-3">
+              {activities.map((a: ActivityEntry) => (
+                <div key={a.id} className="text-sm border-l-2 border-slate-800 pl-3">
+                  <p className="text-slate-300">{a.action.replace(/_/g, " ")}</p>
+                  <p className="text-slate-500 text-xs">
+                    {timeAgo(a.timestamp)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
