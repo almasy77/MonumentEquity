@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Save, Settings2 } from "lucide-react";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
 import { SensitivityGrid } from "./sensitivity-grid";
@@ -337,23 +339,27 @@ export function UnderwritingClient({
       {scenarios.length === 0 && !creating && (
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="p-8 text-center">
-            <p className="text-slate-400 mb-4">
-              No underwriting scenarios yet. Create one to start analyzing this deal.
+            <p className="text-slate-400 mb-3">
+              No underwriting scenarios yet. Create one to analyze this deal.
+            </p>
+            <p className="text-xs text-slate-500 mb-4">
+              Scenarios let you compare different assumptions — rent growth, expense escalation, vacancy, and exit cap rates.
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
-              {["base", "value_add", "sale"].map((type) => (
-                <Button
-                  key={type}
-                  onClick={() => createScenario(type)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  {type === "base"
-                    ? "Base Case"
-                    : type === "value_add"
-                      ? "Value-Add"
-                      : "Sale Analysis"}
-                </Button>
+              {[
+                { type: "base", label: "Base Case", desc: "3% rent growth, 2% expense escalation" },
+                { type: "upside", label: "Upside", desc: "5% rent growth, 1.5% expense escalation" },
+                { type: "downside", label: "Downside", desc: "1% rent growth, 3% expense escalation" },
+              ].map(({ type, label, desc }) => (
+                <div key={type} className="text-center">
+                  <Button
+                    onClick={() => createScenario(type)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> {label}
+                  </Button>
+                  <p className="text-[10px] text-slate-500 mt-1">{desc}</p>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -362,43 +368,13 @@ export function UnderwritingClient({
 
       {/* Active Scenario Content */}
       {activeScenario && activeResult && (
-        <>
-          {/* Warnings */}
-          {activeResult.warnings.length > 0 && (
-            <Card className="bg-yellow-900/20 border-yellow-700/50">
-              <CardContent className="p-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
-                  <div className="space-y-1">
-                    {activeResult.warnings.map((w, i) => (
-                      <p key={i} className="text-sm text-yellow-300">
-                        {w}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Key Metrics */}
-          <MetricsBar metrics={activeResult.metrics} />
-
-          {/* Pro Forma */}
-          <ProFormaTable
-            monthly={activeResult.monthly}
-            annual={activeResult.annual}
-          />
-
-          {/* Sensitivity */}
-          <SensitivityGrid
-            sensitivity={activeResult.sensitivity}
-            basePurchasePrice={
-              (activeScenario.purchase_assumptions as { purchase_price?: number })
-                ?.purchase_price ?? deal.asking_price
-            }
-          />
-        </>
+        <ScenarioAnalysis
+          scenario={activeScenario}
+          result={activeResult}
+          deal={deal}
+          loading={loading}
+          onUpdate={updateScenario}
+        />
       )}
 
       {/* Loading state */}
@@ -407,6 +383,203 @@ export function UnderwritingClient({
           <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Scenario Analysis Sub-Component ─────────────────────────
+
+interface RevenueAssumptions {
+  vacancy_rate?: number;
+  bad_debt_rate?: number;
+  rent_growth_rate?: number;
+}
+
+interface ExpenseAssumptions {
+  tax_escalation_rate?: number;
+  management_fee_rate?: number;
+}
+
+interface ExitAssumptions {
+  hold_period_years?: number;
+  exit_cap_rate?: number;
+  selling_cost_rate?: number;
+}
+
+function ScenarioAnalysis({
+  scenario,
+  result,
+  deal,
+  loading,
+  onUpdate,
+}: {
+  scenario: Scenario;
+  result: UnderwritingResult;
+  deal: Deal;
+  loading: boolean;
+  onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
+}) {
+  const revenue = (scenario.revenue_assumptions ?? {}) as RevenueAssumptions;
+  const expenses = (scenario.expense_assumptions ?? {}) as ExpenseAssumptions;
+  const exit = (scenario.exit_assumptions ?? {}) as ExitAssumptions;
+
+  const [rentGrowth, setRentGrowth] = useState((revenue.rent_growth_rate ?? 0.03) * 100);
+  const [taxEscalation, setTaxEscalation] = useState((expenses.tax_escalation_rate ?? 0.02) * 100);
+  const [vacancy, setVacancy] = useState((revenue.vacancy_rate ?? 0.07) * 100);
+  const [exitCap, setExitCap] = useState((exit.exit_cap_rate ?? 0.07) * 100);
+  const [holdPeriod, setHoldPeriod] = useState(exit.hold_period_years ?? 5);
+  const [dirty, setDirty] = useState(false);
+
+  // Reset local state when scenario changes
+  useEffect(() => {
+    const rev = (scenario.revenue_assumptions ?? {}) as RevenueAssumptions;
+    const exp = (scenario.expense_assumptions ?? {}) as ExpenseAssumptions;
+    const ex = (scenario.exit_assumptions ?? {}) as ExitAssumptions;
+    setRentGrowth((rev.rent_growth_rate ?? 0.03) * 100);
+    setTaxEscalation((exp.tax_escalation_rate ?? 0.02) * 100);
+    setVacancy((rev.vacancy_rate ?? 0.07) * 100);
+    setExitCap((ex.exit_cap_rate ?? 0.07) * 100);
+    setHoldPeriod(ex.hold_period_years ?? 5);
+    setDirty(false);
+  }, [scenario.id, scenario.revenue_assumptions, scenario.expense_assumptions, scenario.exit_assumptions]);
+
+  async function recalculate() {
+    await onUpdate({
+      revenue_assumptions: {
+        ...revenue,
+        rent_growth_rate: rentGrowth / 100,
+        vacancy_rate: vacancy / 100,
+      },
+      expense_assumptions: {
+        ...expenses,
+        tax_escalation_rate: taxEscalation / 100,
+      },
+      exit_assumptions: {
+        ...exit,
+        exit_cap_rate: exitCap / 100,
+        hold_period_years: holdPeriod,
+      },
+    });
+    setDirty(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Warnings */}
+      {result.warnings.length > 0 && (
+        <Card className="bg-yellow-900/20 border-yellow-700/50">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                {result.warnings.map((w, i) => (
+                  <p key={i} className="text-sm text-yellow-300">{w}</p>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Scenario Key Assumptions — quick edit */}
+      <Card className="bg-slate-900 border-slate-800">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-blue-400" />
+              <h3 className="text-sm font-medium text-white">Scenario Assumptions</h3>
+              <span className="text-xs text-slate-500">— adjust to compare outcomes</span>
+            </div>
+            {dirty && (
+              <Button
+                onClick={recalculate}
+                disabled={loading}
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {loading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <>
+                    <Save className="h-3 w-3 mr-1" /> Recalculate
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div>
+              <Label className="text-xs text-slate-400">Rent Growth <span className="text-slate-600">%/yr</span></Label>
+              <Input
+                type="number"
+                value={rentGrowth || ""}
+                onChange={(e) => { setRentGrowth(parseFloat(e.target.value) || 0); setDirty(true); }}
+                step="0.5"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Expense Escalation <span className="text-slate-600">%/yr</span></Label>
+              <Input
+                type="number"
+                value={taxEscalation || ""}
+                onChange={(e) => { setTaxEscalation(parseFloat(e.target.value) || 0); setDirty(true); }}
+                step="0.5"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Vacancy <span className="text-slate-600">%</span></Label>
+              <Input
+                type="number"
+                value={vacancy || ""}
+                onChange={(e) => { setVacancy(parseFloat(e.target.value) || 0); setDirty(true); }}
+                step="0.5"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Exit Cap Rate <span className="text-slate-600">%</span></Label>
+              <Input
+                type="number"
+                value={exitCap || ""}
+                onChange={(e) => { setExitCap(parseFloat(e.target.value) || 0); setDirty(true); }}
+                step="0.25"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Hold Period <span className="text-slate-600">yrs</span></Label>
+              <Input
+                type="number"
+                value={holdPeriod || ""}
+                onChange={(e) => { setHoldPeriod(parseInt(e.target.value) || 5); setDirty(true); }}
+                min="1"
+                max="30"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Metrics */}
+      <MetricsBar metrics={result.metrics} />
+
+      {/* Pro Forma */}
+      <ProFormaTable
+        monthly={result.monthly}
+        annual={result.annual}
+      />
+
+      {/* Sensitivity */}
+      <SensitivityGrid
+        sensitivity={result.sensitivity}
+        basePurchasePrice={
+          (scenario.purchase_assumptions as { purchase_price?: number })
+            ?.purchase_price ?? deal.asking_price
+        }
+      />
     </div>
   );
 }

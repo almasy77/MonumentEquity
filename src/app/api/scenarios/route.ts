@@ -90,18 +90,40 @@ export async function POST(req: NextRequest) {
       defaults
     );
 
-    // Merge any provided overrides
+    // Apply scenario-type-specific growth rate presets
+    const scenarioType = body.type || "base";
+    const typePresets: Record<string, { rent_growth_rate?: number; tax_escalation_rate?: number; vacancy_rate?: number; exit_cap_rate?: number }> = {
+      upside: { rent_growth_rate: 0.05, tax_escalation_rate: 0.015, vacancy_rate: 0.05, exit_cap_rate: 0.06 },
+      downside: { rent_growth_rate: 0.01, tax_escalation_rate: 0.03, vacancy_rate: 0.10, exit_cap_rate: 0.08 },
+      value_add: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
+    };
+    const preset = typePresets[scenarioType] || {};
+
+    // Merge any provided overrides (explicit overrides > type presets > defaults)
     const inputs: ScenarioInputs = {
       purchase: { ...defaultInputs.purchase, ...body.purchase_assumptions },
       financing: { ...defaultInputs.financing, ...body.financing_assumptions },
-      revenue: { ...defaultInputs.revenue, ...body.revenue_assumptions },
-      expenses: { ...defaultInputs.expenses, ...body.expense_assumptions },
+      revenue: {
+        ...defaultInputs.revenue,
+        ...(preset.rent_growth_rate !== undefined ? { rent_growth_rate: preset.rent_growth_rate } : {}),
+        ...(preset.vacancy_rate !== undefined ? { vacancy_rate: preset.vacancy_rate } : {}),
+        ...body.revenue_assumptions,
+      },
+      expenses: {
+        ...defaultInputs.expenses,
+        ...(preset.tax_escalation_rate !== undefined ? { tax_escalation_rate: preset.tax_escalation_rate } : {}),
+        ...body.expense_assumptions,
+      },
       capex: {
         ...defaultInputs.capex,
         ...body.capex_assumptions,
         projects: body.capex_assumptions?.projects ?? defaultInputs.capex.projects,
       },
-      exit: { ...defaultInputs.exit, ...body.exit_assumptions },
+      exit: {
+        ...defaultInputs.exit,
+        ...(preset.exit_cap_rate !== undefined ? { exit_cap_rate: preset.exit_cap_rate } : {}),
+        ...body.exit_assumptions,
+      },
     };
 
     // Run calculations
