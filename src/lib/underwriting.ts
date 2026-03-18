@@ -9,9 +9,21 @@ import { calculateIRR } from "./irr";
 
 // ─── Input Types ─────────────────────────────────────────────
 
+export interface ClosingCostBreakdown {
+  title_insurance?: number;
+  legal_fees?: number;
+  property_costs?: number; // inspections, surveys, appraisals
+  prorations?: number;
+  third_party_reports?: number; // phase I/II, PCA
+  transfer_taxes?: number;
+  reserves_escrow?: number;
+  other_closing?: number;
+}
+
 export interface PurchaseAssumptions {
   purchase_price: number;
-  closing_cost_rate: number; // % of purchase price
+  closing_cost_rate: number; // % of purchase price (used if no breakdown)
+  closing_cost_breakdown?: ClosingCostBreakdown;
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
   bid_price?: number;
@@ -46,6 +58,23 @@ export interface RevenueAssumptions {
   rent_growth_rate: number; // annual
 }
 
+export interface UtilitiesBreakdown {
+  electric_per_unit?: number; // annual
+  water_sewer_per_unit?: number; // annual
+  gas_per_unit?: number; // annual
+  trash_per_unit?: number; // annual
+  other_utilities_per_unit?: number; // annual
+}
+
+export interface ServicesBreakdown {
+  landscaping?: number; // annual
+  snow_removal?: number; // annual
+  pest_control?: number; // annual
+  security?: number; // annual
+  cleaning?: number; // annual
+  other_services?: number; // annual
+}
+
 export interface ExpenseAssumptions {
   management_fee_rate: number; // % of EGI
   payroll_annual: number;
@@ -55,9 +84,11 @@ export interface ExpenseAssumptions {
   property_tax_total: number; // annual
   tax_escalation_rate: number; // annual, applied to property taxes only
   expense_escalation_rate: number; // annual, applied to all non-tax expenses
-  utilities_per_unit: number; // annual
+  utilities_per_unit: number; // annual total (sum of breakdown if provided)
+  utilities_breakdown?: UtilitiesBreakdown;
   admin_legal_marketing: number; // annual
-  contract_services: number; // annual
+  contract_services: number; // annual total (sum of breakdown if provided)
+  services_breakdown?: ServicesBreakdown;
   reserves_per_unit: number; // annual
   // T12 baseline — scenario-local operating history used to seed expense fields
   t12_baseline?: {
@@ -90,6 +121,13 @@ export interface CapexAssumptions {
   projects: CapexProject[];
 }
 
+export interface DepreciationAssumptions {
+  land_tax_assessment?: number;
+  improvement_tax_assessment?: number;
+  accelerated_depreciation_pct?: number; // % of improvements on accelerated schedule
+  // Computed from above, but stored for display
+}
+
 export interface ExitAssumptions {
   hold_period_years: number;
   exit_cap_rate: number;
@@ -104,9 +142,23 @@ export interface ScenarioInputs {
   expenses: ExpenseAssumptions;
   capex: CapexAssumptions;
   exit: ExitAssumptions;
+  depreciation?: DepreciationAssumptions;
 }
 
 // ─── Output Types ────────────────────────────────────────────
+
+export interface OpexBreakdown {
+  management_fees: number;
+  payroll: number;
+  repairs_maintenance: number;
+  turnover: number;
+  insurance: number;
+  property_tax: number;
+  utilities: number;
+  admin_legal_marketing: number;
+  contract_services: number;
+  reserves: number;
+}
 
 export interface MonthlyRow {
   month: number; // 1-indexed
@@ -119,6 +171,7 @@ export interface MonthlyRow {
   egi: number; // Effective Gross Income
   // Expenses
   total_opex: number;
+  opex_breakdown: OpexBreakdown;
   // NOI
   noi: number;
   // Debt Service
@@ -147,12 +200,25 @@ export interface AnnualSummary {
   cash_on_cash: number; // annual cash flow / total equity
 }
 
+export interface DepreciationResult {
+  straight_line_annual: number; // purchase_price * % improvements / 27.5
+  accelerated_annual: number; // purchase_price * % improvements * % accelerated / 5 + remainder / 27.5
+  land_pct: number;
+  improvement_pct: number;
+}
+
 export interface DealMetrics {
   // Purchase
+  purchase_price: number;
+  closing_costs: number;
+  origination_fee: number;
   total_cost: number; // purchase + closing + origination
   loan_amount: number;
+  down_payment: number; // purchase_price - loan_amount (encompasses earnest money)
   total_equity: number;
   monthly_debt_service: number;
+  // Depreciation
+  depreciation?: DepreciationResult;
   // Cap Rates
   going_in_cap: number;
   stabilized_cap: number;
@@ -192,7 +258,16 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const warnings: string[] = [];
 
   // ── Purchase & Financing ──
-  const closingCosts = purchase.purchase_price * purchase.closing_cost_rate;
+  const ccBreakdown = purchase.closing_cost_breakdown;
+  const closingCostsFromBreakdown = ccBreakdown
+    ? (ccBreakdown.title_insurance || 0) + (ccBreakdown.legal_fees || 0) +
+      (ccBreakdown.property_costs || 0) + (ccBreakdown.prorations || 0) +
+      (ccBreakdown.third_party_reports || 0) + (ccBreakdown.transfer_taxes || 0) +
+      (ccBreakdown.reserves_escrow || 0) + (ccBreakdown.other_closing || 0)
+    : 0;
+  const closingCosts = closingCostsFromBreakdown > 0
+    ? closingCostsFromBreakdown
+    : purchase.purchase_price * purchase.closing_cost_rate;
   const loanAmount = purchase.purchase_price * financing.ltv;
   const originationFee = loanAmount * financing.origination_fee_rate;
   const totalCost = purchase.purchase_price + closingCosts + originationFee;
@@ -249,17 +324,20 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     // OpEx (annualized per-unit costs → monthly)
     const annualTaxEscalation = Math.pow(1 + expenses.tax_escalation_rate, yearIndex);
     const annualExpEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex);
-    const monthlyOpex =
-      egi * expenses.management_fee_rate +
-      (expenses.payroll_annual * annualExpEscalation) / 12 +
-      (totalUnits * expenses.repairs_maintenance_per_unit * annualExpEscalation) / 12 +
-      (totalUnits * expenses.turnover_cost_per_unit * annualExpEscalation) / 12 +
-      (totalUnits * expenses.insurance_per_unit * annualExpEscalation) / 12 +
-      (expenses.property_tax_total * annualTaxEscalation) / 12 +
-      (totalUnits * expenses.utilities_per_unit * annualExpEscalation) / 12 +
-      (expenses.admin_legal_marketing * annualExpEscalation) / 12 +
-      (expenses.contract_services * annualExpEscalation) / 12 +
-      (totalUnits * expenses.reserves_per_unit * annualExpEscalation) / 12;
+
+    const opexBk: OpexBreakdown = {
+      management_fees: egi * expenses.management_fee_rate,
+      payroll: (expenses.payroll_annual * annualExpEscalation) / 12,
+      repairs_maintenance: (totalUnits * expenses.repairs_maintenance_per_unit * annualExpEscalation) / 12,
+      turnover: (totalUnits * expenses.turnover_cost_per_unit * annualExpEscalation) / 12,
+      insurance: (totalUnits * expenses.insurance_per_unit * annualExpEscalation) / 12,
+      property_tax: (expenses.property_tax_total * annualTaxEscalation) / 12,
+      utilities: (totalUnits * expenses.utilities_per_unit * annualExpEscalation) / 12,
+      admin_legal_marketing: (expenses.admin_legal_marketing * annualExpEscalation) / 12,
+      contract_services: (expenses.contract_services * annualExpEscalation) / 12,
+      reserves: (totalUnits * expenses.reserves_per_unit * annualExpEscalation) / 12,
+    };
+    const monthlyOpex = Object.values(opexBk).reduce((s, v) => s + v, 0);
 
     const noi = egi - monthlyOpex;
 
@@ -281,6 +359,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       other_income: otherIncome,
       egi,
       total_opex: monthlyOpex,
+      opex_breakdown: opexBk,
       noi,
       debt_service: ds,
       capex: monthCapex,
@@ -370,11 +449,39 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     return Math.min(min, dscr);
   }, Infinity);
 
+  // ── Depreciation ──
+  const dep = inputs.depreciation;
+  let depreciation: DepreciationResult | undefined;
+  if (dep && dep.land_tax_assessment && dep.improvement_tax_assessment) {
+    const totalAssessment = dep.land_tax_assessment + dep.improvement_tax_assessment;
+    const landPct = totalAssessment > 0 ? dep.land_tax_assessment / totalAssessment : 0;
+    const improvementPct = totalAssessment > 0 ? dep.improvement_tax_assessment / totalAssessment : 0;
+    const depreciableBasis = purchase.purchase_price * improvementPct;
+    const straightLine = depreciableBasis / 27.5; // residential 27.5 years
+    const accelPct = dep.accelerated_depreciation_pct || 0;
+    const acceleratedPortion = depreciableBasis * accelPct;
+    const remainingPortion = depreciableBasis - acceleratedPortion;
+    const accelerated = (acceleratedPortion / 5) + (remainingPortion / 27.5); // 5-year accelerated + 27.5 remainder
+    depreciation = {
+      straight_line_annual: straightLine,
+      accelerated_annual: accelerated,
+      land_pct: landPct,
+      improvement_pct: improvementPct,
+    };
+  }
+
+  const downPayment = purchase.purchase_price - loanAmount;
+
   const metrics: DealMetrics = {
+    purchase_price: purchase.purchase_price,
+    closing_costs: closingCosts,
+    origination_fee: originationFee,
     total_cost: totalCost,
     loan_amount: loanAmount,
+    down_payment: downPayment,
     total_equity: totalEquity,
     monthly_debt_service: monthlyDS,
+    depreciation,
     going_in_cap: goingInCap,
     stabilized_cap: stabilizedCap,
     irr,

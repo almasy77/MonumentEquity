@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
         expenses: source.expense_assumptions,
         capex: source.capex_assumptions,
         exit: source.exit_assumptions,
+        depreciation: (source as Record<string, unknown>).depreciation_assumptions || undefined,
       } as unknown as ScenarioInputs;
 
       const result = calculateUnderwriting(inputs);
@@ -193,6 +194,7 @@ export async function POST(req: NextRequest) {
         ...(preset.exit_cap_rate !== undefined ? { exit_cap_rate: preset.exit_cap_rate } : {}),
         ...body.exit_assumptions,
       },
+      depreciation: body.depreciation_assumptions || undefined,
     };
 
     // Run calculations
@@ -214,6 +216,7 @@ export async function POST(req: NextRequest) {
         projects: inputs.capex.projects,
       },
       exit_assumptions: inputs.exit as unknown as Record<string, unknown>,
+      depreciation_assumptions: (inputs.depreciation || {}) as unknown as Record<string, unknown>,
       monthly_pro_forma: result.monthly,
       calculated_metrics: {
         irr: result.metrics.irr ?? undefined,
