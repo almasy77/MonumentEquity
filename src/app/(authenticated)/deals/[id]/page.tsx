@@ -16,10 +16,10 @@ import { EditablePropertyDetails } from "@/components/deals/editable-property-de
 import { RentRollTable } from "@/components/deals/rent-roll-table";
 import { T12StatementPanel } from "@/components/deals/t12-statement";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
-import { FinancingCalculator } from "@/components/deals/financing-calculator";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
 import { DealAssumptionsPanel } from "@/components/deals/deal-assumptions-panel";
+import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
@@ -193,13 +193,13 @@ export default async function DealDetailPage({
         </div>
       </div>
 
-      {/* Property Details — includes key metrics, property info, financials */}
+      {/* Dynamic KPIs — from active scenario */}
+      <DealKPIBar scenarioIds={scenarios.filter(s => s.is_active !== false).map(s => s.id)} />
+
+      {/* Property Details — property info, LOI, DD, building details */}
       <EditablePropertyDetails deal={deal} />
 
-      {/* Financing + Transaction */}
-      <FinancingCalculator deal={deal} />
-
-      {/* Underwriting Assumptions — scenario-level inputs */}
+      {/* Underwriting Assumptions — scenario-level inputs for the financial model */}
       <DealAssumptionsPanel deal={deal} initialScenarios={scenarios} />
 
       {/* Comps — market sales + rent comps for this city */}

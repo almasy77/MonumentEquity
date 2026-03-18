@@ -54,15 +54,6 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
   const daysSinceCreated = Math.floor(
     (Date.now() - new Date(deal.created_at).getTime()) / 86400000
   );
-  const inPlaceCap = deal.current_noi && deal.asking_price > 0
-    ? deal.current_noi / deal.asking_price
-    : null;
-
-  // Compute loan amount the same way as the Financing card
-  const financingBasis = deal.bid_price || deal.asking_price;
-  const computedLoanAmount = deal.ltv
-    ? financingBasis * deal.ltv
-    : deal.loan_amount || 0;
 
   return (
     <CollapsibleCard
@@ -70,7 +61,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
       icon={<Building2 className="h-4 w-4 text-blue-400" />}
     >
       <div className="space-y-3">
-        {/* Key Metrics — inline with property details */}
+        {/* Key deal info — pricing and units */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
           <EditableField label="Asking Price" value={deal.asking_price.toString()} onSave={(v) => updateDeal("asking_price", v)} type="number" prefix="$" />
           <EditableField label="Bid Price" value={deal.bid_price?.toString() || ""} onSave={(v) => updateDeal("bid_price", v)} type="number" prefix="$" placeholder="Enter bid" />
@@ -84,42 +75,6 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
             <p className="text-slate-200 text-sm">{daysSinceCreated}</p>
           </div>
         </div>
-
-        {/* Secondary metrics row */}
-        {(inPlaceCap !== null || deal.current_noi || deal.loan_amount || deal.current_occupancy !== undefined) && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-            {inPlaceCap !== null && (
-              <div>
-                <span className="text-slate-500 text-xs">In-Place Cap</span>
-                <p className="text-slate-200 text-sm">{(inPlaceCap * 100).toFixed(2)}%</p>
-              </div>
-            )}
-            {deal.current_noi && (
-              <div>
-                <span className="text-slate-500 text-xs">Current NOI</span>
-                <p className="text-slate-200 text-sm">{formatCurrency(deal.current_noi)}</p>
-              </div>
-            )}
-            {deal.current_occupancy !== undefined && deal.current_occupancy !== null && (
-              <div>
-                <span className="text-slate-500 text-xs">Occupancy</span>
-                <p className="text-slate-200 text-sm">{(deal.current_occupancy * 100).toFixed(0)}%</p>
-              </div>
-            )}
-            {computedLoanAmount > 0 && (
-              <div>
-                <span className="text-slate-500 text-xs">Loan Amount</span>
-                <p className="text-slate-200 text-sm">{formatCurrency(computedLoanAmount)}</p>
-              </div>
-            )}
-            {deal.monthly_debt_service && (
-              <div>
-                <span className="text-slate-500 text-xs">Monthly P&I</span>
-                <p className="text-slate-200 text-sm">{formatCurrency(deal.monthly_debt_service)}</p>
-              </div>
-            )}
-          </div>
-        )}
 
         <Separator className="bg-slate-800" />
 
