@@ -344,7 +344,6 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const stabilizedNOI = annual.length > 1 ? annual[annual.length - 1].noi : year1NOI;
   const goingInCap = purchase.purchase_price > 0 ? year1NOI / purchase.purchase_price : 0;
   const stabilizedCap = purchase.purchase_price > 0 ? stabilizedNOI / purchase.purchase_price : 0;
-  const impliedExitCap = exitValue > 0 ? lastYearNOI / exitValue : 0;
 
   // IRR: cash flows = [-equity, annual CF year 1..N-1, annual CF year N + net sale proceeds]
   const irrFlows: number[] = [-totalEquity];

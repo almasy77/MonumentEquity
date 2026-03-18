@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,7 +66,6 @@ function CurrencyField({
 }) {
   const [focused, setFocused] = useState(false);
   const [editValue, setEditValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const displayValue = value ? `$${formatWithCommas(value)}` : "";
 
@@ -77,7 +76,6 @@ function CurrencyField({
         {suffix && <span className="text-slate-600 ml-1">{suffix}</span>}
       </Label>
       <Input
-        ref={inputRef}
         type="text"
         value={focused ? editValue : displayValue}
         onFocus={() => {
@@ -646,20 +644,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             <NumField label="Hold Period" value={ex.hold_period_years} suffix="yrs" onChange={(v) => { setEx({ ...ex, hold_period_years: v }); markDirty(); }} />
             <CurrencyField label="Sale Price" value={ex.sale_price || 0} onChange={(v) => { setEx({ ...ex, sale_price: v }); markDirty(); }} />
             <PctField label="Selling Costs" value={ex.selling_cost_rate} onChange={(v) => { setEx({ ...ex, selling_cost_rate: v }); markDirty(); }} />
-            <ReadOnlyField
-              label="Exit Cap Rate"
-              suffix="(calculated)"
-              value={
-                ex.sale_price && ex.sale_price > 0 && t12NOI > 0
-                  ? `${((t12NOI / ex.sale_price) * 100).toFixed(2)}%`
-                  : ex.exit_cap_rate
-                    ? `${(ex.exit_cap_rate * 100).toFixed(2)}%`
+            {ex.sale_price && ex.sale_price > 0 ? (
+              <ReadOnlyField
+                label="Exit Cap Rate"
+                suffix="(calculated)"
+                value={
+                  t12NOI > 0
+                    ? `${((t12NOI / ex.sale_price) * 100).toFixed(2)}%`
                     : "—"
-              }
-            />
+                }
+              />
+            ) : (
+              <PctField label="Exit Cap Rate" value={ex.exit_cap_rate} onChange={(v) => { setEx({ ...ex, exit_cap_rate: v }); markDirty(); }} />
+            )}
           </div>
           <p className="text-xs text-slate-500 pt-1">
-            Enter a sale price to calculate the exit cap rate. If no sale price is provided, the exit cap rate from above will be used.
+            {ex.sale_price && ex.sale_price > 0
+              ? "Exit cap rate is calculated from Sale Price and projected NOI."
+              : "Enter a sale price to auto-calculate exit cap rate, or set the cap rate directly."}
           </p>
         </Section>
       </CardContent>
