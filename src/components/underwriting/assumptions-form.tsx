@@ -343,12 +343,11 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       <CardContent className="space-y-2">
         {/* Bid & LOI — moved to top */}
         <Section title="Bid & LOI" defaultOpen>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <CurrencyField label="Bid Price" value={p.bid_price || 0} onChange={(v) => {
-              setP({ ...p, bid_price: v, purchase_price: v || p.purchase_price });
+              setP({ ...p, bid_price: v, loi_amount: v, purchase_price: v || p.purchase_price });
               markDirty();
             }} />
-            <CurrencyField label="LOI Amount" value={p.loi_amount || 0} onChange={(v) => { setP({ ...p, loi_amount: v }); markDirty(); }} />
             <div>
               <Label className="text-xs text-slate-400">LOI Date</Label>
               <Input
@@ -367,7 +366,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <CurrencyField label="Purchase Price" value={p.purchase_price} onChange={(v) => { setP({ ...p, purchase_price: v }); markDirty(); }} />
             <PctField label="Closing Costs" value={p.closing_cost_rate} onChange={(v) => { setP({ ...p, closing_cost_rate: v }); markDirty(); }} />
-            <CurrencyField label="Earnest Money" value={p.earnest_money} onChange={(v) => { setP({ ...p, earnest_money: v }); markDirty(); }} />
             <PctField label="LTV" value={f.ltv} onChange={(v) => { setF({ ...f, ltv: v }); markDirty(); }} />
             <PctField label="Interest Rate" value={f.interest_rate} onChange={(v) => { setF({ ...f, interest_rate: v }); markDirty(); }} />
             <NumField label="Amortization" value={f.amortization_years} suffix="yrs" onChange={(v) => { setF({ ...f, amortization_years: v }); markDirty(); }} />
