@@ -86,6 +86,7 @@ export interface CapexAssumptions {
   per_unit_cost: number;
   units_to_renovate: number;
   units_per_month: number; // renovation pace
+  renovation_start_month: number; // 1-indexed, when per-unit renovations begin
   projects: CapexProject[];
 }
 
@@ -93,6 +94,7 @@ export interface ExitAssumptions {
   hold_period_years: number;
   exit_cap_rate: number;
   selling_cost_rate: number;
+  sale_price?: number; // if provided, overrides exit_cap_rate-derived value
 }
 
 export interface ScenarioInputs {
@@ -319,7 +321,9 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
   // ── Exit ──
   const lastYearNOI = annual.length > 0 ? annual[annual.length - 1].noi : 0;
-  const exitValue = exit.exit_cap_rate > 0 ? lastYearNOI / exit.exit_cap_rate : 0;
+  const exitValue = exit.sale_price && exit.sale_price > 0
+    ? exit.sale_price
+    : (exit.exit_cap_rate > 0 ? lastYearNOI / exit.exit_cap_rate : 0);
   const sellingCosts = exitValue * exit.selling_cost_rate;
 
   // Outstanding loan balance at exit
@@ -453,12 +457,15 @@ function buildRenovationSchedule(
   const schedule: number[] = new Array(totalMonths).fill(0);
   if (capex.units_per_month <= 0 || capex.units_to_renovate <= 0) return schedule;
 
+  const startMonth = Math.max(1, capex.renovation_start_month || 1);
   let renovated = 0;
   for (let m = 0; m < totalMonths; m++) {
-    renovated = Math.min(
-      renovated + capex.units_per_month,
-      capex.units_to_renovate
-    );
+    if (m + 1 >= startMonth) {
+      renovated = Math.min(
+        renovated + capex.units_per_month,
+        capex.units_to_renovate
+      );
+    }
     schedule[m] = renovated;
   }
   return schedule;
@@ -468,13 +475,16 @@ function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
   let total = 0;
 
   // Per-unit renovations: spread cost evenly across renovation pace
-  if (capex.units_per_month > 0 && capex.per_unit_cost > 0) {
+  const startMonth = Math.max(1, capex.renovation_start_month || 1);
+  if (capex.units_per_month > 0 && capex.per_unit_cost > 0 && month >= startMonth) {
+    const monthsActive = month - startMonth + 1;
+    const monthsActivePrev = monthsActive - 1;
     const totalRenovatedBefore = Math.min(
-      (month - 1) * capex.units_per_month,
+      monthsActivePrev * capex.units_per_month,
       capex.units_to_renovate
     );
     const totalRenovatedAfter = Math.min(
-      month * capex.units_per_month,
+      monthsActive * capex.units_per_month,
       capex.units_to_renovate
     );
     const unitsThisMonth = totalRenovatedAfter - totalRenovatedBefore;
@@ -829,6 +839,7 @@ export function buildDefaultInputs(
       per_unit_cost: rehabPerUnit,
       units_to_renovate: rehabPerUnit > 0 ? deal.units : 0,
       units_per_month: rehabPerUnit > 0 ? Math.max(1, Math.ceil(deal.units / 12)) : 0,
+      renovation_start_month: 1,
       projects: [],
     },
     exit: {

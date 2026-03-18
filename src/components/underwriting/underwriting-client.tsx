@@ -499,6 +499,9 @@ function ScenarioAnalysis({
         </Card>
       )}
 
+      {/* Key Metrics — at the top */}
+      <MetricsBar metrics={result.metrics} />
+
       {/* Full Assumptions Form */}
       <AssumptionsForm
         scenario={scenario}
@@ -508,9 +511,6 @@ function ScenarioAnalysis({
         dealT12={deal.t12}
         dealUnits={deal.units}
       />
-
-      {/* Key Metrics */}
-      <MetricsBar metrics={result.metrics} />
 
       {/* Pro Forma */}
       <ProFormaTable
