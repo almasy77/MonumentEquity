@@ -19,6 +19,7 @@ import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { FinancingCalculator } from "@/components/deals/financing-calculator";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
+import { DealAssumptionsPanel } from "@/components/deals/deal-assumptions-panel";
 import { getContactDisplayName } from "@/lib/contact-utils";
 import {
   ArrowLeft,
@@ -28,7 +29,7 @@ import {
   ListTodo,
   MapPin,
 } from "lucide-react";
-import type { Deal, Contact, Task } from "@/lib/validations";
+import type { Deal, Contact, Task, Scenario } from "@/lib/validations";
 import type { ActivityEntry } from "@/lib/activity";
 import type { ChecklistInstance } from "@/lib/checklist-templates";
 
@@ -83,6 +84,23 @@ async function getChecklists(dealId: string): Promise<ChecklistInstance[]> {
   }
 }
 
+async function getScenarios(dealId: string): Promise<Scenario[]> {
+  try {
+    const redis = getRedis();
+    const ids = await redis.zrange(`scenarios:by_deal:${dealId}`, 0, -1, { rev: true });
+    if (ids.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    for (const id of ids) {
+      pipeline.get(`scenario:${id}`);
+    }
+    const results = await pipeline.exec<(Scenario | null)[]>();
+    return results.filter((r): r is Scenario => r !== null);
+  } catch {
+    return [];
+  }
+}
+
 async function getContacts(ids: string[]): Promise<Contact[]> {
   if (ids.length === 0) return [];
   try {
@@ -107,11 +125,12 @@ export default async function DealDetailPage({
   const deal = await getDeal(id);
   if (!deal) notFound();
 
-  const [contacts, activities, tasks, checklists] = await Promise.all([
+  const [contacts, activities, tasks, checklists, scenarios] = await Promise.all([
     getContacts(deal.contact_ids || []),
     getActivitiesForDeal(id, 10),
     getTasks(id),
     getChecklists(id),
+    getScenarios(id),
   ]);
 
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -179,6 +198,9 @@ export default async function DealDetailPage({
 
       {/* Financing + Transaction */}
       <FinancingCalculator deal={deal} />
+
+      {/* Underwriting Assumptions — scenario-level inputs */}
+      <DealAssumptionsPanel deal={deal} initialScenarios={scenarios} />
 
       {/* Comps — market sales + rent comps for this city */}
       <DealCompsCard

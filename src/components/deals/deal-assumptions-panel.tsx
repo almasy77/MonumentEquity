@@ -3,19 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff } from "lucide-react";
-import { MetricsBar } from "./metrics-bar";
-import { ProFormaTable } from "./pro-forma-table";
-import { SensitivityGrid } from "./sensitivity-grid";
+import { Plus, Loader2, Archive, Trash2, MoreVertical, Eye, EyeOff } from "lucide-react";
+import { AssumptionsForm } from "@/components/underwriting/assumptions-form";
 import type { Deal, Scenario } from "@/lib/validations";
-import type { UnderwritingResult, ScenarioInputs } from "@/lib/underwriting";
+import type { UnderwritingResult } from "@/lib/underwriting";
 
 interface ScenarioWithResult {
   scenario: Scenario;
   underwriting: UnderwritingResult;
 }
 
-export function UnderwritingClient({
+export function DealAssumptionsPanel({
   deal,
   initialScenarios,
 }: {
@@ -26,7 +24,6 @@ export function UnderwritingClient({
   const [activeId, setActiveId] = useState<string | null>(
     initialScenarios.find((s) => s.is_active !== false)?.id ?? null
   );
-  const [activeResult, setActiveResult] = useState<UnderwritingResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -39,8 +36,6 @@ export function UnderwritingClient({
       const res = await fetch(`/api/scenarios/${id}`);
       if (res.ok) {
         const data: ScenarioWithResult = await res.json();
-        setActiveResult(data.underwriting);
-        // Update the scenario in our list
         setScenarios((prev) =>
           prev.map((s) => (s.id === id ? data.scenario : s))
         );
@@ -84,7 +79,6 @@ export function UnderwritingClient({
         const data: ScenarioWithResult = await res.json();
         setScenarios((prev) => [...prev, data.scenario]);
         setActiveId(data.scenario.id);
-        setActiveResult(data.underwriting);
       }
     } catch (err) {
       console.error("Failed to create scenario:", err);
@@ -108,7 +102,6 @@ export function UnderwritingClient({
         setScenarios((prev) =>
           prev.map((s) => (s.id === activeId ? data.scenario : s))
         );
-        setActiveResult(data.underwriting);
       }
     } catch (err) {
       console.error("Failed to update scenario:", err);
@@ -131,7 +124,6 @@ export function UnderwritingClient({
         if (activeId === id) {
           const remaining = scenarios.filter((s) => s.id !== id && s.is_active !== false);
           setActiveId(remaining[0]?.id ?? null);
-          setActiveResult(null);
         }
       }
     } catch (err) {
@@ -163,7 +155,6 @@ export function UnderwritingClient({
       if (activeId === id) {
         const remaining = scenarios.filter((s) => s.id !== id && s.is_active !== false);
         setActiveId(remaining[0]?.id ?? null);
-        setActiveResult(null);
       }
     } catch (err) {
       console.error("Failed to delete scenario:", err);
@@ -187,7 +178,7 @@ export function UnderwritingClient({
   const visibleScenarios = showArchived ? scenarios : activeScenarios;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Confirmation Dialog */}
       {confirmAction && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setConfirmAction(null)}>
@@ -223,6 +214,7 @@ export function UnderwritingClient({
 
       {/* Scenario Tabs */}
       <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-medium text-slate-300 mr-1">Scenarios:</span>
         {visibleScenarios.map((s) => (
           <div key={s.id} className="relative">
             <div className="flex items-center">
@@ -316,21 +308,6 @@ export function UnderwritingClient({
             {showArchived ? "Hide" : "Show"} archived ({archivedScenarios.length})
           </button>
         )}
-        {activeId && activeResult && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              window.open(
-                `/api/export/${deal.id}?scenario_id=${activeId}`,
-                "_blank"
-              );
-            }}
-            className="border-slate-700 text-green-400 hover:bg-green-900/20 ml-auto"
-          >
-            <Download className="h-3 w-3 mr-1" /> Export Excel
-          </Button>
-        )}
       </div>
 
       {/* No scenarios yet */}
@@ -360,50 +337,19 @@ export function UnderwritingClient({
         </Card>
       )}
 
-      {/* Active Scenario Content */}
-      {activeScenario && activeResult && (
-        <>
-          {/* Warnings */}
-          {activeResult.warnings.length > 0 && (
-            <Card className="bg-yellow-900/20 border-yellow-700/50">
-              <CardContent className="p-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
-                  <div className="space-y-1">
-                    {activeResult.warnings.map((w, i) => (
-                      <p key={i} className="text-sm text-yellow-300">
-                        {w}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Key Metrics */}
-          <MetricsBar metrics={activeResult.metrics} />
-
-          {/* Pro Forma */}
-          <ProFormaTable
-            monthly={activeResult.monthly}
-            annual={activeResult.annual}
-          />
-
-          {/* Sensitivity */}
-          <SensitivityGrid
-            sensitivity={activeResult.sensitivity}
-            basePurchasePrice={
-              (activeScenario.purchase_assumptions as { purchase_price?: number })
-                ?.purchase_price ?? deal.asking_price
-            }
-          />
-        </>
+      {/* Active Scenario Assumptions */}
+      {activeScenario && (
+        <AssumptionsForm
+          scenario={activeScenario}
+          onUpdate={updateScenario}
+          onDelete={() => deleteScenario(activeScenario.id)}
+          loading={loading}
+        />
       )}
 
       {/* Loading state */}
-      {loading && !activeResult && (
-        <div className="flex justify-center py-12">
+      {loading && !activeScenario && (
+        <div className="flex justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
         </div>
       )}
