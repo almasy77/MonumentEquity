@@ -11,6 +11,8 @@ import { DefaultAssumptionsForm } from "@/components/settings/default-assumption
 import { ProfileForm } from "@/components/settings/profile-form";
 import { NotificationPrefsForm } from "@/components/settings/notification-prefs-form";
 import { ChecklistTemplateViewer } from "@/components/settings/checklist-template-viewer";
+import { TeamManagement } from "@/components/settings/team-management";
+import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { getEntity } from "@/lib/db";
 import type { User } from "@/lib/validations";
 
@@ -43,20 +45,13 @@ export default async function SettingsPage() {
     );
   }
 
-  return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Profile, underwriting defaults, and checklist templates
-        </p>
-      </div>
-
+  const generalContent = (
+    <div className="space-y-6">
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader>
           <CardTitle className="text-white">Profile & Security</CardTitle>
           <CardDescription className="text-slate-400">
-            Update your name and password
+            Update your name, email, and password
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -83,19 +78,6 @@ export default async function SettingsPage() {
 
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader>
-          <CardTitle className="text-white">Default Assumptions</CardTitle>
-          <CardDescription className="text-slate-400">
-            Standard underwriting defaults that pre-fill new scenarios.
-            Changes here apply to all future scenarios.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DefaultAssumptionsForm />
-        </CardContent>
-      </Card>
-
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader>
           <CardTitle className="text-white">Checklist Templates</CardTitle>
           <CardDescription className="text-slate-400">
             Review the checklist templates applied to deals at each stage.
@@ -106,18 +88,52 @@ export default async function SettingsPage() {
           <ChecklistTemplateViewer />
         </CardContent>
       </Card>
+    </div>
+  );
 
-      <Card className="bg-slate-900 border-slate-800">
-        <CardHeader>
-          <CardTitle className="text-white">Team</CardTitle>
-          <CardDescription className="text-slate-400">
-            Manage VA access
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-slate-400 text-sm">
-          VA management will be available here.
-        </CardContent>
-      </Card>
+  const assumptionsContent = (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader>
+        <CardTitle className="text-white">Default Assumptions</CardTitle>
+        <CardDescription className="text-slate-400">
+          Standard underwriting defaults that pre-fill new scenarios.
+          Changes here apply to all future scenarios.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <DefaultAssumptionsForm />
+      </CardContent>
+    </Card>
+  );
+
+  const teamContent = (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader>
+        <CardTitle className="text-white">Team</CardTitle>
+        <CardDescription className="text-slate-400">
+          Manage team members and read-only access
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <TeamManagement />
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Profile, underwriting defaults, team, and checklist templates
+        </p>
+      </div>
+
+      <SettingsTabs
+        generalContent={generalContent}
+        assumptionsContent={assumptionsContent}
+        teamContent={teamContent}
+      />
     </div>
   );
 }

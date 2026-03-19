@@ -10,18 +10,18 @@ declare module "next-auth" {
       id: string;
       email: string;
       name: string;
-      role: "admin" | "va";
+      role: "admin" | "va" | "viewer";
     };
   }
   interface User {
-    role: "admin" | "va";
+    role: "admin" | "va" | "viewer";
   }
 }
 
 declare module "next-auth" {
   interface JWT {
     id: string;
-    role: "admin" | "va";
+    role: "admin" | "va" | "viewer";
   }
 }
 
@@ -72,7 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       session.user.id = token.id as string;
-      session.user.role = token.role as "admin" | "va";
+      session.user.role = token.role as "admin" | "va" | "viewer";
       return session;
     },
   },

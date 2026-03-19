@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role === "va") {
-    return NextResponse.json({ error: "VAs cannot create share links" }, { status: 403 });
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Only admins can create share links" }, { status: 403 });
   }
 
   try {

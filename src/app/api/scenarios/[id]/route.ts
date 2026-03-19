@@ -57,6 +57,9 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.user.role === "viewer") {
+    return NextResponse.json({ error: "Read-only access" }, { status: 403 });
+  }
 
   try {
     const { id } = await ctx.params;
