@@ -36,6 +36,7 @@ export function TeamManagement() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [tempPassword, setTempPassword] = useState("");
+  const [invitedEmail, setInvitedEmail] = useState("");
   const [copied, setCopied] = useState(false);
 
   const fetchMembers = useCallback(async () => {
@@ -73,6 +74,7 @@ export function TeamManagement() {
         throw new Error(data.error || "Failed to invite");
       }
       setTempPassword(data.temp_password);
+      setInvitedEmail(data.email);
       setName("");
       setEmail("");
       fetchMembers();
@@ -97,7 +99,7 @@ export function TeamManagement() {
   }
 
   function copyCredentials() {
-    const text = `Email: ${email || "(just invited)"}\nTemporary Password: ${tempPassword}\n\nPlease log in and change your password.`;
+    const text = `Email: ${invitedEmail}\nTemporary Password: ${tempPassword}\n\nPlease log in and change your password.`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

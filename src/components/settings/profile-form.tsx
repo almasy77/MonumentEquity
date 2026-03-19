@@ -18,6 +18,10 @@ export function ProfileForm({ initialName, email: initialEmail }: { initialName:
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const emailChanged = email.trim().toLowerCase() !== initialEmail.toLowerCase();
+  const nameChanged = name !== initialName;
+  const profileDirty = nameChanged || emailChanged;
+
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -34,9 +38,12 @@ export function ProfileForm({ initialName, email: initialEmail }: { initialName:
         const data = await res.json();
         throw new Error(data.error || "Failed to update profile");
       }
-      setSuccess("Profile updated");
+      const msg = emailChanged
+        ? "Profile updated. Please log out and back in for the email change to take effect."
+        : "Profile updated";
+      setSuccess(msg);
       router.refresh();
-      setTimeout(() => setSuccess(""), 3000);
+      if (!emailChanged) setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -106,7 +113,7 @@ export function ProfileForm({ initialName, email: initialEmail }: { initialName:
         </div>
         <Button
           type="submit"
-          disabled={loading || (name === initialName && email === initialEmail)}
+          disabled={loading || !profileDirty}
           className="bg-blue-600 hover:bg-blue-700 text-white"
           size="sm"
         >
