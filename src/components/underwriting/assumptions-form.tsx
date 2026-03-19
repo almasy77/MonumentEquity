@@ -806,7 +806,8 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const accelPct = dep.accelerated_depreciation_pct || 0;
             const acceleratedPortion = depreciableBasis * accelPct;
             const remainderPortion = depreciableBasis - acceleratedPortion;
-            const acceleratedAnnual = accelPct > 0 ? (acceleratedPortion / 5) + (remainderPortion / 27.5) : 0;
+            const remainderAnnual = remainderPortion / 27.5;
+            const acceleratedYear1 = accelPct > 0 ? acceleratedPortion + remainderAnnual : 0;
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Left: inputs */}
@@ -818,7 +819,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <ReadOnlyField label="% Value in Improvements" value={totalAssess > 0 ? `${(impPct * 100).toFixed(1)}%` : "—"} />
                   <div className="pt-2">
                     <PctField label="% Accelerated Depreciation" value={accelPct} onChange={(v) => { setDep({ ...dep, accelerated_depreciation_pct: v }); markDirty(); }} />
-                    <p className="text-xs text-slate-500 mt-1">% of improvements eligible for 5-year accelerated schedule (cost segregation)</p>
+                    <p className="text-xs text-slate-500 mt-1">% of improvements eligible for bonus depreciation in year 1 (cost segregation)</p>
                   </div>
                 </div>
                 {/* Right: computed results */}
@@ -834,21 +835,27 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         </tr>
                         {accelPct > 0 && (
                           <tr className="border-b border-slate-800/50">
-                            <td className="px-3 py-2 text-slate-400">Accelerated (Cost Seg)</td>
-                            <td className="px-3 py-2 text-right text-green-400 font-medium">{fmtCurrency(acceleratedAnnual)}<span className="text-slate-500 text-xs">/yr</span></td>
+                            <td className="px-3 py-2 text-slate-400">Accelerated Yr 1</td>
+                            <td className="px-3 py-2 text-right text-green-400 font-medium">{fmtCurrency(acceleratedYear1)}</td>
+                          </tr>
+                        )}
+                        {accelPct > 0 && (
+                          <tr className="border-b border-slate-800/50">
+                            <td className="px-3 py-2 text-slate-400">Yrs 2+ (Remainder)</td>
+                            <td className="px-3 py-2 text-right text-slate-200 font-medium">{fmtCurrency(remainderAnnual)}<span className="text-slate-500 text-xs">/yr</span></td>
                           </tr>
                         )}
                         {accelPct > 0 && (
                           <tr className="bg-slate-800/30">
-                            <td className="px-3 py-2 text-slate-400">Additional Deduction</td>
-                            <td className="px-3 py-2 text-right text-green-400 font-medium">+{fmtCurrency(acceleratedAnnual - straightLine)}<span className="text-slate-500 text-xs">/yr</span></td>
+                            <td className="px-3 py-2 text-slate-400">Yr 1 Bonus Deduction</td>
+                            <td className="px-3 py-2 text-right text-green-400 font-medium">+{fmtCurrency(acceleratedPortion)}</td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Straight-line: 27.5-year residential schedule. Accelerated: eligible portion on 5-year schedule, remainder on 27.5-year.
+                    Straight-line: 27.5-year residential schedule. Accelerated: eligible portion taken as bonus depreciation in year 1, remainder on 27.5-year schedule.
                   </p>
                 </div>
               </div>

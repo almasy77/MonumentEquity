@@ -202,7 +202,8 @@ export interface AnnualSummary {
 
 export interface DepreciationResult {
   straight_line_annual: number; // purchase_price * % improvements / 27.5
-  accelerated_annual: number; // purchase_price * % improvements * % accelerated / 5 + remainder / 27.5
+  accelerated_year1: number; // full accelerated portion + remainder/27.5 in year 1
+  accelerated_ongoing: number; // remainder / 27.5 for years 2+
   land_pct: number;
   improvement_pct: number;
 }
@@ -457,12 +458,13 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const depreciableBasis = purchase.purchase_price * improvementPct;
     const straightLine = depreciableBasis / 27.5; // residential 27.5 years
     const accelPct = dep.accelerated_depreciation_pct || 0;
-    const acceleratedPortion = depreciableBasis * accelPct;
+    const acceleratedPortion = depreciableBasis * accelPct; // bonus depreciation taken in year 1
     const remainingPortion = depreciableBasis - acceleratedPortion;
-    const accelerated = (acceleratedPortion / 5) + (remainingPortion / 27.5); // 5-year accelerated + 27.5 remainder
+    const remainingAnnual = remainingPortion / 27.5;
     depreciation = {
       straight_line_annual: straightLine,
-      accelerated_annual: accelerated,
+      accelerated_year1: acceleratedPortion + remainingAnnual, // full accelerated portion + remainder year 1
+      accelerated_ongoing: remainingAnnual, // only remainder for years 2+
       land_pct: landPct,
       improvement_pct: improvementPct,
     };
