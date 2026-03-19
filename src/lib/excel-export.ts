@@ -14,6 +14,7 @@ import type {
   MonthlyRow,
   AnnualSummary,
   SensitivityCell,
+  DealMetrics,
 } from "./underwriting";
 
 // ─── Styles ──────────────────────────────────────────────────
@@ -52,7 +53,6 @@ const BOLD_FONT: Partial<ExcelJS.Font> = { bold: true, size: 10 };
 const NORMAL_FONT: Partial<ExcelJS.Font> = { size: 10 };
 
 const CURRENCY_FMT = '$#,##0';
-const CURRENCY_DETAIL_FMT = '$#,##0.00';
 const PCT_FMT = '0.0%';
 const NUMBER_FMT = '#,##0';
 const MULT_FMT = '0.00"x"';
@@ -80,10 +80,13 @@ export async function generateExcelWorkbook(
   buildAssumptionsSheet(wb, inputs);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
-  buildReturnsSheet(wb, result, inputs);
+  buildReturnsSheet(wb, result);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix);
   buildCapexSheet(wb, inputs.capex);
+  if (result.metrics.depreciation) {
+    buildDepreciationSheet(wb, inputs, result.metrics);
+  }
   buildValidationSheet(wb, result);
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -133,9 +136,12 @@ function buildSummarySheet(
 
   // Purchase Summary
   addSectionHeader(ws, "Purchase Summary", 5);
-  addLabelFormula(ws, "Purchase Price", "Assumptions!B3", CURRENCY_FMT);
+  addLabelValue(ws, "Purchase Price", m.purchase_price, CURRENCY_FMT);
+  addLabelValue(ws, "Closing Costs", m.closing_costs, CURRENCY_FMT);
+  addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
   addLabelValue(ws, "Total Cost", m.total_cost, CURRENCY_FMT);
   addLabelValue(ws, "Loan Amount", m.loan_amount, CURRENCY_FMT);
+  addLabelValue(ws, "Down Payment", m.down_payment, CURRENCY_FMT);
   addLabelValue(ws, "Total Equity", m.total_equity, CURRENCY_FMT);
   addLabelValue(ws, "Monthly Debt Service", m.monthly_debt_service, CURRENCY_FMT);
   ws.addRow([]);
@@ -146,6 +152,16 @@ function buildSummarySheet(
   addLabelValue(ws, "Exit NOI", m.exit_noi, CURRENCY_FMT);
   addLabelValue(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
   addLabelValue(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
+
+  // Depreciation (if available)
+  if (m.depreciation) {
+    ws.addRow([]);
+    addSectionHeader(ws, "Depreciation", 5);
+    addLabelValue(ws, "Straight-Line (27.5 yr)", m.depreciation.straight_line_annual, CURRENCY_FMT);
+    addLabelValue(ws, "Accelerated (Cost Seg)", m.depreciation.accelerated_annual, CURRENCY_FMT);
+    addLabelValue(ws, "% Land", m.depreciation.land_pct, PCT_FMT);
+    addLabelValue(ws, "% Improvements", m.depreciation.improvement_pct, PCT_FMT);
+  }
 }
 
 function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
@@ -251,25 +267,38 @@ function buildMonthlySheet(
     ws.getColumn(i).width = 12;
   }
 
-  const lineItems: Array<{ label: string; key: keyof MonthlyRow; negative?: boolean; bold?: boolean }> = [
-    { label: "Gross Potential Rent", key: "gpr" },
-    { label: "Less: Vacancy", key: "vacancy_loss", negative: true },
-    { label: "Less: Bad Debt", key: "bad_debt", negative: true },
-    { label: "Less: Concessions", key: "concessions", negative: true },
-    { label: "Plus: Other Income", key: "other_income" },
-    { label: "Effective Gross Income", key: "egi", bold: true },
-    { label: "Less: Operating Expenses", key: "total_opex", negative: true },
-    { label: "Net Operating Income", key: "noi", bold: true },
-    { label: "Less: Debt Service", key: "debt_service", negative: true },
-    { label: "Less: CapEx", key: "capex", negative: true },
-    { label: "Cash Flow", key: "cash_flow", bold: true },
-    { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
+  type LineItem = { label: string; getValue: (row: MonthlyRow) => number; negative?: boolean; bold?: boolean };
+
+  const lineItems: LineItem[] = [
+    { label: "Gross Potential Rent", getValue: r => r.gpr },
+    { label: "Less: Vacancy", getValue: r => r.vacancy_loss, negative: true },
+    { label: "Less: Bad Debt", getValue: r => r.bad_debt, negative: true },
+    { label: "Less: Concessions", getValue: r => r.concessions, negative: true },
+    { label: "Plus: Other Income", getValue: r => r.other_income },
+    { label: "Effective Gross Income", getValue: r => r.egi, bold: true },
+    // OpEx breakdown
+    { label: "  Management Fees", getValue: r => r.opex_breakdown?.management_fees ?? 0, negative: true },
+    { label: "  Payroll", getValue: r => r.opex_breakdown?.payroll ?? 0, negative: true },
+    { label: "  Repairs & Maintenance", getValue: r => r.opex_breakdown?.repairs_maintenance ?? 0, negative: true },
+    { label: "  Turnover", getValue: r => r.opex_breakdown?.turnover ?? 0, negative: true },
+    { label: "  Insurance", getValue: r => r.opex_breakdown?.insurance ?? 0, negative: true },
+    { label: "  Property Tax", getValue: r => r.opex_breakdown?.property_tax ?? 0, negative: true },
+    { label: "  Utilities", getValue: r => r.opex_breakdown?.utilities ?? 0, negative: true },
+    { label: "  Admin / Legal / Marketing", getValue: r => r.opex_breakdown?.admin_legal_marketing ?? 0, negative: true },
+    { label: "  Contract Services", getValue: r => r.opex_breakdown?.contract_services ?? 0, negative: true },
+    { label: "  Reserves", getValue: r => r.opex_breakdown?.reserves ?? 0, negative: true },
+    { label: "Total Operating Expenses", getValue: r => r.total_opex, negative: true, bold: true },
+    { label: "Net Operating Income", getValue: r => r.noi, bold: true },
+    { label: "Less: Debt Service", getValue: r => r.debt_service, negative: true },
+    { label: "Less: CapEx", getValue: r => r.capex, negative: true },
+    { label: "Cash Flow (Before Taxes)", getValue: r => r.cash_flow, bold: true },
+    { label: "Cumulative Cash Flow", getValue: r => r.cumulative_cash_flow },
   ];
 
   for (const item of lineItems) {
     const rowData: (string | number)[] = [item.label];
     for (let m = 0; m < totalMonths; m++) {
-      const val = monthly[m]?.[item.key] as number ?? 0;
+      const val = item.getValue(monthly[m]) ?? 0;
       rowData.push(item.negative ? -val : val);
     }
     const row = ws.addRow(rowData);
@@ -329,16 +358,18 @@ function buildAnnualSheet(
     { label: "Net Operating Income", key: "noi", bold: true, formula: true },
     { label: "Less: Debt Service", key: "debt_service", negative: true, formula: true },
     { label: "Less: CapEx", key: "capex", negative: true, formula: true },
-    { label: "Cash Flow", key: "cash_flow", bold: true, formula: true },
+    { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true, formula: true },
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
     { label: "Cash-on-Cash Return", key: "cash_on_cash" },
   ];
 
-  // Monthly sheet rows: gpr=2, vacancy=3, bad_debt=4, concessions=5, other=6, egi=7, opex=8, noi=9, ds=10, capex=11, cf=12, cum=13
+  // Monthly sheet row map (after adding 10 opex breakdown rows):
+  // gpr=2, vacancy=3, bad_debt=4, concessions=5, other=6, egi=7,
+  // opex breakdown=8-17, total_opex=18, noi=19, ds=20, capex=21, cf=22, cum=23
   const monthlyRowMap: Record<string, number> = {
     gpr: 2, vacancy_loss: 3, bad_debt: 4, concessions: 5,
-    other_income: 6, egi: 7, total_opex: 8, noi: 9,
-    debt_service: 10, capex: 11, cash_flow: 12,
+    other_income: 6, egi: 7, total_opex: 18, noi: 19,
+    debt_service: 20, capex: 21, cash_flow: 22,
   };
 
   for (const item of lineItems) {
@@ -396,7 +427,6 @@ function buildAnnualSheet(
 function buildReturnsSheet(
   wb: ExcelJS.Workbook,
   result: UnderwritingResult,
-  inputs: ScenarioInputs
 ) {
   const ws = wb.addWorksheet("Returns");
   ws.columns = [{ width: 28 }, { width: 18 }];
@@ -530,9 +560,6 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
   ]);
   styleHeaderRow(headerRow, 7);
 
-  let totalUnits = 0;
-  let totalAnnualGPR = 0;
-
   for (let i = 0; i < unitMix.length; i++) {
     const u = unitMix[i];
     const rowNum = i + 2;
@@ -554,8 +581,6 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
       row.getCell(c).border = THIN_BORDER;
     }
 
-    totalUnits += u.count;
-    totalAnnualGPR += u.count * u.current_rent * 12;
   }
 
   // Totals row
@@ -658,6 +683,66 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult) 
       const row = ws.addRow([warning]);
       row.getCell(1).font = { ...NORMAL_FONT, color: { argb: "FFCC0000" } };
     }
+  }
+}
+
+function buildDepreciationSheet(
+  wb: ExcelJS.Workbook,
+  inputs: ScenarioInputs,
+  metrics: DealMetrics
+) {
+  const ws = wb.addWorksheet("Depreciation");
+  ws.columns = [{ width: 30 }, { width: 18 }, { width: 18 }, { width: 18 }];
+
+  const dep = metrics.depreciation!;
+  const holdYears = inputs.exit.hold_period_years;
+
+  addSectionHeader(ws, "Depreciation Analysis", 4);
+  ws.addRow([]);
+
+  addLabelValue(ws, "Purchase Price", metrics.purchase_price, CURRENCY_FMT);
+  addLabelValue(ws, "% Land", dep.land_pct, PCT_FMT);
+  addLabelValue(ws, "% Improvements", dep.improvement_pct, PCT_FMT);
+  addLabelValue(ws, "Depreciable Basis", metrics.purchase_price * dep.improvement_pct, CURRENCY_FMT);
+  ws.addRow([]);
+
+  // Schedule headers
+  const headerLabels = ["Year", "Straight-Line (27.5 yr)", "Accelerated (Cost Seg)", "Difference"];
+  const headerRow = ws.addRow(headerLabels);
+  styleHeaderRow(headerRow, 4);
+
+  let cumSL = 0;
+  let cumAccel = 0;
+
+  for (let y = 1; y <= holdYears; y++) {
+    cumSL += dep.straight_line_annual;
+    cumAccel += dep.accelerated_annual;
+    const row = ws.addRow([
+      `Year ${y}`,
+      dep.straight_line_annual,
+      dep.accelerated_annual,
+      dep.accelerated_annual - dep.straight_line_annual,
+    ]);
+    for (let c = 2; c <= 4; c++) {
+      row.getCell(c).numFmt = CURRENCY_FMT;
+      row.getCell(c).border = THIN_BORDER;
+    }
+  }
+
+  // Totals
+  const totRow = ws.addRow([
+    `Total (${holdYears} yr)`,
+    cumSL,
+    cumAccel,
+    cumAccel - cumSL,
+  ]);
+  for (let c = 1; c <= 4; c++) {
+    totRow.getCell(c).font = BOLD_FONT;
+    totRow.getCell(c).fill = LIGHT_FILL;
+    totRow.getCell(c).border = THIN_BORDER;
+  }
+  for (let c = 2; c <= 4; c++) {
+    totRow.getCell(c).numFmt = CURRENCY_FMT;
   }
 }
 

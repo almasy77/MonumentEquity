@@ -176,7 +176,6 @@ export function UnderwritingClient({
   async function cloneScenario(id: string) {
     setCreating(true);
     try {
-      const source = scenarios.find((s) => s.id === id);
       const res = await fetch("/api/scenarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

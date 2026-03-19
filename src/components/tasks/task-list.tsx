@@ -146,6 +146,7 @@ function EditableTask({ task, onSaved }: { task: Task; onSaved: () => void }) {
 
 export function TaskList({
   tasks,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   showDealInfo,
 }: {
   tasks: Task[];

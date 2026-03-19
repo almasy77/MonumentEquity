@@ -335,6 +335,7 @@ export const scenarioSchema = z.object({
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),
+  depreciation_assumptions: z.record(z.string(), z.unknown()).default({}),
 
   monthly_pro_forma: z.unknown().optional(),
   calculated_metrics: z

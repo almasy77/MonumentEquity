@@ -50,6 +50,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     expenses: scenario.expense_assumptions,
     capex: scenario.capex_assumptions,
     exit: scenario.exit_assumptions,
+    depreciation: (scenario as Record<string, unknown>).depreciation_assumptions || undefined,
   } as unknown as ScenarioInputs;
 
   const result = calculateUnderwriting(inputs);

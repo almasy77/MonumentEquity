@@ -5,7 +5,6 @@ import {
   DEAL_STAGES,
   STAGE_LABELS,
   STAGE_STALE_DAYS,
-  type DealStage,
 } from "@/lib/constants";
 import {
   Card,
@@ -43,6 +42,7 @@ export default async function DashboardPage() {
   if (!session?.user) return null;
 
   const redis = getRedis();
+  // eslint-disable-next-line react-hooks/purity -- server component, not a client render
   const now = Date.now();
   const today = new Date().toISOString().split("T")[0];
 

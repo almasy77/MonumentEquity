@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getRedis } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
 // POST /api/seed — one-time admin user creation
 // Only works if no admin user exists yet
-export async function POST(_req: NextRequest) {
+export async function POST() {
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Seed disabled in production" }, { status: 403 });
   }
