@@ -29,8 +29,8 @@ export async function PUT(req: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role === "va") {
-    return NextResponse.json({ error: "VAs cannot modify settings" }, { status: 403 });
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Only admins can modify settings" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -59,6 +59,27 @@ export async function PUT(req: NextRequest) {
   // Handle profile updates
   if (body.name && typeof body.name === "string" && body.name.trim().length > 0) {
     user.name = body.name.trim();
+  }
+
+  // Handle email change
+  if (body.email && typeof body.email === "string") {
+    const newEmail = body.email.trim().toLowerCase();
+    const oldEmail = (user.email as string).toLowerCase();
+    if (newEmail !== oldEmail) {
+      // Validate email format
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+      }
+      // Check if email is already taken
+      const existingId = await redis.get<string>(`user:email:${newEmail}`);
+      if (existingId && existingId !== session.user.id) {
+        return NextResponse.json({ error: "Email already in use" }, { status: 400 });
+      }
+      // Update email index: remove old, add new
+      await redis.del(`user:email:${oldEmail}`);
+      await redis.set(`user:email:${newEmail}`, session.user.id);
+      user.email = newEmail;
+    }
   }
 
   // Handle default assumptions

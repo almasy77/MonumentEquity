@@ -50,7 +50,7 @@ src/
 │   ├── irr.ts               # IRR calculation
 │   ├── activity.ts          # Activity logging
 │   └── constants.ts         # App constants
-└── middleware.ts             # Route protection middleware
+└── proxy.ts                 # Route protection proxy (auth gate)
 ```
 
 ## Code Conventions

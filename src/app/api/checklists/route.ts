@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.user.role === "viewer") {
+    return NextResponse.json({ error: "Read-only access" }, { status: 403 });
+  }
 
   const body = await req.json();
 

@@ -49,6 +49,11 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     const oldStage = existing.stage;
     const newStage = body.stage as DealStage | undefined;
 
+    // Viewers cannot edit deals
+    if (session.user.role === "viewer") {
+      return NextResponse.json({ error: "Read-only access" }, { status: 403 });
+    }
+
     // VA cannot change stages or status
     if (session.user.role === "va") {
       if (newStage && newStage !== oldStage) {

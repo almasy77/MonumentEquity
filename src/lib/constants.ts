@@ -151,5 +151,5 @@ export const DURHAM_NEIGHBORHOODS = [
 export const TASK_PRIORITIES = ["low", "medium", "high", "critical"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
-export const USER_ROLES = ["admin", "va"] as const;
+export const USER_ROLES = ["admin", "va", "viewer"] as const;
 export type UserRole = (typeof USER_ROLES)[number];

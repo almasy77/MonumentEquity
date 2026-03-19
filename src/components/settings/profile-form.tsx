@@ -7,15 +7,20 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, Check } from "lucide-react";
 
-export function ProfileForm({ initialName, email }: { initialName: string; email: string }) {
+export function ProfileForm({ initialName, email: initialEmail }: { initialName: string; email: string }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
+  const [email, setEmail] = useState(initialEmail);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const emailChanged = email.trim().toLowerCase() !== initialEmail.toLowerCase();
+  const nameChanged = name !== initialName;
+  const profileDirty = nameChanged || emailChanged;
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -27,15 +32,18 @@ export function ProfileForm({ initialName, email }: { initialName: string; email
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, email }),
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update profile");
       }
-      setSuccess("Profile updated");
+      const msg = emailChanged
+        ? "Profile updated. Please log out and back in for the email change to take effect."
+        : "Profile updated";
+      setSuccess(msg);
       router.refresh();
-      setTimeout(() => setSuccess(""), 3000);
+      if (!emailChanged) setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -96,19 +104,20 @@ export function ProfileForm({ initialName, email }: { initialName: string; email
           <div>
             <Label className="text-slate-300">Email</Label>
             <Input
+              type="email"
               value={email}
-              disabled
-              className="bg-slate-800/50 border-slate-700 text-slate-400"
+              onChange={(e) => setEmail(e.target.value)}
+              className="bg-slate-800 border-slate-700 text-white"
             />
           </div>
         </div>
         <Button
           type="submit"
-          disabled={loading || name === initialName}
+          disabled={loading || !profileDirty}
           className="bg-blue-600 hover:bg-blue-700 text-white"
           size="sm"
         >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Name"}
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Profile"}
         </Button>
       </form>
 

@@ -158,7 +158,8 @@ function buildSummarySheet(
     ws.addRow([]);
     addSectionHeader(ws, "Depreciation", 5);
     addLabelValue(ws, "Straight-Line (27.5 yr)", m.depreciation.straight_line_annual, CURRENCY_FMT);
-    addLabelValue(ws, "Accelerated (Cost Seg)", m.depreciation.accelerated_annual, CURRENCY_FMT);
+    addLabelValue(ws, "Accelerated Yr 1", m.depreciation.accelerated_year1, CURRENCY_FMT);
+    addLabelValue(ws, "Accelerated Yrs 2+", m.depreciation.accelerated_ongoing, CURRENCY_FMT);
     addLabelValue(ws, "% Land", m.depreciation.land_pct, PCT_FMT);
     addLabelValue(ws, "% Improvements", m.depreciation.improvement_pct, PCT_FMT);
   }
@@ -715,13 +716,14 @@ function buildDepreciationSheet(
   let cumAccel = 0;
 
   for (let y = 1; y <= holdYears; y++) {
+    const accelThisYear = y === 1 ? dep.accelerated_year1 : dep.accelerated_ongoing;
     cumSL += dep.straight_line_annual;
-    cumAccel += dep.accelerated_annual;
+    cumAccel += accelThisYear;
     const row = ws.addRow([
       `Year ${y}`,
       dep.straight_line_annual,
-      dep.accelerated_annual,
-      dep.accelerated_annual - dep.straight_line_annual,
+      accelThisYear,
+      accelThisYear - dep.straight_line_annual,
     ]);
     for (let c = 2; c <= 4; c++) {
       row.getCell(c).numFmt = CURRENCY_FMT;
