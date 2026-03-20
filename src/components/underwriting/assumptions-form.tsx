@@ -460,11 +460,20 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                 </div>
 
-                {/* Total row */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
+                {/* CapEx Reserve */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
+                  <CurrencyField label="CapEx Reserve" value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                  <div className="col-span-1 sm:col-span-3 flex items-end">
+                    <p className="text-[10px] text-slate-500 pb-2">Additional equity funded at closing for renovation shortfalls</p>
+                  </div>
+                </div>
+
+                {/* Totals row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
                   <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee)} />
-                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee - loanAmount)} />
+                  <ReadOnlyField label="CapEx Reserve" value={fmtCurrency(p.capex_reserve || 0)} />
+                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0))} />
+                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) - loanAmount)} />
                 </div>
               </div>
             );

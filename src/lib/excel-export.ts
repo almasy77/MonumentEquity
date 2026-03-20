@@ -139,6 +139,7 @@ function buildSummarySheet(
   addLabelValue(ws, "Purchase Price", m.purchase_price, CURRENCY_FMT);
   addLabelValue(ws, "Closing Costs", m.closing_costs, CURRENCY_FMT);
   addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
+  addLabelValue(ws, "CapEx Reserve", m.capex_reserve, CURRENCY_FMT);
   addLabelValue(ws, "Total Cost", m.total_cost, CURRENCY_FMT);
   addLabelValue(ws, "Loan Amount", m.loan_amount, CURRENCY_FMT);
   addLabelValue(ws, "Down Payment", m.down_payment, CURRENCY_FMT);

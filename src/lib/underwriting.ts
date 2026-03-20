@@ -27,6 +27,7 @@ export interface PurchaseAssumptions {
   closing_cost_rate: number; // % of purchase price
   closing_cost_mode?: ClosingCostMode; // "rate" uses closing_cost_rate, "itemized" uses breakdown sum (default: "rate")
   closing_cost_breakdown?: ClosingCostBreakdown;
+  capex_reserve?: number; // Additional equity funded at closing to cover renovation CapEx shortfalls
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
   bid_price?: number;
@@ -220,7 +221,8 @@ export interface DealMetrics {
   purchase_price: number;
   closing_costs: number;
   origination_fee: number;
-  total_cost: number; // purchase + closing + origination
+  capex_reserve: number;
+  total_cost: number; // purchase + closing + origination + capex reserve
   loan_amount: number;
   down_payment: number; // purchase_price - loan_amount (encompasses earnest money)
   total_equity: number;
@@ -287,9 +289,10 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
   // ── Purchase & Financing ──
   const closingCosts = computeClosingCosts(purchase);
+  const capexReserve = purchase.capex_reserve || 0;
   const loanAmount = purchase.purchase_price * financing.ltv;
   const originationFee = loanAmount * financing.origination_fee_rate;
-  const totalCost = purchase.purchase_price + closingCosts + originationFee;
+  const totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve;
   const totalEquity = totalCost - loanAmount;
 
   // Monthly debt service calculation
@@ -506,6 +509,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     purchase_price: purchase.purchase_price,
     closing_costs: closingCosts,
     origination_fee: originationFee,
+    capex_reserve: capexReserve,
     total_cost: totalCost,
     loan_amount: loanAmount,
     down_payment: downPayment,
@@ -667,7 +671,8 @@ function buildSensitivityGrid(
       const adjustedLoan = adjustedInputs.purchase.purchase_price * adjustedInputs.financing.ltv;
       const adjustedClosing = computeClosingCosts(adjustedInputs.purchase);
       const adjustedOrigination = adjustedLoan * adjustedInputs.financing.origination_fee_rate;
-      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination - adjustedLoan;
+      const adjustedCapexReserve = adjustedInputs.purchase.capex_reserve || 0;
+      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination + adjustedCapexReserve - adjustedLoan;
 
       // Skip invalid cap rates (zero or negative)
       if (adjustedInputs.exit.exit_cap_rate <= 0) {
