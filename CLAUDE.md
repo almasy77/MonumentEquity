@@ -63,6 +63,36 @@ src/
 - **Financial calcs** live in `src/lib/underwriting.ts` — changes here affect all deal analysis outputs.
 - **Components** follow shadcn/ui patterns. UI primitives in `src/components/ui/`, feature components in `src/components/deal/`, etc.
 
+## Deploying to Production
+
+Production deploys automatically when code is merged to `main`. To push changes to production:
+
+1. **Validate before merging** — every change must pass all three checks:
+   ```bash
+   npx tsc --noEmit       # TypeScript — zero errors
+   npm run lint            # ESLint — zero errors, zero warnings
+   npm run build           # Full production build — must succeed
+   ```
+2. **Create a PR** from your feature branch to `main`:
+   ```bash
+   git push -u origin <your-branch>
+   gh pr create --base main --title "Brief description" --body "Summary of changes"
+   ```
+3. **Merge the PR** — this triggers the production deploy:
+   ```bash
+   gh pr merge <pr-number> --squash --delete-branch
+   ```
+4. **Verify** — confirm the deploy succeeded in your hosting dashboard (Vercel/etc.).
+
+### Rules
+
+- **Never push directly to `main`** — always go through a PR.
+- **Never merge with failing checks** — all three validation commands above must pass.
+- **Squash merge** — keep `main` history clean with one commit per feature/fix.
+- **Delete the feature branch** after merge to avoid stale branches.
+- **Financial engine changes** (`src/lib/underwriting.ts`, `src/lib/irr.ts`) require extra scrutiny — trace through example calculations before merging.
+- **Schema changes** must be backwards-compatible (new fields must be optional with sensible defaults) since there is no migration system.
+
 ## Important Notes
 
 - The app uses **Upstash Redis** (not a SQL database). All data access goes through `src/lib/db.ts`.

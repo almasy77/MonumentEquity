@@ -460,11 +460,19 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                 </div>
 
-                {/* Total row */}
+                {/* CapEx Reserve */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
+                  <CurrencyField label="CapEx Reserve" value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                  <div className="col-span-1 sm:col-span-3 flex items-end">
+                    <p className="text-[10px] text-slate-500 pb-2">Additional equity funded at closing for renovation shortfalls</p>
+                  </div>
+                </div>
+
+                {/* Totals row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
                   <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee)} />
-                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee - loanAmount)} />
+                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0))} />
+                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) - loanAmount)} />
                 </div>
               </div>
             );
@@ -532,7 +540,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
-        {/* Operating Expenses — compact grid layout */}
+        {/* Operating Expenses — clean grouped layout */}
         <Section title="Operating Expenses">
           {(() => {
             const ub = e.utilities_breakdown || {};
@@ -544,100 +552,106 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const reservesAnnual = (e.reserves_per_unit || 0) * totalUnits;
             const reservesPctEGI = t12EGI > 0 ? (reservesAnnual / t12EGI * 100).toFixed(1) : "0.0";
             return (
-              <div className="space-y-4">
-                {/* Core expenses in a dense grid */}
+              <div className="space-y-5">
+                {/* Core expenses */}
                 <div>
-                  <div className="text-xs text-slate-500 font-medium mb-2">Core Expenses</div>
+                  <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Core Expenses</div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <PctField label="Mgmt Fee" value={e.management_fee_rate} suffix="% EGI" onChange={(v) => { setE({ ...e, management_fee_rate: v }); markDirty(); }} />
                     <CurrencyField label="Payroll" value={e.payroll_annual} suffix="/yr" onChange={(v) => { setE({ ...e, payroll_annual: v }); markDirty(); }} />
-                    <CurrencyField label="Property Tax" value={e.property_tax_total} suffix="/yr total" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
+                    <CurrencyField label="Property Tax" value={e.property_tax_total} suffix="/yr" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
                     <CurrencyField label="Insurance" value={e.insurance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, insurance_per_unit: v }); markDirty(); }} />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                     <CurrencyField label="Repairs & Maintenance" value={e.repairs_maintenance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, repairs_maintenance_per_unit: v }); markDirty(); }} />
                     <CurrencyField label="Turnover" value={e.turnover_cost_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, turnover_cost_per_unit: v }); markDirty(); }} />
                     <CurrencyField label="Admin / Legal / Marketing" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
                     <div>
                       <CurrencyField label="Reserves" value={e.reserves_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, reserves_per_unit: v }); markDirty(); }} />
-                      <p className="text-xs text-slate-500 mt-0.5">{reservesPctEGI}% EGI ({fmtCurrency(reservesAnnual)}/yr)</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{reservesPctEGI}% EGI &middot; {fmtCurrency(reservesAnnual)}/yr</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Utilities in a dense grid */}
+                {/* Utilities */}
                 <div>
-                  <div className="text-xs text-slate-500 font-medium mb-2">Utilities <span className="text-slate-600">(/unit/yr)</span></div>
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                    <CurrencyField label="Electric" value={ub.electric_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                  <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Utilities <span className="normal-case text-slate-500 font-normal">per unit/yr</span></div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    <CurrencyField label="Electric" value={ub.electric_per_unit || 0} onChange={(v) => {
                       const newUb = { ...ub, electric_per_unit: v };
                       const newTotal = (v || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
                       setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Water / Sewer" value={ub.water_sewer_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                    <CurrencyField label="Water / Sewer" value={ub.water_sewer_per_unit || 0} onChange={(v) => {
                       const newUb = { ...ub, water_sewer_per_unit: v };
                       const newTotal = (ub.electric_per_unit || 0) + (v || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
                       setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Gas" value={ub.gas_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                    <CurrencyField label="Gas" value={ub.gas_per_unit || 0} onChange={(v) => {
                       const newUb = { ...ub, gas_per_unit: v };
                       const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (v || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
                       setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Trash" value={ub.trash_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                    <CurrencyField label="Trash" value={ub.trash_per_unit || 0} onChange={(v) => {
                       const newUb = { ...ub, trash_per_unit: v };
                       const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (v || 0) + (ub.other_utilities_per_unit || 0);
                       setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Other Utilities" value={ub.other_utilities_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-3">
+                    <CurrencyField label="Other Utilities" value={ub.other_utilities_per_unit || 0} onChange={(v) => {
                       const newUb = { ...ub, other_utilities_per_unit: v };
                       const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (v || 0);
                       setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
                     }} />
                     {utilitiesTotal > 0 ? (
-                      <ReadOnlyField label="Total" value={`${fmtCurrency(utilitiesTotal)}/unit`} />
+                      <ReadOnlyField label="Total Utilities" value={`${fmtCurrency(utilitiesTotal)}/unit`} />
                     ) : (
-                      <CurrencyField label="Total Utilities" value={e.utilities_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, utilities_per_unit: v }); markDirty(); }} />
+                      <CurrencyField label="Total Utilities" value={e.utilities_per_unit} onChange={(v) => { setE({ ...e, utilities_per_unit: v }); markDirty(); }} />
                     )}
                   </div>
                 </div>
 
-                {/* Services in a dense grid */}
+                {/* Contract Services */}
                 <div>
-                  <div className="text-xs text-slate-500 font-medium mb-2">Services <span className="text-slate-600">(/yr total)</span></div>
-                  <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
-                    <CurrencyField label="Landscaping" value={sb.landscaping || 0} suffix="/yr" onChange={(v) => {
+                  <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Contract Services <span className="normal-case text-slate-500 font-normal">per year</span></div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    <CurrencyField label="Landscaping" value={sb.landscaping || 0} onChange={(v) => {
                       const newSb = { ...sb, landscaping: v };
                       const newTotal = (v || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Snow Removal" value={sb.snow_removal || 0} suffix="/yr" onChange={(v) => {
+                    <CurrencyField label="Snow Removal" value={sb.snow_removal || 0} onChange={(v) => {
                       const newSb = { ...sb, snow_removal: v };
                       const newTotal = (sb.landscaping || 0) + (v || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Pest Control" value={sb.pest_control || 0} suffix="/yr" onChange={(v) => {
+                    <CurrencyField label="Pest Control" value={sb.pest_control || 0} onChange={(v) => {
                       const newSb = { ...sb, pest_control: v };
                       const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (v || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Security" value={sb.security || 0} suffix="/yr" onChange={(v) => {
+                    <CurrencyField label="Security" value={sb.security || 0} onChange={(v) => {
                       const newSb = { ...sb, security: v };
                       const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (v || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Cleaning" value={sb.cleaning || 0} suffix="/yr" onChange={(v) => {
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-3">
+                    <CurrencyField label="Cleaning" value={sb.cleaning || 0} onChange={(v) => {
                       const newSb = { ...sb, cleaning: v };
                       const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (v || 0) + (sb.other_services || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
-                    <CurrencyField label="Other Services" value={sb.other_services || 0} suffix="/yr" onChange={(v) => {
+                    <CurrencyField label="Other Services" value={sb.other_services || 0} onChange={(v) => {
                       const newSb = { ...sb, other_services: v };
                       const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (v || 0);
                       setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
                     }} />
                     {servicesTotal > 0 ? (
-                      <ReadOnlyField label="Total" value={`${fmtCurrency(servicesTotal)}/yr`} />
+                      <ReadOnlyField label="Total Services" value={fmtCurrency(servicesTotal)} />
                     ) : (
-                      <CurrencyField label="Total Contract Svcs" value={e.contract_services} suffix="/yr" onChange={(v) => { setE({ ...e, contract_services: v }); markDirty(); }} />
+                      <CurrencyField label="Total Services" value={e.contract_services} onChange={(v) => { setE({ ...e, contract_services: v }); markDirty(); }} />
                     )}
                   </div>
                 </div>
@@ -678,12 +692,46 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
         {/* CapEx: Per-Unit Renovations */}
         <Section title="CapEx: Per-Unit Renovations">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
-            <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
-            <NumField label="Units / Month" value={c.units_per_month} onChange={(v) => { setC({ ...c, units_per_month: v }); markDirty(); }} />
-            <NumField label="Start Month" value={c.renovation_start_month || 1} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
-          </div>
+          {(() => {
+            const startMo = c.renovation_start_month || 1;
+            const endMo = c.renovation_end_month || startMo;
+            const span = Math.max(1, endMo - startMo + 1);
+            const derivedUPM = c.units_to_renovate > 0 ? (c.units_to_renovate / span) : 0;
+            const downtimeEnabled = c.renovation_downtime_enabled || false;
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
+                  <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
+                  <NumField label="Start Month" value={startMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
+                  <NumField label="End Month" value={endMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_end_month: Math.max(startMo, v) }); markDirty(); }} />
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-400">
+                  <span>Units / Month: <span className="text-white font-medium">{derivedUPM % 1 === 0 ? derivedUPM : derivedUPM.toFixed(1)}</span></span>
+                  <span>Total CapEx: <span className="text-white font-medium">{fmtCurrency(c.per_unit_cost * c.units_to_renovate)}</span></span>
+                </div>
+                {/* Renovation Downtime */}
+                <div className="flex items-center gap-3 border-t border-slate-700 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setC({ ...c, renovation_downtime_enabled: !downtimeEnabled }); markDirty(); }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${downtimeEnabled ? "bg-blue-600" : "bg-slate-700"}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${downtimeEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                  <span className="text-xs text-slate-400">Renovation downtime vacancy</span>
+                  {downtimeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <NumField label="Downtime" value={c.renovation_downtime_months || 1} suffix="mo/unit" onChange={(v) => { setC({ ...c, renovation_downtime_months: Math.max(0.5, v) }); markDirty(); }} />
+                    </div>
+                  )}
+                </div>
+                {downtimeEnabled && (
+                  <p className="text-[10px] text-slate-500">Units earn $0 rent during renovation. Each unit is offline for {c.renovation_downtime_months || 1} month(s) before coming back online at the renovated rent.</p>
+                )}
+              </div>
+            );
+          })()}
         </Section>
 
         {/* CapEx: Projects */}
