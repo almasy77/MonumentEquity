@@ -17,7 +17,11 @@ function fmtPct(n: number | null): string {
 
 function fmtPrice(base: number, delta: number): string {
   const price = base * (1 + delta);
-  if (price >= 1_000_000) return `$${(price / 1_000_000).toFixed(1)}M`;
+  if (price >= 1_000_000) {
+    const m = price / 1_000_000;
+    // Use enough precision to distinguish adjacent rows
+    return m % 1 === 0 ? `$${m.toFixed(0)}M` : `$${m.toFixed(2)}M`;
+  }
   return `$${(price / 1_000).toFixed(0)}K`;
 }
 
