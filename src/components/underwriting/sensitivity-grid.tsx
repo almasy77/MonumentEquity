@@ -106,7 +106,7 @@ export function SensitivityGrid({
           </thead>
           <tbody>
             {priceDeltas.map((delta) => (
-              <tr key={delta} className="border-b border-slate-800/50">
+              <tr key={delta} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
                 <td className="py-1.5 pr-4 text-xs text-slate-300 whitespace-nowrap">
                   {fmtPrice(basePurchasePrice, delta)}
                   <span className="text-slate-600 ml-1">

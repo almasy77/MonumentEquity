@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode } from "@/lib/underwriting";
+import { sumClosingCostBreakdown } from "@/lib/underwriting";
 
 interface Props {
   scenario: Scenario;
@@ -29,16 +30,16 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-slate-800 rounded-lg">
+    <div className="border border-slate-800 rounded-lg hover:border-slate-600 transition-colors group/section">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800/50 transition-colors rounded-lg"
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800/50 hover:text-white transition-colors rounded-lg"
       >
         {title}
         {open ? (
-          <ChevronDown className="h-4 w-4 text-slate-500" />
+          <ChevronDown className="h-4 w-4 text-slate-500 group-hover/section:text-slate-300" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-slate-500" />
+          <ChevronRight className="h-4 w-4 text-slate-500 group-hover/section:text-slate-300" />
         )}
       </button>
       {open && <div className="px-4 pb-4 space-y-3">{children}</div>}
@@ -88,7 +89,7 @@ function CurrencyField({
           onChange(isNaN(parsed) ? 0 : parsed);
         }}
         onChange={(e) => setEditValue(e.target.value)}
-        className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+        className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
       />
     </div>
   );
@@ -138,7 +139,7 @@ function PctField({
           }
         }}
         onChange={(e) => setEditValue(e.target.value)}
-        className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+        className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
       />
     </div>
   );
@@ -171,7 +172,7 @@ function NumField({
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
         step={step ?? "1"}
         min={min ?? "0"}
-        className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+        className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
       />
     </div>
   );
@@ -358,7 +359,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 type="date"
                 value={p.loi_date || ""}
                 onChange={(e) => { setP({ ...p, loi_date: e.target.value }); markDirty(); }}
-                className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
               />
             </div>
             <CurrencyField label="Earnest Money" value={p.earnest_money} onChange={(v) => { setP({ ...p, earnest_money: v }); markDirty(); }} />
@@ -370,13 +371,12 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           {(() => {
             const loanAmount = p.purchase_price * (f.ltv || 0);
             const downPayment = p.purchase_price - loanAmount;
+            const ccMode: ClosingCostMode = p.closing_cost_mode || "rate";
             const ccBk = p.closing_cost_breakdown || {};
-            const ccBreakdownTotal = (ccBk.title_insurance || 0) + (ccBk.legal_fees || 0) +
-              (ccBk.property_costs || 0) + (ccBk.prorations || 0) +
-              (ccBk.third_party_reports || 0) + (ccBk.transfer_taxes || 0) +
-              (ccBk.reserves_escrow || 0) + (ccBk.other_closing || 0);
-            const closingCosts = ccBreakdownTotal > 0 ? ccBreakdownTotal : p.purchase_price * (p.closing_cost_rate || 0);
+            const ccBreakdownTotal = sumClosingCostBreakdown(ccBk);
+            const closingCosts = ccMode === "itemized" ? ccBreakdownTotal : p.purchase_price * (p.closing_cost_rate || 0);
             const originationFee = loanAmount * (f.origination_fee_rate || 0);
+            const isItemized = ccMode === "itemized";
             return (
               <div className="space-y-4">
                 {/* Purchase + Financing side by side in a dense grid */}
@@ -395,12 +395,60 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <PctField label="Origination Fee Rate" value={f.origination_fee_rate} onChange={(v) => { setF({ ...f, origination_fee_rate: v }); markDirty(); }} />
                   <ReadOnlyField label="Origination Fee" value={fmtCurrency(originationFee)} />
                 </div>
+              </div>
+            );
+          })()}
+        </Section>
 
-                {/* Closing costs in compact grid */}
-                <div>
-                  <div className="text-xs text-slate-500 font-medium mb-2">Closing Costs</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Closing Costs — own sub-card with rate/itemized toggle */}
+        <Section title="Closing Costs" defaultOpen>
+          {(() => {
+            const ccMode: ClosingCostMode = p.closing_cost_mode || "rate";
+            const ccBk = p.closing_cost_breakdown || {};
+            const ccBreakdownTotal = sumClosingCostBreakdown(ccBk);
+            const closingCosts = ccMode === "itemized" ? ccBreakdownTotal : p.purchase_price * (p.closing_cost_rate || 0);
+            const isItemized = ccMode === "itemized";
+            const loanAmount = p.purchase_price * (f.ltv || 0);
+            const originationFee = loanAmount * (f.origination_fee_rate || 0);
+            return (
+              <div className="space-y-4">
+                {/* Toggle between Rate and Itemized */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setP({ ...p, closing_cost_mode: "rate" as ClosingCostMode }); markDirty(); }}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-l-md border transition-colors ${
+                      !isItemized
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-slate-800 text-slate-400 border-slate-600 hover:text-slate-300"
+                    }`}
+                  >
+                    % of Purchase Price
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setP({ ...p, closing_cost_mode: "itemized" as ClosingCostMode }); markDirty(); }}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-r-md border transition-colors ${
+                      isItemized
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-slate-800 text-slate-400 border-slate-600 hover:text-slate-300"
+                    }`}
+                  >
+                    Itemized
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {/* Rate field — active when mode is "rate", grayed out otherwise */}
+                  <div className={isItemized ? "opacity-40 pointer-events-none" : ""}>
                     <PctField label="Closing Cost Rate" value={p.closing_cost_rate} onChange={(v) => { setP({ ...p, closing_cost_rate: v }); markDirty(); }} />
+                  </div>
+                </div>
+
+                {/* Itemized breakdown — active when mode is "itemized", grayed out otherwise */}
+                <div className={!isItemized ? "opacity-40 pointer-events-none" : ""}>
+                  <div className="text-xs text-slate-500 font-medium mb-2">Itemized Breakdown</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <CurrencyField label="Title Insurance" value={ccBk.title_insurance || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, title_insurance: v } }); markDirty(); }} />
                     <CurrencyField label="Legal Fees" value={ccBk.legal_fees || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, legal_fees: v } }); markDirty(); }} />
                     <CurrencyField label="Inspections / Surveys" value={ccBk.property_costs || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, property_costs: v } }); markDirty(); }} />
@@ -409,12 +457,12 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <CurrencyField label="Transfer Taxes" value={ccBk.transfer_taxes || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, transfer_taxes: v } }); markDirty(); }} />
                     <CurrencyField label="Reserves / Escrow" value={ccBk.reserves_escrow || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, reserves_escrow: v } }); markDirty(); }} />
                     <CurrencyField label="Other Closing Costs" value={ccBk.other_closing || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, other_closing: v } }); markDirty(); }} />
-                    <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
                   </div>
                 </div>
 
-                {/* Totals row */}
-                <div className="grid grid-cols-2 gap-3 border-t border-slate-700 pt-3">
+                {/* Total row */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
+                  <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
                   <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee)} />
                   <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee - loanAmount)} />
                 </div>
@@ -447,7 +495,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     value={unit.type}
                     onChange={(e) => updateUnitMix(i, "type", e.target.value)}
                     placeholder="e.g. 1BR/1BA"
-                    className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                    className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
                   />
                 </div>
                 <NumField label="Count" value={unit.count} onChange={(v) => updateUnitMix(i, "count", v)} />
@@ -649,7 +697,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     value={proj.name}
                     onChange={(e) => updateProject(i, "name", e.target.value)}
                     placeholder="e.g. Roof Replacement"
-                    className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                    className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
                   />
                 </div>
                 <CurrencyField label="Cost" value={proj.cost} onChange={(v) => updateProject(i, "cost", v)} />

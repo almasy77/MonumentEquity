@@ -79,7 +79,7 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
       {items.map((item) => (
-        <Card key={item.label} className="bg-slate-900 border-slate-800">
+        <Card key={item.label} className="bg-slate-900 border-slate-800 hover:border-slate-600 hover:bg-slate-800/50 transition-colors cursor-default">
           <CardContent className="p-3">
             <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1" title={item.title}>
               {item.label}
