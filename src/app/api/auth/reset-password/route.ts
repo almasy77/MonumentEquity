@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
     try {
-          const { token, password } = await req.json();
+          const bodyOrError = await safeJson(req);
+          if (isErrorResponse(bodyOrError)) return bodyOrError;
+          const { token, password } = bodyOrError as { token?: string; password?: string };
           if (!token || !password) {
                   return NextResponse.json({ error: "Token and password are required" }, { status: 400 });
           }
@@ -16,12 +20,13 @@ export async function POST(req: Request) {
           const redis = getRedis();
 
       // Look up the reset token
-      const tokenData = await redis.get<string>(`reset:${token}`);
+      const tokenData = await redis.get<string | { userId: string; expires: number }>(`reset:${token}`);
           if (!tokenData) {
                   return NextResponse.json({ error: "Invalid or expired reset link" }, { status: 400 });
           }
 
-      const { userId, expires } = typeof tokenData === "string" ? JSON.parse(tokenData) : tokenData;
+      const parsed = typeof tokenData === "string" ? JSON.parse(tokenData) : tokenData;
+      const { userId, expires } = parsed as { userId: string; expires: number };
 
       if (Date.now() > expires) {
               await redis.del(`reset:${token}`);
@@ -41,6 +46,7 @@ export async function POST(req: Request) {
 
       // Delete the reset token so it can't be reused
       await redis.del(`reset:${token}`);
+      await redis.del(`user:reset_pending:${userId}`);
 
       return NextResponse.json({ message: "Password reset successfully" });
     } catch (error) {

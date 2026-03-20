@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Deal } from "@/lib/validations";
 
-// GET /api/deals — list all active deals
-export async function GET() {
+// GET /api/deals — list all active deals (with optional pagination)
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,7 +14,9 @@ export async function GET() {
 
   try {
     const redis = getRedis();
-    const ids = await redis.zrange("deals:active", 0, -1, { rev: true });
+    const limit = Math.min(Number(req.nextUrl.searchParams.get("limit")) || 100, 500);
+    const offset = Number(req.nextUrl.searchParams.get("offset")) || 0;
+    const ids = await redis.zrange("deals:active", offset, offset + limit - 1, { rev: true });
     if (ids.length === 0) return NextResponse.json([]);
 
     const pipeline = redis.pipeline();
@@ -41,7 +44,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
 
     if (!body.address || !body.city || !body.state || !body.units || !body.asking_price || !body.source) {
       return NextResponse.json(

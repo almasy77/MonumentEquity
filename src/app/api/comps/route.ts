@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
+import { safeJson, isErrorResponse, sanitizeKeySegment } from "@/lib/api-helpers";
 import type { MarketComp } from "@/lib/validations";
 
 // GET /api/comps — list market comps, optional filters: city, min_units, max_units
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
 
     let ids: string[];
     if (city) {
-      ids = await redis.zrange(`comps:by_market:${city.toLowerCase()}`, 0, -1, { rev: true });
+      ids = await redis.zrange(`comps:by_market:${sanitizeKeySegment(city.toLowerCase())}`, 0, -1, { rev: true });
     } else {
       ids = await redis.zrange("comps:all", 0, -1, { rev: true });
     }
@@ -34,11 +35,11 @@ export async function GET(req: NextRequest) {
     const minUnits = req.nextUrl.searchParams.get("min_units");
     const maxUnits = req.nextUrl.searchParams.get("max_units");
     if (minUnits) {
-      const min = parseInt(minUnits);
+      const min = parseInt(minUnits, 10);
       if (!isNaN(min)) comps = comps.filter((c) => c.units >= min);
     }
     if (maxUnits) {
-      const max = parseInt(maxUnits);
+      const max = parseInt(maxUnits, 10);
       if (!isNaN(max)) comps = comps.filter((c) => c.units <= max);
     }
 
@@ -60,7 +61,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
 
     if (!body.address || !body.city || !body.state || !body.units || !body.sale_price || !body.sale_date) {
       return NextResponse.json(

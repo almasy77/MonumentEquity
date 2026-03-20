@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, addToIndex, removeFromIndex } from "@/lib/db";
+import { getRedis, addToIndex, removeFromIndex, getFromIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -44,7 +45,9 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
     const now = new Date().toISOString();
     const oldStage = existing.stage;
     const newStage = body.stage as DealStage | undefined;
@@ -147,6 +150,26 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     await redis.del(`deal:${id}`);
     await removeFromIndex("deals:active", id);
     await removeFromIndex(`deals:by_stage:${deal.stage}`, id);
+
+    // Cascade delete: scenarios, tasks, checklists for this deal
+    const scenarioIds = await getFromIndex(`scenarios:by_deal:${id}`);
+    for (const sid of scenarioIds) {
+      await redis.del(`scenario:${sid}`);
+    }
+    if (scenarioIds.length > 0) await redis.del(`scenarios:by_deal:${id}`);
+
+    const taskIds = await getFromIndex(`tasks:by_deal:${id}`);
+    for (const tid of taskIds) {
+      await redis.del(`task:${tid}`);
+      await removeFromIndex("tasks:all", tid);
+    }
+    if (taskIds.length > 0) await redis.del(`tasks:by_deal:${id}`);
+
+    const checklistIds = await getFromIndex(`checklists:by_deal:${id}`);
+    for (const cid of checklistIds) {
+      await redis.del(`checklist:${cid}`);
+    }
+    if (checklistIds.length > 0) await redis.del(`checklists:by_deal:${id}`);
 
     return NextResponse.json({ success: true });
   } catch (err) {

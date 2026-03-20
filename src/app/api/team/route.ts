@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, generateId } from "@/lib/db";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import bcrypt from "bcryptjs";
 
 // GET /api/team — list all team members (admin only)
@@ -47,8 +48,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { email, name } = body;
+  const bodyOrError = await safeJson(req);
+  if (isErrorResponse(bodyOrError)) return bodyOrError;
+  const body = bodyOrError;
+  const { email, name } = body as { email?: string; name?: string };
 
   if (!email || typeof email !== "string") {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -133,6 +136,16 @@ export async function DELETE(req: NextRequest) {
   await redis.del(`user:${memberId}`);
   await redis.del(`user:email:${userEmail}`);
   await redis.srem("team:members", memberId);
+
+  // Invalidate any pending password reset tokens for this user
+  // Scan for reset tokens (they have a TTL so they'll expire naturally,
+  // but we remove known ones for safety)
+  const resetTokenKey = `user:reset_pending:${memberId}`;
+  const pendingToken = await redis.get<string>(resetTokenKey);
+  if (pendingToken) {
+    await redis.del(`reset:${pendingToken}`);
+    await redis.del(resetTokenKey);
+  }
 
   return NextResponse.json({ success: true });
 }

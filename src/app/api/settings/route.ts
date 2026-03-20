@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import bcrypt from "bcryptjs";
 
 // GET /api/settings — get user's settings
@@ -33,7 +34,9 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Only admins can modify settings" }, { status: 403 });
   }
 
-  const body = await req.json();
+  const bodyOrError = await safeJson(req);
+  if (isErrorResponse(bodyOrError)) return bodyOrError;
+  const body = bodyOrError;
   const redis = getRedis();
 
   const user = await redis.get<Record<string, unknown>>(`user:${session.user.id}`);

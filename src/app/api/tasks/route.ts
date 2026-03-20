@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Task } from "@/lib/validations";
 
 // GET /api/tasks?deal_id=xxx — list tasks (optionally filtered by deal)
@@ -46,7 +47,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
 
     if (!body.deal_id || !body.title || !body.due_date) {
       return NextResponse.json(

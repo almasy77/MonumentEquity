@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, removeFromIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario } from "@/lib/validations";
 
@@ -63,7 +64,9 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 
   try {
     const { id } = await ctx.params;
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
     const redis = getRedis();
 
     const existing = await redis.get<Scenario>(`scenario:${id}`);

@@ -23,8 +23,8 @@ const STATUS_STYLES: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   occupied: "Occupied",
   vacant: "Vacant",
-  notice_to_vacate: "NTV",
-  down: "Down",
+  notice_to_vacate: "Notice to Vacate",
+  down: "Down for Reno",
 };
 
 function fmt(n: number | undefined): string {
@@ -93,8 +93,10 @@ function EditableCell({ value, onChange, type = "text", options, className = "",
   return (
     <span
       onClick={() => { setDraft(value); setEditing(true); }}
-      className={`cursor-pointer hover:bg-slate-800 rounded px-1 py-0.5 block min-h-[1.25rem] ${className}`}
+      className={`cursor-pointer hover:bg-slate-800 active:bg-slate-700 rounded px-1 py-0.5 block min-h-[1.25rem] border border-transparent hover:border-slate-700 ${className}`}
       title="Click to edit"
+      role="button"
+      aria-label={`Edit ${placeholder || "value"}`}
     >
       {value || <span className="text-slate-600 italic text-xs">{placeholder || "--"}</span>}
     </span>
@@ -115,8 +117,8 @@ function StatusCell({ status, onChange }: { status: string; onChange: (v: string
       >
         <option value="occupied">Occupied</option>
         <option value="vacant">Vacant</option>
-        <option value="notice_to_vacate">NTV</option>
-        <option value="down">Down</option>
+        <option value="notice_to_vacate">Notice to Vacate</option>
+        <option value="down">Down for Reno</option>
       </select>
     );
   }

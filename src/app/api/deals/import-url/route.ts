@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { extractDealFromUrl } from "@/lib/ai-extract";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,8 +14,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json();
-    const { url } = body;
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
+    const { url } = body as { url?: string };
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });

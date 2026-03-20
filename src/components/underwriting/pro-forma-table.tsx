@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { MonthlyRow, AnnualSummary } from "@/lib/underwriting";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import type { MonthlyRow, AnnualSummary, OpexBreakdown } from "@/lib/underwriting";
 
 function fmt(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -17,6 +18,36 @@ function fmtDetailed(n: number): string {
 
 type ViewMode = "annual" | "monthly";
 
+// Row definition with optional children for expandable sections
+interface RowDef {
+  key: string;
+  label: string;
+  negative?: boolean;
+  bold?: boolean;
+  highlight?: boolean;
+  indent?: boolean; // indented sub-row
+  children?: RowDef[];
+}
+
+// Get value from annual summary, including opex_breakdown fields
+function getAnnualValue(a: AnnualSummary, key: string): number {
+  if (key in a) return a[key as keyof AnnualSummary] as number;
+  // Check opex_breakdown
+  if (a.opex_breakdown && key in a.opex_breakdown) {
+    return a.opex_breakdown[key as keyof OpexBreakdown];
+  }
+  return 0;
+}
+
+// Get value from monthly row, including opex_breakdown fields
+function getMonthlyValue(m: MonthlyRow, key: string): number {
+  if (key in m) return m[key as keyof MonthlyRow] as number;
+  if (m.opex_breakdown && key in m.opex_breakdown) {
+    return m.opex_breakdown[key as keyof OpexBreakdown];
+  }
+  return 0;
+}
+
 export function ProFormaTable({
   monthly,
   annual,
@@ -26,20 +57,73 @@ export function ProFormaTable({
 }) {
   const [view, setView] = useState<ViewMode>("annual");
   const [selectedYear, setSelectedYear] = useState(1);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
-  const rows = [
-    { key: "gpr", label: "Gross Potential Rent" },
-    { key: "vacancy_loss", label: "Less: Vacancy", negative: true },
-    { key: "bad_debt", label: "Less: Bad Debt", negative: true },
-    { key: "concessions", label: "Less: Concessions", negative: true },
-    { key: "other_income", label: "Plus: Other Income" },
-    { key: "egi", label: "Effective Gross Income", bold: true },
-    { key: "total_opex", label: "Less: Operating Expenses", negative: true },
+  function toggleSection(key: string) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const rows: RowDef[] = [
+    {
+      key: "egi",
+      label: "Revenue (EGI)",
+      bold: true,
+      children: [
+        { key: "gpr", label: "Gross Potential Rent" },
+        { key: "vacancy_loss", label: "Less: Vacancy", negative: true },
+        { key: "bad_debt", label: "Less: Bad Debt", negative: true },
+        { key: "concessions", label: "Less: Concessions", negative: true },
+        { key: "other_income", label: "Plus: Other Income" },
+      ],
+    },
+    {
+      key: "total_opex",
+      label: "Less: Operating Expenses",
+      negative: true,
+      children: [
+        { key: "management_fees", label: "Management Fees", negative: true, indent: true },
+        { key: "payroll", label: "Payroll", negative: true, indent: true },
+        { key: "repairs_maintenance", label: "Repairs & Maintenance", negative: true, indent: true },
+        { key: "turnover", label: "Turnover", negative: true, indent: true },
+        { key: "insurance", label: "Insurance", negative: true, indent: true },
+        { key: "property_tax", label: "Property Tax", negative: true, indent: true },
+        { key: "utilities", label: "Utilities", negative: true, indent: true },
+        { key: "admin_legal_marketing", label: "Admin / Legal / Mktg", negative: true, indent: true },
+        { key: "contract_services", label: "Contract Services", negative: true, indent: true },
+        { key: "reserves", label: "Reserves", negative: true, indent: true },
+      ],
+    },
     { key: "noi", label: "Net Operating Income", bold: true, highlight: true },
     { key: "debt_service", label: "Less: Debt Service", negative: true },
     { key: "capex", label: "Less: CapEx", negative: true },
     { key: "cash_flow", label: "Cash Flow", bold: true, highlight: true },
   ];
+
+  // Flatten rows based on expanded state
+  function flattenRows(): (RowDef & { expandable?: boolean; expanded?: boolean })[] {
+    const result: (RowDef & { expandable?: boolean; expanded?: boolean })[] = [];
+    for (const row of rows) {
+      if (row.children) {
+        const expanded = expandedSections.has(row.key);
+        result.push({ ...row, expandable: true, expanded });
+        if (expanded) {
+          for (const child of row.children) {
+            result.push({ ...child, indent: true });
+          }
+        }
+      } else {
+        result.push(row);
+      }
+    }
+    return result;
+  }
+
+  const visibleRows = flattenRows();
 
   return (
     <Card className="bg-slate-900 border-slate-800">
@@ -107,28 +191,38 @@ export function ProFormaTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <tr
                   key={row.key}
                   className={`border-b border-slate-800/50 ${
                     row.highlight ? "bg-slate-800/30" : ""
-                  }`}
+                  } ${row.expandable ? "cursor-pointer hover:bg-slate-800/20" : ""}`}
+                  onClick={row.expandable ? () => toggleSection(row.key) : undefined}
                 >
                   <td
                     className={`py-1.5 pr-4 ${
                       row.bold ? "font-semibold text-white" : "text-slate-300"
-                    }`}
+                    } ${row.indent ? "pl-5 text-slate-400 text-xs" : ""}`}
                   >
-                    {row.label}
+                    <span className="flex items-center gap-1">
+                      {row.expandable && (
+                        row.expanded
+                          ? <ChevronDown className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                          : <ChevronRight className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                      )}
+                      {row.label}
+                    </span>
                   </td>
                   {annual.map((a) => {
-                    const val = a[row.key as keyof AnnualSummary] as number;
+                    const val = getAnnualValue(a, row.key);
                     return (
                       <td
                         key={a.year}
                         className={`text-right py-1.5 px-2 tabular-nums ${
                           row.bold ? "font-semibold text-white" : "text-slate-300"
                         } ${row.negative ? "text-slate-400" : ""} ${
+                          row.indent ? "text-xs" : ""
+                        } ${
                           row.key === "cash_flow" && val < 0 ? "text-red-400" : ""
                         }`}
                       >
@@ -170,25 +264,33 @@ export function ProFormaTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <tr
                   key={row.key}
                   className={`border-b border-slate-800/50 ${
                     row.highlight ? "bg-slate-800/30" : ""
-                  }`}
+                  } ${row.expandable ? "cursor-pointer hover:bg-slate-800/20" : ""}`}
+                  onClick={row.expandable ? () => toggleSection(row.key) : undefined}
                 >
                   <td
                     className={`py-1 pr-4 text-xs ${
                       row.bold ? "font-semibold text-white" : "text-slate-300"
-                    }`}
+                    } ${row.indent ? "pl-5 text-slate-400" : ""}`}
                   >
-                    {row.label}
+                    <span className="flex items-center gap-1">
+                      {row.expandable && (
+                        row.expanded
+                          ? <ChevronDown className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                          : <ChevronRight className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                      )}
+                      {row.label}
+                    </span>
                   </td>
                   {Array.from({ length: 12 }, (_, i) => {
                     const mIdx = (selectedYear - 1) * 12 + i;
                     const m = monthly[mIdx];
                     if (!m) return <td key={i} />;
-                    const val = m[row.key as keyof MonthlyRow] as number;
+                    const val = getMonthlyValue(m, row.key);
                     return (
                       <td
                         key={i}

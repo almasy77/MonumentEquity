@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { ShareLink } from "@/lib/validations";
 
 // POST /api/share — generate a share link
@@ -14,7 +15,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
     if (!body.deal_id) {
       return NextResponse.json({ error: "deal_id is required" }, { status: 400 });
     }

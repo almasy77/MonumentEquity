@@ -128,7 +128,7 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
     {
       label: `Stabilized yield ≥ ${(BUY_BOX.min_yield_on_cost * 100).toFixed(0)}%`,
       pass: stabilizedYield >= BUY_BOX.min_yield_on_cost,
-      value: `${(stabilizedYield * 100).toFixed(1)}%`,
+      value: `${(stabilizedYield * 100).toFixed(2)}%`,
     },
     {
       label: `Neighborhood score ≥ ${BUY_BOX.min_neighborhood_score}`,
@@ -142,17 +142,17 @@ export function BuyBoxScorecard({ deal }: { deal: Deal }) {
   const finalScore = failedGates > 0 ? Math.max(0, qualScore - failedGates * 15) : qualScore;
   const recommendation =
     failedGates > 1
-      ? "PASS"
+      ? "DECLINE"
       : finalScore >= 75
       ? "PURSUE"
       : finalScore >= 50
       ? "MAYBE"
-      : "PASS";
+      : "DECLINE";
 
   const recColor = {
     PURSUE: "bg-green-600 text-white",
     MAYBE: "bg-yellow-600 text-white",
-    PASS: "bg-red-600 text-white",
+    DECLINE: "bg-red-600 text-white",
   }[recommendation];
 
   function updateFactor(idx: number, score: number) {

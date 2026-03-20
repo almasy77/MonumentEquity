@@ -254,7 +254,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   function addUnitType() {
     setR({
       ...r,
-      unit_mix: [...unitMix, { type: "New Type", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }],
+      unit_mix: [...unitMix, { type: "", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }],
     });
     markDirty();
   }
@@ -273,7 +273,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       ...c,
       projects: [
         ...projects,
-        { name: "New Project", cost: 0, start_month: 1, duration_months: 1 },
+        { name: "", cost: 0, start_month: 1, duration_months: 1 },
       ],
     });
     markDirty();
@@ -291,31 +291,31 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     markDirty();
   }
 
-  // ── Computed T12 values from Revenue & OpEx ──
   const totalUnits = unitMix.reduce((sum, u) => sum + u.count, 0);
+
+  // Lightweight NOI estimate for display in Exit section & reserves % EGI
   const t12GPR = unitMix.reduce((sum, u) => sum + u.count * u.current_rent * 12, 0);
-  const t12VacancyLoss = t12GPR * (r.vacancy_rate || 0);
-  const t12BadDebt = t12GPR * (r.bad_debt_rate || 0);
-  const t12OtherIncome = (r.other_income_monthly || 0) * 12;
-  const t12EGI = t12GPR - t12VacancyLoss - t12BadDebt + t12OtherIncome;
-  const t12MgmtFees = t12EGI * (e.management_fee_rate || 0);
-  const t12Payroll = e.payroll_annual || 0;
-  const t12RM = (e.repairs_maintenance_per_unit || 0) * totalUnits;
-  const t12Turnover = (e.turnover_cost_per_unit || 0) * totalUnits;
-  const t12Insurance = (e.insurance_per_unit || 0) * totalUnits;
-  const t12PropertyTax = e.property_tax_total || 0;
-  const t12Utilities = (e.utilities_per_unit || 0) * totalUnits;
-  const t12Admin = e.admin_legal_marketing || 0;
-  const t12ContractSvcs = e.contract_services || 0;
-  const t12Reserves = (e.reserves_per_unit || 0) * totalUnits;
-  const t12TotalOpex = t12MgmtFees + t12Payroll + t12RM + t12Turnover + t12Insurance + t12PropertyTax + t12Utilities + t12Admin + t12ContractSvcs + t12Reserves;
+  const t12EGI = t12GPR * (1 - (r.vacancy_rate || 0) - (r.bad_debt_rate || 0) - (r.concessions_rate || 0)) + (r.other_income_monthly || 0) * 12;
+  const t12TotalOpex = t12EGI * (e.management_fee_rate || 0)
+    + (e.payroll_annual || 0)
+    + (e.repairs_maintenance_per_unit || 0) * totalUnits
+    + (e.turnover_cost_per_unit || 0) * totalUnits
+    + (e.insurance_per_unit || 0) * totalUnits
+    + (e.property_tax_total || 0)
+    + (e.utilities_per_unit || 0) * totalUnits
+    + (e.admin_legal_marketing || 0)
+    + (e.contract_services || 0)
+    + (e.reserves_per_unit || 0) * totalUnits;
   const t12NOI = t12EGI - t12TotalOpex;
 
   return (
-    <Card className="bg-slate-900 border-slate-800">
+    <Card className={`bg-slate-900 ${dirty ? "border-yellow-700/60" : "border-slate-800"}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-white text-base">Assumptions</CardTitle>
+          <CardTitle className="text-white text-base flex items-center gap-2">
+            Assumptions
+            {dirty && <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" title="Unsaved changes" />}
+          </CardTitle>
           <div className="flex items-center gap-2">
             {dirty && (
               <Button
@@ -365,7 +365,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
-        {/* Purchase & Financing — two-column layout */}
+        {/* Purchase & Financing — compact grid layout */}
         <Section title="Purchase & Financing" defaultOpen>
           {(() => {
             const loanAmount = p.purchase_price * (f.ltv || 0);
@@ -378,39 +378,45 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const closingCosts = ccBreakdownTotal > 0 ? ccBreakdownTotal : p.purchase_price * (p.closing_cost_rate || 0);
             const originationFee = loanAmount * (f.origination_fee_rate || 0);
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left column: Purchase */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Purchase</div>
+              <div className="space-y-4">
+                {/* Purchase + Financing side by side in a dense grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
                   <CurrencyField label="Purchase Price" value={p.purchase_price} onChange={(v) => { setP({ ...p, purchase_price: v }); markDirty(); }} />
-                  <ReadOnlyField label="Loan Amount" value={fmtCurrency(loanAmount)} suffix="= Price × LTV" />
-                  <ReadOnlyField label="Down Payment" value={fmtCurrency(downPayment)} suffix="= Price − Loan" />
-                  <div className="text-xs text-slate-500 font-medium pt-2">Closing Costs</div>
-                  <PctField label="Closing Cost Rate" value={p.closing_cost_rate} onChange={(v) => { setP({ ...p, closing_cost_rate: v }); markDirty(); }} />
-                  <CurrencyField label="Title Insurance" value={ccBk.title_insurance || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, title_insurance: v } }); markDirty(); }} />
-                  <CurrencyField label="Legal Fees" value={ccBk.legal_fees || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, legal_fees: v } }); markDirty(); }} />
-                  <CurrencyField label="Inspections / Surveys" value={ccBk.property_costs || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, property_costs: v } }); markDirty(); }} />
-                  <CurrencyField label="Prorations" value={ccBk.prorations || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, prorations: v } }); markDirty(); }} />
-                  <CurrencyField label="3rd Party Reports" value={ccBk.third_party_reports || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, third_party_reports: v } }); markDirty(); }} />
-                  <CurrencyField label="Transfer Taxes" value={ccBk.transfer_taxes || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, transfer_taxes: v } }); markDirty(); }} />
-                  <CurrencyField label="Reserves / Escrow" value={ccBk.reserves_escrow || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, reserves_escrow: v } }); markDirty(); }} />
-                  <CurrencyField label="Other Closing Costs" value={ccBk.other_closing || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, other_closing: v } }); markDirty(); }} />
-                  <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="Origination Fee" value={fmtCurrency(originationFee)} suffix="= Loan × Rate" />
-                  <div className="border-t border-slate-700 pt-2">
-                    <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee)} />
-                    <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee - loanAmount)} />
-                  </div>
-                </div>
-                {/* Right column: Financing */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Financing</div>
                   <PctField label="LTV" value={f.ltv} onChange={(v) => { setF({ ...f, ltv: v }); markDirty(); }} />
                   <PctField label="Interest Rate" value={f.interest_rate} onChange={(v) => { setF({ ...f, interest_rate: v }); markDirty(); }} />
                   <NumField label="Amortization" value={f.amortization_years} suffix="yrs" onChange={(v) => { setF({ ...f, amortization_years: v }); markDirty(); }} />
                   <NumField label="Loan Term" value={f.loan_term_years} suffix="yrs" onChange={(v) => { setF({ ...f, loan_term_years: v }); markDirty(); }} />
-                  <NumField label="IO (Interest Only) Period" value={f.io_period_months} suffix="mo" onChange={(v) => { setF({ ...f, io_period_months: v }); markDirty(); }} />
+                  <NumField label="IO Period" value={f.io_period_months} suffix="mo" onChange={(v) => { setF({ ...f, io_period_months: v }); markDirty(); }} />
+                </div>
+                {/* Computed fields row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <ReadOnlyField label="Loan Amount" value={fmtCurrency(loanAmount)} />
+                  <ReadOnlyField label="Down Payment" value={fmtCurrency(downPayment)} />
                   <PctField label="Origination Fee Rate" value={f.origination_fee_rate} onChange={(v) => { setF({ ...f, origination_fee_rate: v }); markDirty(); }} />
+                  <ReadOnlyField label="Origination Fee" value={fmtCurrency(originationFee)} />
+                </div>
+
+                {/* Closing costs in compact grid */}
+                <div>
+                  <div className="text-xs text-slate-500 font-medium mb-2">Closing Costs</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <PctField label="Closing Cost Rate" value={p.closing_cost_rate} onChange={(v) => { setP({ ...p, closing_cost_rate: v }); markDirty(); }} />
+                    <CurrencyField label="Title Insurance" value={ccBk.title_insurance || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, title_insurance: v } }); markDirty(); }} />
+                    <CurrencyField label="Legal Fees" value={ccBk.legal_fees || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, legal_fees: v } }); markDirty(); }} />
+                    <CurrencyField label="Inspections / Surveys" value={ccBk.property_costs || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, property_costs: v } }); markDirty(); }} />
+                    <CurrencyField label="Prorations" value={ccBk.prorations || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, prorations: v } }); markDirty(); }} />
+                    <CurrencyField label="3rd Party Reports" value={ccBk.third_party_reports || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, third_party_reports: v } }); markDirty(); }} />
+                    <CurrencyField label="Transfer Taxes" value={ccBk.transfer_taxes || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, transfer_taxes: v } }); markDirty(); }} />
+                    <CurrencyField label="Reserves / Escrow" value={ccBk.reserves_escrow || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, reserves_escrow: v } }); markDirty(); }} />
+                    <CurrencyField label="Other Closing Costs" value={ccBk.other_closing || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, other_closing: v } }); markDirty(); }} />
+                    <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
+                  </div>
+                </div>
+
+                {/* Totals row */}
+                <div className="grid grid-cols-2 gap-3 border-t border-slate-700 pt-3">
+                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee)} />
+                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee - loanAmount)} />
                 </div>
               </div>
             );
@@ -440,6 +446,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <Input
                     value={unit.type}
                     onChange={(e) => updateUnitMix(i, "type", e.target.value)}
+                    placeholder="e.g. 1BR/1BA"
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8"
                   />
                 </div>
@@ -477,7 +484,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
-        {/* Operating Expenses — two-column with utility & service breakdowns */}
+        {/* Operating Expenses — compact grid layout */}
         <Section title="Operating Expenses">
           {(() => {
             const ub = e.utilities_breakdown || {};
@@ -489,232 +496,136 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const reservesAnnual = (e.reserves_per_unit || 0) * totalUnits;
             const reservesPctEGI = t12EGI > 0 ? (reservesAnnual / t12EGI * 100).toFixed(1) : "0.0";
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left column: core expenses */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Core Expenses</div>
-                  <PctField label="Mgmt Fee" value={e.management_fee_rate} suffix="% EGI" onChange={(v) => { setE({ ...e, management_fee_rate: v }); markDirty(); }} />
-                  <CurrencyField label="Payroll" value={e.payroll_annual} suffix="/yr" onChange={(v) => { setE({ ...e, payroll_annual: v }); markDirty(); }} />
-                  <CurrencyField label="R&M" value={e.repairs_maintenance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, repairs_maintenance_per_unit: v }); markDirty(); }} />
-                  <CurrencyField label="Turnover" value={e.turnover_cost_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, turnover_cost_per_unit: v }); markDirty(); }} />
-                  <CurrencyField label="Insurance" value={e.insurance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, insurance_per_unit: v }); markDirty(); }} />
-                  <CurrencyField label="Property Tax" value={e.property_tax_total} suffix="/yr total" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
-                  <CurrencyField label="Admin/Legal/Mktg" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
-                  <div className="pt-2">
-                    <CurrencyField label="Reserves" value={e.reserves_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, reserves_per_unit: v }); markDirty(); }} />
-                    <p className="text-xs text-slate-500 mt-1">{reservesPctEGI}% of EGI ({fmtCurrency(reservesAnnual)}/yr)</p>
+              <div className="space-y-4">
+                {/* Core expenses in a dense grid */}
+                <div>
+                  <div className="text-xs text-slate-500 font-medium mb-2">Core Expenses</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <PctField label="Mgmt Fee" value={e.management_fee_rate} suffix="% EGI" onChange={(v) => { setE({ ...e, management_fee_rate: v }); markDirty(); }} />
+                    <CurrencyField label="Payroll" value={e.payroll_annual} suffix="/yr" onChange={(v) => { setE({ ...e, payroll_annual: v }); markDirty(); }} />
+                    <CurrencyField label="Property Tax" value={e.property_tax_total} suffix="/yr total" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
+                    <CurrencyField label="Insurance" value={e.insurance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, insurance_per_unit: v }); markDirty(); }} />
+                    <CurrencyField label="Repairs & Maintenance" value={e.repairs_maintenance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, repairs_maintenance_per_unit: v }); markDirty(); }} />
+                    <CurrencyField label="Turnover" value={e.turnover_cost_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, turnover_cost_per_unit: v }); markDirty(); }} />
+                    <CurrencyField label="Admin / Legal / Marketing" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
+                    <div>
+                      <CurrencyField label="Reserves" value={e.reserves_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, reserves_per_unit: v }); markDirty(); }} />
+                      <p className="text-xs text-slate-500 mt-0.5">{reservesPctEGI}% EGI ({fmtCurrency(reservesAnnual)}/yr)</p>
+                    </div>
                   </div>
                 </div>
-                {/* Right column: utilities & services breakdown */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Utilities <span className="text-slate-600">(/unit/yr)</span></div>
-                  <CurrencyField label="Electric" value={ub.electric_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
-                    const newUb = { ...ub, electric_per_unit: v };
-                    const newTotal = (v || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
-                    setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Water / Sewer" value={ub.water_sewer_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
-                    const newUb = { ...ub, water_sewer_per_unit: v };
-                    const newTotal = (ub.electric_per_unit || 0) + (v || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
-                    setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Gas" value={ub.gas_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
-                    const newUb = { ...ub, gas_per_unit: v };
-                    const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (v || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
-                    setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Trash" value={ub.trash_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
-                    const newUb = { ...ub, trash_per_unit: v };
-                    const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (v || 0) + (ub.other_utilities_per_unit || 0);
-                    setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Other Utilities" value={ub.other_utilities_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
-                    const newUb = { ...ub, other_utilities_per_unit: v };
-                    const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (v || 0);
-                    setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
-                  }} />
-                  {utilitiesTotal > 0 ? (
-                    <ReadOnlyField label="Total Utilities" value={`${fmtCurrency(utilitiesTotal)}/unit/yr`} />
-                  ) : (
-                    <CurrencyField label="Total Utilities" value={e.utilities_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, utilities_per_unit: v }); markDirty(); }} />
-                  )}
 
-                  <div className="text-xs text-slate-500 font-medium pt-2">Services <span className="text-slate-600">(/yr total)</span></div>
-                  <CurrencyField label="Landscaping" value={sb.landscaping || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, landscaping: v };
-                    const newTotal = (v || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Snow Removal" value={sb.snow_removal || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, snow_removal: v };
-                    const newTotal = (sb.landscaping || 0) + (v || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Pest Control" value={sb.pest_control || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, pest_control: v };
-                    const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (v || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Security" value={sb.security || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, security: v };
-                    const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (v || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Cleaning" value={sb.cleaning || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, cleaning: v };
-                    const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (v || 0) + (sb.other_services || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  <CurrencyField label="Other Services" value={sb.other_services || 0} suffix="/yr" onChange={(v) => {
-                    const newSb = { ...sb, other_services: v };
-                    const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (v || 0);
-                    setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
-                  }} />
-                  {servicesTotal > 0 ? (
-                    <ReadOnlyField label="Total Services" value={`${fmtCurrency(servicesTotal)}/yr`} />
-                  ) : (
-                    <CurrencyField label="Total Contract Svcs" value={e.contract_services} suffix="/yr" onChange={(v) => { setE({ ...e, contract_services: v }); markDirty(); }} />
-                  )}
+                {/* Utilities in a dense grid */}
+                <div>
+                  <div className="text-xs text-slate-500 font-medium mb-2">Utilities <span className="text-slate-600">(/unit/yr)</span></div>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                    <CurrencyField label="Electric" value={ub.electric_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                      const newUb = { ...ub, electric_per_unit: v };
+                      const newTotal = (v || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
+                      setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Water / Sewer" value={ub.water_sewer_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                      const newUb = { ...ub, water_sewer_per_unit: v };
+                      const newTotal = (ub.electric_per_unit || 0) + (v || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
+                      setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Gas" value={ub.gas_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                      const newUb = { ...ub, gas_per_unit: v };
+                      const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (v || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0);
+                      setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Trash" value={ub.trash_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                      const newUb = { ...ub, trash_per_unit: v };
+                      const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (v || 0) + (ub.other_utilities_per_unit || 0);
+                      setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Other Utilities" value={ub.other_utilities_per_unit || 0} suffix="/unit/yr" onChange={(v) => {
+                      const newUb = { ...ub, other_utilities_per_unit: v };
+                      const newTotal = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) + (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (v || 0);
+                      setE({ ...e, utilities_breakdown: newUb, utilities_per_unit: newTotal }); markDirty();
+                    }} />
+                    {utilitiesTotal > 0 ? (
+                      <ReadOnlyField label="Total" value={`${fmtCurrency(utilitiesTotal)}/unit`} />
+                    ) : (
+                      <CurrencyField label="Total Utilities" value={e.utilities_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, utilities_per_unit: v }); markDirty(); }} />
+                    )}
+                  </div>
                 </div>
+
+                {/* Services in a dense grid */}
+                <div>
+                  <div className="text-xs text-slate-500 font-medium mb-2">Services <span className="text-slate-600">(/yr total)</span></div>
+                  <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
+                    <CurrencyField label="Landscaping" value={sb.landscaping || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, landscaping: v };
+                      const newTotal = (v || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Snow Removal" value={sb.snow_removal || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, snow_removal: v };
+                      const newTotal = (sb.landscaping || 0) + (v || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Pest Control" value={sb.pest_control || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, pest_control: v };
+                      const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (v || 0) + (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Security" value={sb.security || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, security: v };
+                      const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (v || 0) + (sb.cleaning || 0) + (sb.other_services || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Cleaning" value={sb.cleaning || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, cleaning: v };
+                      const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (v || 0) + (sb.other_services || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    <CurrencyField label="Other Services" value={sb.other_services || 0} suffix="/yr" onChange={(v) => {
+                      const newSb = { ...sb, other_services: v };
+                      const newTotal = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) + (sb.security || 0) + (sb.cleaning || 0) + (v || 0);
+                      setE({ ...e, services_breakdown: newSb, contract_services: newTotal }); markDirty();
+                    }} />
+                    {servicesTotal > 0 ? (
+                      <ReadOnlyField label="Total" value={`${fmtCurrency(servicesTotal)}/yr`} />
+                    ) : (
+                      <CurrencyField label="Total Contract Svcs" value={e.contract_services} suffix="/yr" onChange={(v) => { setE({ ...e, contract_services: v }); markDirty(); }} />
+                    )}
+                  </div>
+                </div>
+                {/* Import Deal T12 button */}
+                {dealT12 && dealT12.months && dealT12.months.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const t12Sum = (field: string) =>
+                          dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+                        const units = dealUnits || 1;
+                        setE({
+                          ...e,
+                          property_tax_total: t12Sum("property_taxes") || e.property_tax_total,
+                          insurance_per_unit: t12Sum("insurance") ? Math.round(t12Sum("insurance") / units) : e.insurance_per_unit,
+                          utilities_per_unit: (t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"))
+                            ? Math.round((t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas")) / units)
+                            : e.utilities_per_unit,
+                          repairs_maintenance_per_unit: t12Sum("repairs_maintenance") ? Math.round(t12Sum("repairs_maintenance") / units) : e.repairs_maintenance_per_unit,
+                          payroll_annual: t12Sum("payroll") || e.payroll_annual,
+                          admin_legal_marketing: (t12Sum("admin_expenses") + t12Sum("marketing")) || e.admin_legal_marketing,
+                          contract_services: t12Sum("contract_services") || e.contract_services,
+                        });
+                        markDirty();
+                      }}
+                      className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
+                    >
+                      <Download className="h-3 w-3 mr-1" /> Import Deal T12 to Expenses
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })()}
-        </Section>
-
-        {/* T12 Operating Statement — read-only, computed from Revenue & OpEx */}
-        <Section title="T12 Operating Statement">
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Auto-calculated from Revenue &amp; Rent Roll and Operating Expenses above.
-            </p>
-
-            {/* Revenue section */}
-            <div className="text-xs text-slate-500 font-medium pt-1">Revenue</div>
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Gross Potential Rent</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12GPR)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Less: Vacancy Loss</td>
-                    <td className="px-3 py-1.5 text-right text-red-400">({fmtCurrency(t12VacancyLoss)})</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Less: Bad Debt</td>
-                    <td className="px-3 py-1.5 text-right text-red-400">({fmtCurrency(t12BadDebt)})</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Plus: Other Income</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12OtherIncome)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800 bg-slate-800/30">
-                    <td className="px-3 py-1.5 text-slate-200 font-medium">Effective Gross Income</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200 font-medium">{fmtCurrency(t12EGI)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Expenses section */}
-            <div className="text-xs text-slate-500 font-medium pt-1">Operating Expenses</div>
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Management Fees</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12MgmtFees)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Payroll</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Payroll)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Repairs & Maintenance</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12RM)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Turnover</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Turnover)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Insurance</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Insurance)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Property Tax</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12PropertyTax)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Utilities</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Utilities)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Admin / Legal / Marketing</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Admin)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Contract Services</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12ContractSvcs)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Reserves</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Reserves)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800 bg-slate-800/30">
-                    <td className="px-3 py-1.5 text-slate-200 font-medium">Total Operating Expenses</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200 font-medium">{fmtCurrency(t12TotalOpex)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* NOI */}
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="bg-slate-800/50">
-                    <td className="px-3 py-2 text-white font-semibold">Net Operating Income (NOI)</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${t12NOI >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {fmtCurrency(t12NOI)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Load from Deal T12 button — still allows importing historical data to OpEx */}
-            {dealT12 && dealT12.months && dealT12.months.length > 0 && (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const t12Sum = (field: string) =>
-                      dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
-                    const units = dealUnits || 1;
-                    setE({
-                      ...e,
-                      property_tax_total: t12Sum("property_taxes") || e.property_tax_total,
-                      insurance_per_unit: t12Sum("insurance") ? Math.round(t12Sum("insurance") / units) : e.insurance_per_unit,
-                      utilities_per_unit: (t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"))
-                        ? Math.round((t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas")) / units)
-                        : e.utilities_per_unit,
-                      repairs_maintenance_per_unit: t12Sum("repairs_maintenance") ? Math.round(t12Sum("repairs_maintenance") / units) : e.repairs_maintenance_per_unit,
-                      payroll_annual: t12Sum("payroll") || e.payroll_annual,
-                      admin_legal_marketing: (t12Sum("admin_expenses") + t12Sum("marketing")) || e.admin_legal_marketing,
-                      contract_services: t12Sum("contract_services") || e.contract_services,
-                    });
-                    markDirty();
-                  }}
-                  className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
-                >
-                  <Download className="h-3 w-3 mr-1" /> Import Deal T12 to Expenses
-                </Button>
-              </div>
-            )}
-          </div>
         </Section>
 
         {/* CapEx: Per-Unit Renovations */}
@@ -737,6 +648,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <Input
                     value={proj.name}
                     onChange={(e) => updateProject(i, "name", e.target.value)}
+                    placeholder="e.g. Roof Replacement"
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8"
                   />
                 </div>
@@ -822,13 +734,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-xs text-slate-500">% of improvements eligible for bonus depreciation in year 1 (cost segregation)</p>
                     </div>
-                    <button
-                      type="button"
-                      className="mt-2 px-3 py-1 text-xs font-medium rounded bg-green-700/30 text-green-400 border border-green-700/50 hover:bg-green-700/50 transition-colors"
-                      onClick={() => { setDep({ ...dep, accelerated_depreciation_pct: 1 }); markDirty(); }}
-                    >
-                      Apply 100% Bonus Depreciation (One Big Beautiful Bill Act)
-                    </button>
                   </div>
                 </div>
                 {/* Right: computed results */}
@@ -865,7 +770,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                   <p className="text-xs text-slate-500">
                     Straight-line: 27.5-year residential schedule. Accelerated: eligible portion taken as bonus depreciation in year 1, remainder on 27.5-year schedule.
-                    The One Big Beautiful Bill Act reinstates 100% bonus depreciation for qualifying assets placed in service.
                   </p>
                 </div>
               </div>
