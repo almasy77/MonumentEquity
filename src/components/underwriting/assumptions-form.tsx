@@ -469,9 +469,8 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
 
                 {/* Totals row */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
                   <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="CapEx Reserve" value={fmtCurrency(p.capex_reserve || 0)} />
                   <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0))} />
                   <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) - loanAmount)} />
                 </div>
