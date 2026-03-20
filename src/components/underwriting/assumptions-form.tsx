@@ -729,13 +729,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-xs text-slate-500">% of improvements eligible for bonus depreciation in year 1 (cost segregation)</p>
                     </div>
-                    <button
-                      type="button"
-                      className="mt-2 px-3 py-1 text-xs font-medium rounded bg-green-700/30 text-green-400 border border-green-700/50 hover:bg-green-700/50 transition-colors"
-                      onClick={() => { setDep({ ...dep, accelerated_depreciation_pct: 1 }); markDirty(); }}
-                    >
-                      Apply 100% Bonus Depreciation (One Big Beautiful Bill Act)
-                    </button>
                   </div>
                 </div>
                 {/* Right: computed results */}
@@ -772,7 +765,6 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                   <p className="text-xs text-slate-500">
                     Straight-line: 27.5-year residential schedule. Accelerated: eligible portion taken as bonus depreciation in year 1, remainder on 27.5-year schedule.
-                    The One Big Beautiful Bill Act reinstates 100% bonus depreciation for qualifying assets placed in service.
                   </p>
                 </div>
               </div>
