@@ -192,6 +192,7 @@ export interface AnnualSummary {
   other_income: number;
   egi: number;
   total_opex: number;
+  opex_breakdown: OpexBreakdown;
   noi: number;
   debt_service: number;
   capex: number;
@@ -388,6 +389,18 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       other_income: sum((r) => r.other_income),
       egi: sum((r) => r.egi),
       total_opex: sum((r) => r.total_opex),
+      opex_breakdown: {
+        management_fees: sum((r) => r.opex_breakdown.management_fees),
+        payroll: sum((r) => r.opex_breakdown.payroll),
+        repairs_maintenance: sum((r) => r.opex_breakdown.repairs_maintenance),
+        turnover: sum((r) => r.opex_breakdown.turnover),
+        insurance: sum((r) => r.opex_breakdown.insurance),
+        property_tax: sum((r) => r.opex_breakdown.property_tax),
+        utilities: sum((r) => r.opex_breakdown.utilities),
+        admin_legal_marketing: sum((r) => r.opex_breakdown.admin_legal_marketing),
+        contract_services: sum((r) => r.opex_breakdown.contract_services),
+        reserves: sum((r) => r.opex_breakdown.reserves),
+      },
       noi: sum((r) => r.noi),
       debt_service: sum((r) => r.debt_service),
       capex: sum((r) => r.capex),

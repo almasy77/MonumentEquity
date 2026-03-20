@@ -291,24 +291,21 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     markDirty();
   }
 
-  // ── Computed T12 values from Revenue & OpEx ──
   const totalUnits = unitMix.reduce((sum, u) => sum + u.count, 0);
+
+  // Lightweight NOI estimate for display in Exit section & reserves % EGI
   const t12GPR = unitMix.reduce((sum, u) => sum + u.count * u.current_rent * 12, 0);
-  const t12VacancyLoss = t12GPR * (r.vacancy_rate || 0);
-  const t12BadDebt = t12GPR * (r.bad_debt_rate || 0);
-  const t12OtherIncome = (r.other_income_monthly || 0) * 12;
-  const t12EGI = t12GPR - t12VacancyLoss - t12BadDebt + t12OtherIncome;
-  const t12MgmtFees = t12EGI * (e.management_fee_rate || 0);
-  const t12Payroll = e.payroll_annual || 0;
-  const t12RM = (e.repairs_maintenance_per_unit || 0) * totalUnits;
-  const t12Turnover = (e.turnover_cost_per_unit || 0) * totalUnits;
-  const t12Insurance = (e.insurance_per_unit || 0) * totalUnits;
-  const t12PropertyTax = e.property_tax_total || 0;
-  const t12Utilities = (e.utilities_per_unit || 0) * totalUnits;
-  const t12Admin = e.admin_legal_marketing || 0;
-  const t12ContractSvcs = e.contract_services || 0;
-  const t12Reserves = (e.reserves_per_unit || 0) * totalUnits;
-  const t12TotalOpex = t12MgmtFees + t12Payroll + t12RM + t12Turnover + t12Insurance + t12PropertyTax + t12Utilities + t12Admin + t12ContractSvcs + t12Reserves;
+  const t12EGI = t12GPR * (1 - (r.vacancy_rate || 0) - (r.bad_debt_rate || 0) - (r.concessions_rate || 0)) + (r.other_income_monthly || 0) * 12;
+  const t12TotalOpex = t12EGI * (e.management_fee_rate || 0)
+    + (e.payroll_annual || 0)
+    + (e.repairs_maintenance_per_unit || 0) * totalUnits
+    + (e.turnover_cost_per_unit || 0) * totalUnits
+    + (e.insurance_per_unit || 0) * totalUnits
+    + (e.property_tax_total || 0)
+    + (e.utilities_per_unit || 0) * totalUnits
+    + (e.admin_legal_marketing || 0)
+    + (e.contract_services || 0)
+    + (e.reserves_per_unit || 0) * totalUnits;
   const t12NOI = t12EGI - t12TotalOpex;
 
   return (
@@ -592,145 +589,39 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     )}
                   </div>
                 </div>
+                {/* Import Deal T12 button */}
+                {dealT12 && dealT12.months && dealT12.months.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const t12Sum = (field: string) =>
+                          dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
+                        const units = dealUnits || 1;
+                        setE({
+                          ...e,
+                          property_tax_total: t12Sum("property_taxes") || e.property_tax_total,
+                          insurance_per_unit: t12Sum("insurance") ? Math.round(t12Sum("insurance") / units) : e.insurance_per_unit,
+                          utilities_per_unit: (t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"))
+                            ? Math.round((t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas")) / units)
+                            : e.utilities_per_unit,
+                          repairs_maintenance_per_unit: t12Sum("repairs_maintenance") ? Math.round(t12Sum("repairs_maintenance") / units) : e.repairs_maintenance_per_unit,
+                          payroll_annual: t12Sum("payroll") || e.payroll_annual,
+                          admin_legal_marketing: (t12Sum("admin_expenses") + t12Sum("marketing")) || e.admin_legal_marketing,
+                          contract_services: t12Sum("contract_services") || e.contract_services,
+                        });
+                        markDirty();
+                      }}
+                      className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
+                    >
+                      <Download className="h-3 w-3 mr-1" /> Import Deal T12 to Expenses
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })()}
-        </Section>
-
-        {/* T12 Operating Statement — read-only, computed from Revenue & OpEx */}
-        <Section title="T12 Operating Statement">
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Auto-calculated from Revenue &amp; Rent Roll and Operating Expenses above.
-            </p>
-
-            {/* Revenue section */}
-            <div className="text-xs text-slate-500 font-medium pt-1">Revenue</div>
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Gross Potential Rent</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12GPR)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Less: Vacancy Loss</td>
-                    <td className="px-3 py-1.5 text-right text-red-400">({fmtCurrency(t12VacancyLoss)})</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Less: Bad Debt</td>
-                    <td className="px-3 py-1.5 text-right text-red-400">({fmtCurrency(t12BadDebt)})</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Plus: Other Income</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12OtherIncome)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800 bg-slate-800/30">
-                    <td className="px-3 py-1.5 text-slate-200 font-medium">Effective Gross Income</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200 font-medium">{fmtCurrency(t12EGI)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Expenses section */}
-            <div className="text-xs text-slate-500 font-medium pt-1">Operating Expenses</div>
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Management Fees</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12MgmtFees)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Payroll</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Payroll)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Repairs & Maintenance</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12RM)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Turnover</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Turnover)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Insurance</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Insurance)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Property Tax</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12PropertyTax)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Utilities</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Utilities)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Admin / Legal / Marketing</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Admin)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Contract Services</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12ContractSvcs)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800/50">
-                    <td className="px-3 py-1.5 text-slate-400">Reserves</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200">{fmtCurrency(t12Reserves)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-800 bg-slate-800/30">
-                    <td className="px-3 py-1.5 text-slate-200 font-medium">Total Operating Expenses</td>
-                    <td className="px-3 py-1.5 text-right text-slate-200 font-medium">{fmtCurrency(t12TotalOpex)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* NOI */}
-            <div className="border border-slate-800/50 rounded-md overflow-hidden">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="bg-slate-800/50">
-                    <td className="px-3 py-2 text-white font-semibold">Net Operating Income (NOI)</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${t12NOI >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {fmtCurrency(t12NOI)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Load from Deal T12 button — still allows importing historical data to OpEx */}
-            {dealT12 && dealT12.months && dealT12.months.length > 0 && (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const t12Sum = (field: string) =>
-                      dealT12!.months.reduce((acc, m) => acc + ((m as unknown as Record<string, number>)[field] || 0), 0);
-                    const units = dealUnits || 1;
-                    setE({
-                      ...e,
-                      property_tax_total: t12Sum("property_taxes") || e.property_tax_total,
-                      insurance_per_unit: t12Sum("insurance") ? Math.round(t12Sum("insurance") / units) : e.insurance_per_unit,
-                      utilities_per_unit: (t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas"))
-                        ? Math.round((t12Sum("utilities") + t12Sum("utilities_water") + t12Sum("utilities_electric") + t12Sum("utilities_gas")) / units)
-                        : e.utilities_per_unit,
-                      repairs_maintenance_per_unit: t12Sum("repairs_maintenance") ? Math.round(t12Sum("repairs_maintenance") / units) : e.repairs_maintenance_per_unit,
-                      payroll_annual: t12Sum("payroll") || e.payroll_annual,
-                      admin_legal_marketing: (t12Sum("admin_expenses") + t12Sum("marketing")) || e.admin_legal_marketing,
-                      contract_services: t12Sum("contract_services") || e.contract_services,
-                    });
-                    markDirty();
-                  }}
-                  className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
-                >
-                  <Download className="h-3 w-3 mr-1" /> Import Deal T12 to Expenses
-                </Button>
-              </div>
-            )}
-          </div>
         </Section>
 
         {/* CapEx: Per-Unit Renovations */}
