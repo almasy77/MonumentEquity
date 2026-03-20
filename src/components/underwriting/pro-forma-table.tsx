@@ -194,9 +194,9 @@ export function ProFormaTable({
               {visibleRows.map((row) => (
                 <tr
                   key={row.key}
-                  className={`border-b border-slate-800/50 ${
+                  className={`border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors ${
                     row.highlight ? "bg-slate-800/30" : ""
-                  } ${row.expandable ? "cursor-pointer hover:bg-slate-800/20" : ""}`}
+                  } ${row.expandable ? "cursor-pointer" : ""}`}
                   onClick={row.expandable ? () => toggleSection(row.key) : undefined}
                 >
                   <td
@@ -267,9 +267,9 @@ export function ProFormaTable({
               {visibleRows.map((row) => (
                 <tr
                   key={row.key}
-                  className={`border-b border-slate-800/50 ${
+                  className={`border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors ${
                     row.highlight ? "bg-slate-800/30" : ""
-                  } ${row.expandable ? "cursor-pointer hover:bg-slate-800/20" : ""}`}
+                  } ${row.expandable ? "cursor-pointer" : ""}`}
                   onClick={row.expandable ? () => toggleSection(row.key) : undefined}
                 >
                   <td

@@ -20,9 +20,12 @@ export interface ClosingCostBreakdown {
   other_closing?: number;
 }
 
+export type ClosingCostMode = "rate" | "itemized";
+
 export interface PurchaseAssumptions {
   purchase_price: number;
-  closing_cost_rate: number; // % of purchase price (used if no breakdown)
+  closing_cost_rate: number; // % of purchase price
+  closing_cost_mode?: ClosingCostMode; // "rate" uses closing_cost_rate, "itemized" uses breakdown sum (default: "rate")
   closing_cost_breakdown?: ClosingCostBreakdown;
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
@@ -255,6 +258,26 @@ export interface UnderwritingResult {
   warnings: string[];
 }
 
+// ─── Closing Cost Helpers ────────────────────────────────────
+
+/** Sum all itemized closing cost breakdown fields */
+export function sumClosingCostBreakdown(ccBk?: ClosingCostBreakdown): number {
+  if (!ccBk) return 0;
+  return (ccBk.title_insurance || 0) + (ccBk.legal_fees || 0) +
+    (ccBk.property_costs || 0) + (ccBk.prorations || 0) +
+    (ccBk.third_party_reports || 0) + (ccBk.transfer_taxes || 0) +
+    (ccBk.reserves_escrow || 0) + (ccBk.other_closing || 0);
+}
+
+/** Compute total closing costs based on the selected mode */
+export function computeClosingCosts(purchase: PurchaseAssumptions): number {
+  const mode = purchase.closing_cost_mode || "rate";
+  if (mode === "itemized") {
+    return sumClosingCostBreakdown(purchase.closing_cost_breakdown);
+  }
+  return purchase.purchase_price * purchase.closing_cost_rate;
+}
+
 // ─── Calculation Engine ──────────────────────────────────────
 
 export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResult {
@@ -263,16 +286,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const warnings: string[] = [];
 
   // ── Purchase & Financing ──
-  const ccBreakdown = purchase.closing_cost_breakdown;
-  const closingCostsFromBreakdown = ccBreakdown
-    ? (ccBreakdown.title_insurance || 0) + (ccBreakdown.legal_fees || 0) +
-      (ccBreakdown.property_costs || 0) + (ccBreakdown.prorations || 0) +
-      (ccBreakdown.third_party_reports || 0) + (ccBreakdown.transfer_taxes || 0) +
-      (ccBreakdown.reserves_escrow || 0) + (ccBreakdown.other_closing || 0)
-    : 0;
-  const closingCosts = closingCostsFromBreakdown > 0
-    ? closingCostsFromBreakdown
-    : purchase.purchase_price * purchase.closing_cost_rate;
+  const closingCosts = computeClosingCosts(purchase);
   const loanAmount = purchase.purchase_price * financing.ltv;
   const originationFee = loanAmount * financing.origination_fee_rate;
   const totalCost = purchase.purchase_price + closingCosts + originationFee;
@@ -651,7 +665,7 @@ function buildSensitivityGrid(
 
       // Recalculate with adjusted inputs
       const adjustedLoan = adjustedInputs.purchase.purchase_price * adjustedInputs.financing.ltv;
-      const adjustedClosing = adjustedInputs.purchase.purchase_price * adjustedInputs.purchase.closing_cost_rate;
+      const adjustedClosing = computeClosingCosts(adjustedInputs.purchase);
       const adjustedOrigination = adjustedLoan * adjustedInputs.financing.origination_fee_rate;
       const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination - adjustedLoan;
 
