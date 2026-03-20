@@ -611,8 +611,15 @@ function buildCapexSheet(wb: ExcelJS.Workbook, capex: ScenarioInputs["capex"]) {
   row2.getCell(2).numFmt = CURRENCY_FMT;
   const row3 = ws.addRow(["Units to Renovate", capex.units_to_renovate]);
   row3.getCell(2).numFmt = NUMBER_FMT;
-  const row4 = ws.addRow(["Units per Month", capex.units_per_month]);
-  row4.getCell(2).numFmt = NUMBER_FMT;
+  ws.addRow(["Start Month", capex.renovation_start_month || 1]);
+  ws.addRow(["End Month", capex.renovation_end_month || capex.renovation_start_month || 1]);
+  const span = Math.max(1, (capex.renovation_end_month || capex.renovation_start_month || 1) - (capex.renovation_start_month || 1) + 1);
+  const upm = capex.units_to_renovate > 0 ? capex.units_to_renovate / span : 0;
+  const upmRow = ws.addRow(["Units per Month (derived)", Math.round(upm * 10) / 10]);
+  upmRow.getCell(2).numFmt = "#,##0.0";
+  if (capex.renovation_downtime_enabled) {
+    ws.addRow(["Renovation Downtime", `${capex.renovation_downtime_months || 1} mo/unit`]);
+  }
   // Total per-unit CapEx (formula)
   const row5 = ws.addRow(["Total Per-Unit CapEx"]);
   row5.getCell(1).font = BOLD_FONT;

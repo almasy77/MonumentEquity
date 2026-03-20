@@ -692,12 +692,46 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
         {/* CapEx: Per-Unit Renovations */}
         <Section title="CapEx: Per-Unit Renovations">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
-            <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
-            <NumField label="Units / Month" value={c.units_per_month} onChange={(v) => { setC({ ...c, units_per_month: v }); markDirty(); }} />
-            <NumField label="Start Month" value={c.renovation_start_month || 1} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
-          </div>
+          {(() => {
+            const startMo = c.renovation_start_month || 1;
+            const endMo = c.renovation_end_month || startMo;
+            const span = Math.max(1, endMo - startMo + 1);
+            const derivedUPM = c.units_to_renovate > 0 ? (c.units_to_renovate / span) : 0;
+            const downtimeEnabled = c.renovation_downtime_enabled || false;
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
+                  <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
+                  <NumField label="Start Month" value={startMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
+                  <NumField label="End Month" value={endMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_end_month: Math.max(startMo, v) }); markDirty(); }} />
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-400">
+                  <span>Units / Month: <span className="text-white font-medium">{derivedUPM % 1 === 0 ? derivedUPM : derivedUPM.toFixed(1)}</span></span>
+                  <span>Total CapEx: <span className="text-white font-medium">{fmtCurrency(c.per_unit_cost * c.units_to_renovate)}</span></span>
+                </div>
+                {/* Renovation Downtime */}
+                <div className="flex items-center gap-3 border-t border-slate-700 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setC({ ...c, renovation_downtime_enabled: !downtimeEnabled }); markDirty(); }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${downtimeEnabled ? "bg-blue-600" : "bg-slate-700"}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${downtimeEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                  <span className="text-xs text-slate-400">Renovation downtime vacancy</span>
+                  {downtimeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <NumField label="Downtime" value={c.renovation_downtime_months || 1} suffix="mo/unit" onChange={(v) => { setC({ ...c, renovation_downtime_months: Math.max(0.5, v) }); markDirty(); }} />
+                    </div>
+                  )}
+                </div>
+                {downtimeEnabled && (
+                  <p className="text-[10px] text-slate-500">Units earn $0 rent during renovation. Each unit is offline for {c.renovation_downtime_months || 1} month(s) before coming back online at the renovated rent.</p>
+                )}
+              </div>
+            );
+          })()}
         </Section>
 
         {/* CapEx: Projects */}

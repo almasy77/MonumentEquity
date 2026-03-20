@@ -120,8 +120,11 @@ export interface CapexProject {
 export interface CapexAssumptions {
   per_unit_cost: number;
   units_to_renovate: number;
-  units_per_month: number; // renovation pace
+  units_per_month?: number; // legacy — derived from start/end when not set
   renovation_start_month: number; // 1-indexed, when per-unit renovations begin
+  renovation_end_month?: number; // 1-indexed, when per-unit renovations end (inclusive)
+  renovation_downtime_enabled?: boolean; // whether to model vacancy during renovation
+  renovation_downtime_months?: number; // months each unit is offline (default 1)
   projects: CapexProject[];
 }
 
@@ -307,6 +310,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   // ── Renovation schedule ──
   // Track cumulative renovated units per month
   const renovatedByMonth = buildRenovationSchedule(capex, totalMonths);
+  const offlineByMonth = buildDowntimeSchedule(capex, renovatedByMonth, totalMonths);
 
   // ── Monthly Pro Forma ──
   const monthly: MonthlyRow[] = [];
@@ -316,23 +320,33 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
     const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
 
-    // GPR: sum across unit mix, accounting for renovated units
+    // GPR: sum across unit mix, accounting for renovated and offline units
     let gpr = 0;
-    const totalRenovated = renovatedByMonth[m - 1];
+    const totalOffline = offlineByMonth[m - 1];
+    // When downtime is enabled, units completing THIS month are still offline,
+    // so paying renovated = previous month's cumulative (their downtime has passed).
+    // When downtime is disabled, units earn renovated rent immediately on completion.
+    const totalPayingRenovated = capex.renovation_downtime_enabled
+      ? (m >= 2 ? renovatedByMonth[m - 2] : 0)
+      : renovatedByMonth[m - 1];
 
     for (const unit of revenue.unit_mix) {
-      // Distribute renovated units proportionally across unit types
       const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
-      const renovatedInType = Math.min(
-        Math.floor(totalRenovated * unitShare),
+      const payingRenovatedInType = Math.min(
+        Math.floor(totalPayingRenovated * unitShare),
         unit.count
       );
-      const unrenovatedInType = unit.count - renovatedInType;
+      const offlineInType = Math.min(
+        Math.floor(totalOffline * unitShare),
+        unit.count
+      );
+      // Paying unrenovated = total - paying renovated - offline
+      const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
 
       const baseRent = unit.current_rent * monthlyRentGrowth;
       const renovatedRent = (unit.current_rent + unit.renovated_rent_premium) * monthlyRentGrowth;
 
-      gpr += unrenovatedInType * baseRent + renovatedInType * renovatedRent;
+      gpr += payingUnrenovatedInType * baseRent + payingRenovatedInType * renovatedRent;
     }
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
@@ -591,19 +605,29 @@ function calculateLoanBalance(
   return Math.max(0, balance);
 }
 
+/** Derive the per-month renovation throughput from start/end or legacy units_per_month */
+function getUnitsPerMonth(capex: CapexAssumptions): number {
+  if (capex.renovation_end_month && capex.renovation_end_month >= (capex.renovation_start_month || 1)) {
+    const span = capex.renovation_end_month - (capex.renovation_start_month || 1) + 1;
+    return capex.units_to_renovate / span;
+  }
+  return capex.units_per_month || 0;
+}
+
 function buildRenovationSchedule(
   capex: CapexAssumptions,
   totalMonths: number
 ): number[] {
   const schedule: number[] = new Array(totalMonths).fill(0);
-  if (capex.units_per_month <= 0 || capex.units_to_renovate <= 0) return schedule;
+  const upm = getUnitsPerMonth(capex);
+  if (upm <= 0 || capex.units_to_renovate <= 0) return schedule;
 
   const startMonth = Math.max(1, capex.renovation_start_month || 1);
   let renovated = 0;
   for (let m = 0; m < totalMonths; m++) {
     if (m + 1 >= startMonth) {
       renovated = Math.min(
-        renovated + capex.units_per_month,
+        renovated + upm,
         capex.units_to_renovate
       );
     }
@@ -612,20 +636,55 @@ function buildRenovationSchedule(
   return schedule;
 }
 
+/**
+ * Build a schedule of units offline for renovation each month.
+ * A unit completing renovation in month M is offline for `downtime_months`
+ * months ending in M (i.e., months M-downtime+1 through M inclusive).
+ */
+function buildDowntimeSchedule(
+  capex: CapexAssumptions,
+  renovatedByMonth: number[],
+  totalMonths: number
+): number[] {
+  const offline: number[] = new Array(totalMonths).fill(0);
+  if (!capex.renovation_downtime_enabled) return offline;
+  const downtimeMonths = capex.renovation_downtime_months || 1;
+  if (downtimeMonths <= 0) return offline;
+
+  // For each month, figure out how many units are completing
+  // (delta in cumulative renovated). Those units were offline
+  // for `downtimeMonths` months ending at that month.
+  for (let m = 0; m < totalMonths; m++) {
+    const prevRenovated = m > 0 ? renovatedByMonth[m - 1] : 0;
+    const completedThisMonth = renovatedByMonth[m] - prevRenovated;
+    if (completedThisMonth > 0) {
+      // These units were offline from month (m - downtimeMonths + 1) through m
+      for (let d = 0; d < downtimeMonths; d++) {
+        const offlineMonth = m - d;
+        if (offlineMonth >= 0) {
+          offline[offlineMonth] += completedThisMonth;
+        }
+      }
+    }
+  }
+  return offline;
+}
+
 function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
   let total = 0;
 
-  // Per-unit renovations: spread cost evenly across renovation pace
+  // Per-unit renovations: spread cost evenly across renovation window
+  const upm = getUnitsPerMonth(capex);
   const startMonth = Math.max(1, capex.renovation_start_month || 1);
-  if (capex.units_per_month > 0 && capex.per_unit_cost > 0 && month >= startMonth) {
+  if (upm > 0 && capex.per_unit_cost > 0 && month >= startMonth) {
     const monthsActive = month - startMonth + 1;
     const monthsActivePrev = monthsActive - 1;
     const totalRenovatedBefore = Math.min(
-      monthsActivePrev * capex.units_per_month,
+      monthsActivePrev * upm,
       capex.units_to_renovate
     );
     const totalRenovatedAfter = Math.min(
-      monthsActive * capex.units_per_month,
+      monthsActive * upm,
       capex.units_to_renovate
     );
     const unitsThisMonth = totalRenovatedAfter - totalRenovatedBefore;
@@ -745,6 +804,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
 
   // Build renovation schedule for renovation-aware rent calculations
   const renovatedByMonth = buildRenovationSchedule(capex, totalMonths);
+  const offlineByMonth = buildDowntimeSchedule(capex, renovatedByMonth, totalMonths);
 
   const annualCashFlows: number[] = [];
 
@@ -755,10 +815,16 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     // Use mid-year renovation count for annual approximation
     const midYearMonth = y * 12 + 6;
     const totalRenovated = midYearMonth < totalMonths ? renovatedByMonth[midYearMonth] : renovatedByMonth[totalMonths - 1];
+    // Sum offline units across the year's months for total lost unit-months
+    let totalOfflineUnitMonths = 0;
+    for (let mo = y * 12; mo < (y + 1) * 12 && mo < totalMonths; mo++) {
+      totalOfflineUnitMonths += offlineByMonth[mo];
+    }
 
     for (const unit of revenue.unit_mix) {
       const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
       const renovatedInType = Math.min(Math.floor(totalRenovated * unitShare), unit.count);
+      const offlineUnitMonthsInType = totalOfflineUnitMonths * unitShare;
 
       const baseRent = getUnitRent(unit, rentBasis);
       // Renovated units get the premium on top of whichever base rent is selected
@@ -772,6 +838,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
         const renovatedRent = baseRent + unit.renovated_rent_premium;
         annualGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * yearGrowth * 12;
       }
+      // Subtract revenue lost from offline units (they lose baseRent each month offline)
+      annualGPR -= offlineUnitMonthsInType * baseRent * yearGrowth;
     }
 
     const annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
@@ -1040,8 +1108,10 @@ export function buildDefaultInputs(
     capex: {
       per_unit_cost: rehabPerUnit,
       units_to_renovate: rehabPerUnit > 0 ? deal.units : 0,
-      units_per_month: rehabPerUnit > 0 ? Math.max(1, Math.ceil(deal.units / 12)) : 0,
       renovation_start_month: 1,
+      renovation_end_month: 12,
+      renovation_downtime_enabled: false,
+      renovation_downtime_months: 1,
       projects: [],
     },
     exit: {

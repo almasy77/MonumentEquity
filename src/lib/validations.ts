@@ -330,6 +330,10 @@ export const scenarioSchema = z.object({
       per_unit_cost: z.number().optional(),
       units_to_renovate: z.number().optional(),
       units_per_month: z.number().optional(),
+      renovation_start_month: z.number().optional(),
+      renovation_end_month: z.number().optional(),
+      renovation_downtime_enabled: z.boolean().optional(),
+      renovation_downtime_months: z.number().optional(),
       projects: z.array(capexProjectSchema).default([]),
       reserves_per_unit: z.number().optional(),
     })
