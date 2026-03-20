@@ -128,11 +128,14 @@ export interface DepreciationAssumptions {
   // Computed from above, but stored for display
 }
 
+export type RentBasis = "current" | "market" | "current_plus_reno" | "market_plus_reno";
+
 export interface ExitAssumptions {
   hold_period_years: number;
   exit_cap_rate: number;
   selling_cost_rate: number;
   sale_price?: number; // if provided, overrides exit_cap_rate-derived value
+  sensitivity_rent_basis?: RentBasis; // which rents to use in sensitivity grid
 }
 
 export interface ScenarioInputs {
@@ -294,7 +297,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
   for (let m = 1; m <= totalMonths; m++) {
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
-    const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex / 1); // compound annually
+    const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
 
     // GPR: sum across unit mix, accounting for renovated units
     let gpr = 0;
@@ -501,7 +504,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     equity_multiple: equityMultiple,
     average_cash_on_cash: avgCoC,
     year1_dscr: year1DSCR,
-    min_dscr: minDSCR === Infinity ? 0 : minDSCR,
+    min_dscr: !isFinite(minDSCR) ? year1DSCR : minDSCR,
     exit_value: exitValue,
     exit_noi: lastYearNOI,
     net_sale_proceeds: netSaleProceeds,
@@ -613,11 +616,12 @@ function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
 
   // Project-based CapEx
   for (const project of capex.projects) {
+    const duration = project.duration_months || 1; // guard against zero
     if (
       month >= project.start_month &&
-      month < project.start_month + project.duration_months
+      month < project.start_month + duration
     ) {
-      total += project.cost / project.duration_months;
+      total += project.cost / duration;
     }
   }
 
@@ -651,9 +655,19 @@ function buildSensitivityGrid(
       const adjustedOrigination = adjustedLoan * adjustedInputs.financing.origination_fee_rate;
       const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination - adjustedLoan;
 
+      // Skip invalid cap rates (zero or negative)
+      if (adjustedInputs.exit.exit_cap_rate <= 0) {
+        grid.push({
+          purchase_price_delta: priceDelta,
+          exit_cap_rate: inputs.exit.exit_cap_rate + capDelta,
+          irr: null,
+        });
+        continue;
+      }
+
       // Use simplified approach: scale base case results
       const result = calculateUnderwritingSimplified(adjustedInputs);
-      const exitVal = result.exitNOI > 0 && adjustedInputs.exit.exit_cap_rate > 0
+      const exitVal = result.exitNOI > 0
         ? result.exitNOI / adjustedInputs.exit.exit_cap_rate
         : 0;
       const netProceeds = exitVal * (1 - adjustedInputs.exit.selling_cost_rate) -
@@ -679,6 +693,21 @@ function buildSensitivityGrid(
   return grid;
 }
 
+/** Get the monthly rent for a unit based on rent basis selection */
+function getUnitRent(unit: UnitMix, basis: RentBasis): number {
+  switch (basis) {
+    case "market":
+      return unit.market_rent;
+    case "current_plus_reno":
+      return unit.current_rent + unit.renovated_rent_premium;
+    case "market_plus_reno":
+      return unit.market_rent + unit.renovated_rent_premium;
+    case "current":
+    default:
+      return unit.current_rent;
+  }
+}
+
 /** Simplified calculation for sensitivity grid — avoids full monthly recalc */
 function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   annualCashFlows: number[];
@@ -693,14 +722,37 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const amortMonths = financing.amortization_years * 12;
   const monthlyDS = calculateMonthlyPayment(loanAmount, monthlyRate, amortMonths);
   const monthlyIO = loanAmount * monthlyRate;
+  const rentBasis: RentBasis = exit.sensitivity_rent_basis || "current";
+
+  // Build renovation schedule for renovation-aware rent calculations
+  const renovatedByMonth = buildRenovationSchedule(capex, totalMonths);
 
   const annualCashFlows: number[] = [];
 
   for (let y = 0; y < exit.hold_period_years; y++) {
     const yearGrowth = Math.pow(1 + revenue.rent_growth_rate, y);
     let annualGPR = 0;
+
+    // Use mid-year renovation count for annual approximation
+    const midYearMonth = y * 12 + 6;
+    const totalRenovated = midYearMonth < totalMonths ? renovatedByMonth[midYearMonth] : renovatedByMonth[totalMonths - 1];
+
     for (const unit of revenue.unit_mix) {
-      annualGPR += unit.count * unit.current_rent * yearGrowth * 12;
+      const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
+      const renovatedInType = Math.min(Math.floor(totalRenovated * unitShare), unit.count);
+
+      const baseRent = getUnitRent(unit, rentBasis);
+      // Renovated units get the premium on top of whichever base rent is selected
+      const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
+      if (hasRenoPremium) {
+        // All units already include reno premium via getUnitRent
+        annualGPR += unit.count * baseRent * yearGrowth * 12;
+      } else {
+        // Only renovated units get the premium
+        const unrenovatedInType = unit.count - renovatedInType;
+        const renovatedRent = baseRent + unit.renovated_rent_premium;
+        annualGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * yearGrowth * 12;
+      }
     }
 
     const annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
@@ -737,12 +789,24 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     annualCashFlows.push(annualNOI - annualDS - annualCapex);
   }
 
+  // Exit NOI: use end-of-hold renovation count
   const lastYearGrowth = Math.pow(1 + revenue.rent_growth_rate, exit.hold_period_years - 1);
-  let exitNOI = 0;
+  const exitRenovated = renovatedByMonth[totalMonths - 1];
+  let exitGPR = 0;
   for (const unit of revenue.unit_mix) {
-    exitNOI += unit.count * unit.current_rent * lastYearGrowth * 12;
+    const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
+    const renovatedInType = Math.min(Math.floor(exitRenovated * unitShare), unit.count);
+    const baseRent = getUnitRent(unit, rentBasis);
+    const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
+    if (hasRenoPremium) {
+      exitGPR += unit.count * baseRent * lastYearGrowth * 12;
+    } else {
+      const unrenovatedInType = unit.count - renovatedInType;
+      const renovatedRent = baseRent + unit.renovated_rent_premium;
+      exitGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * lastYearGrowth * 12;
+    }
   }
-  const exitEGI = exitNOI * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
+  const exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
     + revenue.other_income_monthly * 12;
   const taxEsc = Math.pow(1 + expenses.tax_escalation_rate, exit.hold_period_years - 1);
   const expEsc = Math.pow(1 + (expenses.expense_escalation_rate || 0), exit.hold_period_years - 1);
@@ -753,7 +817,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       expenses.insurance_per_unit + expenses.utilities_per_unit + expenses.reserves_per_unit) * expEsc +
     expenses.property_tax_total * taxEsc +
     (expenses.admin_legal_marketing + expenses.contract_services) * expEsc;
-  exitNOI = exitEGI - exitOpex;
+  const exitNOI = exitEGI - exitOpex;
 
   const loanBalance = calculateLoanBalance(
     loanAmount, monthlyRate, amortMonths, totalMonths, financing.io_period_months

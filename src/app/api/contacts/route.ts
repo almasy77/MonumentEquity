@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
+import { safeJson, isErrorResponse, sanitizeKeySegment } from "@/lib/api-helpers";
 import type { Contact } from "@/lib/validations";
 
 // Helper: build display name from structured fields
@@ -21,11 +22,14 @@ export async function GET(req: NextRequest) {
     const type = req.nextUrl.searchParams.get("type");
     const redis = getRedis();
 
+    const limit = Math.min(Number(req.nextUrl.searchParams.get("limit")) || 100, 500);
+    const offset = Number(req.nextUrl.searchParams.get("offset")) || 0;
+
     let ids: string[];
     if (type) {
-      ids = await redis.zrange(`contacts:by_type:${type}`, 0, -1, { rev: true });
+      ids = await redis.zrange(`contacts:by_type:${sanitizeKeySegment(type)}`, offset, offset + limit - 1, { rev: true });
     } else {
-      ids = await redis.zrange("contacts:all", 0, -1, { rev: true });
+      ids = await redis.zrange("contacts:all", offset, offset + limit - 1, { rev: true });
     }
 
     if (ids.length === 0) return NextResponse.json([]);
@@ -71,7 +75,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
 
     if (!body.type) {
       return NextResponse.json({ error: "type is required" }, { status: 400 });

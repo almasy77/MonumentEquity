@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, buildDefaultInputs, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -45,7 +46,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
 
     if (!body.deal_id) {
       return NextResponse.json({ error: "deal_id is required" }, { status: 400 });

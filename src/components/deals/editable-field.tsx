@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, X, AlertCircle } from "lucide-react";
 
 interface EditableFieldProps {
     value: string;
@@ -39,6 +39,7 @@ export function EditableField({
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,15 +49,17 @@ export function EditableField({
   async function handleSave() {
         if (draft === value) {
                 setEditing(false);
+                setSaveError(false);
                 return;
         }
         setSaving(true);
+        setSaveError(false);
         try {
                 await onSave(draft);
                 setEditing(false);
         } catch {
-                // revert
-          setDraft(value);
+                setSaveError(true);
+                setDraft(value);
         } finally {
                 setSaving(false);
         }
@@ -110,9 +113,14 @@ export function EditableField({
                                                   <p className="text-slate-200 text-sm">
         {prefix}{value ? formatDisplay(value, type, noCommas) : <span className="text-slate-600 italic">{placeholder || "—"}</span>}{suffix}
     </p>
+            {saveError && (
+              <span className="flex items-center gap-0.5 text-red-400 text-xs" title="Save failed — click edit to try again">
+                <AlertCircle className="h-3 w-3" /> Failed
+              </span>
+            )}
             <button
-                                      onClick={() => { setDraft(value); setEditing(true); }}
-                        className="p-0.5 text-slate-600 hover:text-blue-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                      onClick={() => { setDraft(value); setEditing(true); setSaveError(false); }}
+                        className="p-0.5 text-slate-600 hover:text-blue-400 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                         title={`Edit ${label}`}
                       >
                       <Pencil className="h-3 w-3" />

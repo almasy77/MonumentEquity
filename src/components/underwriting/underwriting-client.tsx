@@ -9,7 +9,7 @@ import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
-import type { UnderwritingResult } from "@/lib/underwriting";
+import type { UnderwritingResult, RentBasis } from "@/lib/underwriting";
 
 interface ScenarioWithResult {
   scenario: Scenario;
@@ -524,6 +524,14 @@ function ScenarioAnalysis({
           (scenario.purchase_assumptions as { purchase_price?: number })
             ?.purchase_price ?? deal.asking_price
         }
+        rentBasis={
+          (scenario.exit_assumptions as { sensitivity_rent_basis?: RentBasis })
+            ?.sensitivity_rent_basis
+        }
+        onRentBasisChange={(basis: RentBasis) => {
+          const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
+          onUpdate({ exit_assumptions: { ...currentExit, sensitivity_rent_basis: basis } });
+        }}
       />
     </div>
   );

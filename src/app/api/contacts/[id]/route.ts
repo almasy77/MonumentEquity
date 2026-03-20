@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, removeFromIndex, addToIndex } from "@/lib/db";
+import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Contact } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -45,7 +46,9 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const body = await req.json();
+    const bodyOrError = await safeJson(req);
+    if (isErrorResponse(bodyOrError)) return bodyOrError;
+    const body = bodyOrError;
     const now = new Date().toISOString();
 
     // Handle type change (update index)

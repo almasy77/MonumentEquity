@@ -254,7 +254,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   function addUnitType() {
     setR({
       ...r,
-      unit_mix: [...unitMix, { type: "New Type", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }],
+      unit_mix: [...unitMix, { type: "", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }],
     });
     markDirty();
   }
@@ -273,7 +273,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       ...c,
       projects: [
         ...projects,
-        { name: "New Project", cost: 0, start_month: 1, duration_months: 1 },
+        { name: "", cost: 0, start_month: 1, duration_months: 1 },
       ],
     });
     markDirty();
@@ -309,10 +309,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const t12NOI = t12EGI - t12TotalOpex;
 
   return (
-    <Card className="bg-slate-900 border-slate-800">
+    <Card className={`bg-slate-900 ${dirty ? "border-yellow-700/60" : "border-slate-800"}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-white text-base">Assumptions</CardTitle>
+          <CardTitle className="text-white text-base flex items-center gap-2">
+            Assumptions
+            {dirty && <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" title="Unsaved changes" />}
+          </CardTitle>
           <div className="flex items-center gap-2">
             {dirty && (
               <Button
@@ -443,6 +446,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <Input
                     value={unit.type}
                     onChange={(e) => updateUnitMix(i, "type", e.target.value)}
+                    placeholder="e.g. 1BR/1BA"
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8"
                   />
                 </div>
@@ -501,9 +505,9 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <CurrencyField label="Payroll" value={e.payroll_annual} suffix="/yr" onChange={(v) => { setE({ ...e, payroll_annual: v }); markDirty(); }} />
                     <CurrencyField label="Property Tax" value={e.property_tax_total} suffix="/yr total" onChange={(v) => { setE({ ...e, property_tax_total: v }); markDirty(); }} />
                     <CurrencyField label="Insurance" value={e.insurance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, insurance_per_unit: v }); markDirty(); }} />
-                    <CurrencyField label="R&M" value={e.repairs_maintenance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, repairs_maintenance_per_unit: v }); markDirty(); }} />
+                    <CurrencyField label="Repairs & Maintenance" value={e.repairs_maintenance_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, repairs_maintenance_per_unit: v }); markDirty(); }} />
                     <CurrencyField label="Turnover" value={e.turnover_cost_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, turnover_cost_per_unit: v }); markDirty(); }} />
-                    <CurrencyField label="Admin/Legal/Mktg" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
+                    <CurrencyField label="Admin / Legal / Marketing" value={e.admin_legal_marketing} suffix="/yr" onChange={(v) => { setE({ ...e, admin_legal_marketing: v }); markDirty(); }} />
                     <div>
                       <CurrencyField label="Reserves" value={e.reserves_per_unit} suffix="/unit/yr" onChange={(v) => { setE({ ...e, reserves_per_unit: v }); markDirty(); }} />
                       <p className="text-xs text-slate-500 mt-0.5">{reservesPctEGI}% EGI ({fmtCurrency(reservesAnnual)}/yr)</p>
@@ -644,6 +648,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <Input
                     value={proj.name}
                     onChange={(e) => updateProject(i, "name", e.target.value)}
+                    placeholder="e.g. Roof Replacement"
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8"
                   />
                 </div>
