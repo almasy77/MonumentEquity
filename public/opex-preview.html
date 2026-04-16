@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>OpEx Redesign — Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  select.mode {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.4rem center;
+    background-size: 0.65rem;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 1.5rem;
+  }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen p-6">
+
+<div class="max-w-6xl mx-auto space-y-4">
+
+  <header class="flex items-baseline justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-white">Operating Expenses — Redesign Preview</h1>
+      <p class="text-xs text-slate-500 mt-1">Mockup only · no backend wiring · change any value or mode to see live derived totals</p>
+    </div>
+    <div class="flex gap-2 text-xs text-slate-500">
+      <span>Units: <span id="unitCount" class="text-white font-medium">100</span></span>
+      <span>·</span>
+      <span>EGI: <span id="egiVal" class="text-white font-medium">$810,000</span></span>
+      <span>·</span>
+      <span>GPR: <span id="gprVal" class="text-white font-medium">$900,000</span></span>
+    </div>
+  </header>
+
+  <!-- Section Card -->
+  <div class="border border-slate-800 rounded-lg bg-slate-900">
+    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-slate-200">Operating Expenses</h2>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="text-slate-500">Totals:</span>
+        <span class="text-slate-300">Annual OpEx <span id="totalOpex" class="text-white font-semibold tabular">$0</span></span>
+        <span class="text-slate-500">·</span>
+        <span class="text-slate-300">OpEx Ratio <span id="opexRatio" class="text-white font-semibold tabular">0%</span></span>
+        <button id="importT12" class="ml-2 px-2 py-1 border border-slate-700 rounded text-blue-400 hover:bg-blue-900/20">Import T12</button>
+      </div>
+    </div>
+
+    <div class="p-4 space-y-6">
+
+      <!-- CORE -->
+      <div>
+        <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Core Expenses</div>
+        <div id="coreRows" class="divide-y divide-slate-800/60"></div>
+      </div>
+
+      <!-- UTILITIES -->
+      <div>
+        <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2 flex items-center justify-between">
+          <span>Utilities</span>
+          <button class="text-[10px] normal-case font-normal text-slate-500 hover:text-slate-300" id="toggleUtilBreakdown">Itemize breakdown →</button>
+        </div>
+        <div id="utilRow" class="divide-y divide-slate-800/60"></div>
+        <div id="utilBreakdown" class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 hidden">
+          <!-- breakdown inputs populated below -->
+        </div>
+      </div>
+
+      <!-- CONTRACT SERVICES -->
+      <div>
+        <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2 flex items-center justify-between">
+          <span>Contract Services</span>
+          <button class="text-[10px] normal-case font-normal text-slate-500 hover:text-slate-300" id="toggleSvcBreakdown">Itemize breakdown →</button>
+        </div>
+        <div id="svcRow" class="divide-y divide-slate-800/60"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="border border-slate-800 rounded-lg bg-slate-900 p-4 text-xs text-slate-400 space-y-2">
+    <div class="font-semibold text-slate-200 mb-1">How each input mode is calculated</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+      <div><span class="text-slate-300 font-medium">$ / yr</span> — total annual dollars (escalates annually)</div>
+      <div><span class="text-slate-300 font-medium">$ / unit / yr</span> — value × units × escalation</div>
+      <div><span class="text-slate-300 font-medium">$ / unit / mo</span> — value × units × 12 × escalation</div>
+      <div><span class="text-slate-300 font-medium">% EGI</span> — value × effective gross income (dynamic monthly)</div>
+      <div><span class="text-slate-300 font-medium">% GPR</span> — value × gross potential rent (dynamic monthly)</div>
+    </div>
+    <p class="text-slate-500 mt-2">Switching modes does <span class="text-slate-300">not</span> auto-convert your value — the derived dollar total updates instantly so you see the impact.</p>
+  </div>
+
+  <div class="text-center py-6 text-xs text-slate-600">
+    <p>Preview only. Open this file in your browser and experiment with the inputs.</p>
+  </div>
+
+</div>
+
+<script>
+  // ─── Mock context ───
+  const UNITS = 100;
+  const EGI = 810000;   // annual
+  const GPR = 900000;   // annual
+
+  // Format helpers
+  const fmt = (n) => {
+    if (!n || !isFinite(n)) return "$0";
+    if (Math.abs(n) >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
+    return "$" + Math.round(n).toLocaleString();
+  };
+  const pct = (n) => (n * 100).toFixed(1) + "%";
+
+  // Normalize a line (value, mode) to annual $
+  function toAnnual(value, mode) {
+    value = parseFloat(value) || 0;
+    switch (mode) {
+      case "total_annual":     return value;
+      case "per_unit_annual":  return value * UNITS;
+      case "per_unit_monthly": return value * UNITS * 12;
+      case "pct_egi":          return (value / 100) * EGI;
+      case "pct_gpr":          return (value / 100) * GPR;
+    }
+    return 0;
+  }
+
+  const MODE_LABEL = {
+    total_annual: "$/yr",
+    per_unit_annual: "$/unit/yr",
+    per_unit_monthly: "$/unit/mo",
+    pct_egi: "% EGI",
+    pct_gpr: "% GPR",
+  };
+
+  // Line definitions with default value + default mode
+  const coreLines = [
+    { key: "mgmt",      label: "Management Fee",     value: 8,      mode: "pct_egi" },
+    { key: "payroll",   label: "Payroll",            value: 85000,  mode: "total_annual" },
+    { key: "tax",       label: "Property Tax",       value: 120000, mode: "total_annual" },
+    { key: "insurance", label: "Insurance",          value: 500,    mode: "per_unit_annual" },
+    { key: "rm",        label: "Repairs & Maint.",   value: 750,    mode: "per_unit_annual" },
+    { key: "turnover",  label: "Turnover",           value: 500,    mode: "per_unit_annual" },
+    { key: "admin",     label: "Admin / Legal / Mktg", value: 15000, mode: "total_annual" },
+    { key: "reserves",  label: "Reserves",           value: 300,    mode: "per_unit_annual" },
+  ];
+
+  const utilLine = { key: "util", label: "Utilities", value: 1200, mode: "per_unit_annual" };
+  const svcLine  = { key: "svc",  label: "Contract Services", value: 35000, mode: "total_annual" };
+
+  function renderRow(container, line) {
+    const row = document.createElement("div");
+    row.className = "grid grid-cols-12 items-center gap-3 py-2";
+    row.innerHTML = `
+      <div class="col-span-4 text-sm text-slate-300">${line.label}</div>
+      <div class="col-span-3">
+        <input
+          type="text"
+          inputmode="decimal"
+          data-role="value"
+          value="${line.value}"
+          class="w-full bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 outline-none transition-colors tabular"
+        />
+      </div>
+      <div class="col-span-2">
+        <select data-role="mode" class="mode w-full bg-slate-800 border border-slate-700 text-slate-300 text-xs h-8 rounded px-2 hover:border-slate-500 focus:border-blue-500 outline-none transition-colors">
+          <option value="total_annual"     ${line.mode==="total_annual"?"selected":""}>$ / yr</option>
+          <option value="per_unit_annual"  ${line.mode==="per_unit_annual"?"selected":""}>$ / unit / yr</option>
+          <option value="per_unit_monthly" ${line.mode==="per_unit_monthly"?"selected":""}>$ / unit / mo</option>
+          <option value="pct_egi"          ${line.mode==="pct_egi"?"selected":""}>% EGI</option>
+          <option value="pct_gpr"          ${line.mode==="pct_gpr"?"selected":""}>% GPR</option>
+        </select>
+      </div>
+      <div class="col-span-3 text-right">
+        <span class="text-xs text-slate-400">=</span>
+        <span data-role="derived" class="text-sm text-white font-medium tabular">$0</span>
+        <span data-role="ratio" class="text-[10px] text-slate-500 ml-1 tabular">0% EGI</span>
+      </div>
+    `;
+    container.appendChild(row);
+
+    const valueInput = row.querySelector("[data-role=value]");
+    const modeInput = row.querySelector("[data-role=mode]");
+    const derivedEl = row.querySelector("[data-role=derived]");
+    const ratioEl = row.querySelector("[data-role=ratio]");
+
+    function update() {
+      const v = valueInput.value;
+      const m = modeInput.value;
+      const annual = toAnnual(v, m);
+      derivedEl.textContent = fmt(annual);
+      ratioEl.textContent = EGI > 0 ? pct(annual / EGI) + " EGI" : "";
+      recalcTotals();
+    }
+    valueInput.addEventListener("input", update);
+    modeInput.addEventListener("change", update);
+    update();
+
+    row.__get = () => toAnnual(valueInput.value, modeInput.value);
+  }
+
+  const coreContainer = document.getElementById("coreRows");
+  const utilContainer = document.getElementById("utilRow");
+  const svcContainer  = document.getElementById("svcRow");
+
+  coreLines.forEach(l => renderRow(coreContainer, l));
+  renderRow(utilContainer, utilLine);
+  renderRow(svcContainer,  svcLine);
+
+  function recalcTotals() {
+    const rows = document.querySelectorAll("#coreRows > div, #utilRow > div, #svcRow > div");
+    let total = 0;
+    rows.forEach(r => { if (r.__get) total += r.__get(); });
+    document.getElementById("totalOpex").textContent = fmt(total);
+    document.getElementById("opexRatio").textContent = EGI > 0 ? pct(total / EGI) : "0%";
+  }
+
+  // Utilities itemized breakdown (simple, collapsible)
+  const utilItems = [
+    { label: "Electric",    value: 420 },
+    { label: "Water/Sewer", value: 480 },
+    { label: "Gas",         value: 180 },
+    { label: "Trash",       value: 120 },
+    { label: "Other",       value: 0 },
+  ];
+  const utilBk = document.getElementById("utilBreakdown");
+  utilItems.forEach(it => {
+    const el = document.createElement("div");
+    el.innerHTML = `
+      <label class="text-[10px] text-slate-500">${it.label}</label>
+      <input type="text" value="${it.value}" class="w-full bg-slate-800 border border-slate-700 text-white text-xs h-7 rounded px-2 outline-none hover:border-slate-500 focus:border-blue-500" />
+    `;
+    utilBk.appendChild(el);
+  });
+  document.getElementById("toggleUtilBreakdown").addEventListener("click", () => {
+    utilBk.classList.toggle("hidden");
+  });
+
+  // Contract services itemized
+  document.getElementById("toggleSvcBreakdown").addEventListener("click", (e) => {
+    e.target.textContent = e.target.textContent.includes("→") ? "(breakdown coming soon)" : "Itemize breakdown →";
+  });
+
+  // Import T12 simulation
+  document.getElementById("importT12").addEventListener("click", () => {
+    const presets = {
+      payroll: { value: 78200, mode: "total_annual" },
+      tax:     { value: 118400, mode: "total_annual" },
+      insurance: { value: 52000, mode: "total_annual" },
+      rm:      { value: 82300, mode: "total_annual" },
+    };
+    Object.entries(presets).forEach(([key, p]) => {
+      const idx = coreLines.findIndex(l => l.key === key);
+      if (idx < 0) return;
+      const row = coreContainer.children[idx];
+      row.querySelector("[data-role=value]").value = p.value;
+      row.querySelector("[data-role=mode]").value = p.mode;
+      row.querySelector("[data-role=value]").dispatchEvent(new Event("input"));
+    });
+  });
+</script>
+
+</body>
+</html>
