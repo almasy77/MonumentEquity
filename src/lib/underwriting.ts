@@ -79,8 +79,28 @@ export interface ServicesBreakdown {
   other_services?: number; // annual
 }
 
+export type OpexInputMode = "total_annual" | "per_unit_annual" | "per_unit_monthly" | "pct_egi" | "pct_gpr";
+
+export interface OpexInput {
+  value: number;
+  mode: OpexInputMode;
+}
+
+export interface OpexInputs {
+  management_fees?: OpexInput;
+  payroll?: OpexInput;
+  repairs_maintenance?: OpexInput;
+  turnover?: OpexInput;
+  insurance?: OpexInput;
+  property_tax?: OpexInput;
+  utilities?: OpexInput;
+  admin_legal_marketing?: OpexInput;
+  contract_services?: OpexInput;
+  reserves?: OpexInput;
+}
+
 export interface ExpenseAssumptions {
-  management_fee_rate: number; // % of EGI
+  management_fee_rate: number; // % of EGI (legacy)
   payroll_annual: number;
   repairs_maintenance_per_unit: number; // annual
   turnover_cost_per_unit: number; // annual
@@ -94,6 +114,7 @@ export interface ExpenseAssumptions {
   contract_services: number; // annual total (sum of breakdown if provided)
   services_breakdown?: ServicesBreakdown;
   reserves_per_unit: number; // annual
+  opex_inputs?: OpexInputs;
   // T12 baseline — scenario-local operating history used to seed expense fields
   t12_baseline?: {
     gross_potential_rent?: number;
@@ -355,21 +376,24 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const otherIncome = revenue.other_income_monthly;
     const egi = gpr - vacancyLoss - badDebt - concessions + otherIncome;
 
-    // OpEx (annualized per-unit costs → monthly)
+    // OpEx — resolve each line from opex_inputs (if set) or legacy fields
     const annualTaxEscalation = Math.pow(1 + expenses.tax_escalation_rate, yearIndex);
     const annualExpEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex);
+    const oi = expenses.opex_inputs;
+    const opexCtx = { totalUnits, monthlyEgi: egi, monthlyGpr: gpr, escalation: annualExpEscalation };
+    const taxCtx = { ...opexCtx, escalation: annualTaxEscalation };
 
     const opexBk: OpexBreakdown = {
-      management_fees: egi * expenses.management_fee_rate,
-      payroll: (expenses.payroll_annual * annualExpEscalation) / 12,
-      repairs_maintenance: (totalUnits * expenses.repairs_maintenance_per_unit * annualExpEscalation) / 12,
-      turnover: (totalUnits * expenses.turnover_cost_per_unit * annualExpEscalation) / 12,
-      insurance: (totalUnits * expenses.insurance_per_unit * annualExpEscalation) / 12,
-      property_tax: (expenses.property_tax_total * annualTaxEscalation) / 12,
-      utilities: (totalUnits * expenses.utilities_per_unit * annualExpEscalation) / 12,
-      admin_legal_marketing: (expenses.admin_legal_marketing * annualExpEscalation) / 12,
-      contract_services: (expenses.contract_services * annualExpEscalation) / 12,
-      reserves: (totalUnits * expenses.reserves_per_unit * annualExpEscalation) / 12,
+      management_fees: resolveOpexMonthly(oi?.management_fees, expenses.management_fee_rate, "pct_egi", opexCtx),
+      payroll: resolveOpexMonthly(oi?.payroll, expenses.payroll_annual, "total_annual", opexCtx),
+      repairs_maintenance: resolveOpexMonthly(oi?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", opexCtx),
+      turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx),
+      insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
+      property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
+      utilities: resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
+      admin_legal_marketing: resolveOpexMonthly(oi?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", opexCtx),
+      contract_services: resolveOpexMonthly(oi?.contract_services, expenses.contract_services, "total_annual", opexCtx),
+      reserves: resolveOpexMonthly(oi?.reserves, expenses.reserves_per_unit, "per_unit_annual", opexCtx),
     };
     const monthlyOpex = Object.values(opexBk).reduce((s, v) => s + v, 0);
 
@@ -571,6 +595,46 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 }
 
 // ─── Helper Functions ────────────────────────────────────────
+
+/** Resolve an OpexInput (or legacy fallback) to a monthly dollar amount */
+function resolveOpexMonthly(
+  input: OpexInput | undefined,
+  legacyValue: number,
+  legacyMode: OpexInputMode,
+  ctx: { totalUnits: number; monthlyEgi: number; monthlyGpr: number; escalation: number },
+): number {
+  const oi = input || { value: legacyValue, mode: legacyMode };
+  const v = oi.value || 0;
+  const esc = (oi.mode === "pct_egi" || oi.mode === "pct_gpr") ? 1 : ctx.escalation;
+  switch (oi.mode) {
+    case "total_annual":     return (v * esc) / 12;
+    case "per_unit_annual":  return (ctx.totalUnits * v * esc) / 12;
+    case "per_unit_monthly": return ctx.totalUnits * v * esc;
+    case "pct_egi":          return ctx.monthlyEgi * v;
+    case "pct_gpr":          return ctx.monthlyGpr * v;
+    default:                 return (v * esc) / 12;
+  }
+}
+
+/** Resolve an OpexInput to an annual dollar amount (for simplified/sensitivity calc) */
+function resolveOpexAnnual(
+  input: OpexInput | undefined,
+  legacyValue: number,
+  legacyMode: OpexInputMode,
+  ctx: { totalUnits: number; annualEgi: number; annualGpr: number; escalation: number },
+): number {
+  const oi = input || { value: legacyValue, mode: legacyMode };
+  const v = oi.value || 0;
+  const esc = (oi.mode === "pct_egi" || oi.mode === "pct_gpr") ? 1 : ctx.escalation;
+  switch (oi.mode) {
+    case "total_annual":     return v * esc;
+    case "per_unit_annual":  return ctx.totalUnits * v * esc;
+    case "per_unit_monthly": return ctx.totalUnits * v * 12 * esc;
+    case "pct_egi":          return ctx.annualEgi * v;
+    case "pct_gpr":          return ctx.annualGpr * v;
+    default:                 return v * esc;
+  }
+}
 
 function calculateMonthlyPayment(
   principal: number,
@@ -847,17 +911,20 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
 
     const taxEscalation = Math.pow(1 + expenses.tax_escalation_rate, y);
     const expEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), y);
+    const oiS = expenses.opex_inputs;
+    const sCtx = { totalUnits, annualEgi: annualEGI, annualGpr: annualGPR, escalation: expEscalation };
+    const sTaxCtx = { ...sCtx, escalation: taxEscalation };
     const annualOpex =
-      annualEGI * expenses.management_fee_rate +
-      expenses.payroll_annual * expEscalation +
-      totalUnits * expenses.repairs_maintenance_per_unit * expEscalation +
-      totalUnits * expenses.turnover_cost_per_unit * expEscalation +
-      totalUnits * expenses.insurance_per_unit * expEscalation +
-      expenses.property_tax_total * taxEscalation +
-      totalUnits * expenses.utilities_per_unit * expEscalation +
-      expenses.admin_legal_marketing * expEscalation +
-      expenses.contract_services * expEscalation +
-      totalUnits * expenses.reserves_per_unit * expEscalation;
+      resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
+      resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
+      resolveOpexAnnual(oiS?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
+      resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
+      resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx) +
+      resolveOpexAnnual(oiS?.reserves, expenses.reserves_per_unit, "per_unit_annual", sCtx);
 
     const annualNOI = annualEGI - annualOpex;
 
@@ -897,13 +964,20 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     + revenue.other_income_monthly * 12;
   const taxEsc = Math.pow(1 + expenses.tax_escalation_rate, exit.hold_period_years - 1);
   const expEsc = Math.pow(1 + (expenses.expense_escalation_rate || 0), exit.hold_period_years - 1);
+  const oiE = expenses.opex_inputs;
+  const eCtx = { totalUnits, annualEgi: exitEGI, annualGpr: exitGPR, escalation: expEsc };
+  const eTaxCtx = { ...eCtx, escalation: taxEsc };
   const exitOpex =
-    exitEGI * expenses.management_fee_rate +
-    expenses.payroll_annual * expEsc +
-    totalUnits * (expenses.repairs_maintenance_per_unit + expenses.turnover_cost_per_unit +
-      expenses.insurance_per_unit + expenses.utilities_per_unit + expenses.reserves_per_unit) * expEsc +
-    expenses.property_tax_total * taxEsc +
-    (expenses.admin_legal_marketing + expenses.contract_services) * expEsc;
+    resolveOpexAnnual(oiE?.management_fees, expenses.management_fee_rate, "pct_egi", eCtx) +
+    resolveOpexAnnual(oiE?.payroll, expenses.payroll_annual, "total_annual", eCtx) +
+    resolveOpexAnnual(oiE?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
+    resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
+    resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx) +
+    resolveOpexAnnual(oiE?.reserves, expenses.reserves_per_unit, "per_unit_annual", eCtx);
   const exitNOI = exitEGI - exitOpex;
 
   const loanBalance = calculateLoanBalance(
