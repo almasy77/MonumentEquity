@@ -15,6 +15,8 @@ import type {
   AnnualSummary,
   SensitivityCell,
   DealMetrics,
+  OpexInput,
+  OpexInputMode,
 } from "./underwriting";
 
 // ─── Styles ──────────────────────────────────────────────────
@@ -212,28 +214,49 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
 
   // Row 22
   addSectionHeader(ws, "Expense Assumptions", 5);
+
+  const MODE_LABELS: Record<OpexInputMode, string> = {
+    total_annual: "$/yr",
+    per_unit_annual: "$/unit/yr",
+    per_unit_monthly: "$/unit/mo",
+    pct_egi: "% EGI",
+    pct_gpr: "% GPR",
+  };
+  function opexLabel(name: string, oi?: OpexInput, fallbackMode?: string): string {
+    const mode = oi ? MODE_LABELS[oi.mode] : (fallbackMode || "");
+    return `${name} (${mode})`;
+  }
+  function opexValue(oi?: OpexInput, legacyVal?: number): number {
+    return oi ? oi.value : (legacyVal || 0);
+  }
+  function opexFmt(oi?: OpexInput): string {
+    if (oi && (oi.mode === "pct_egi" || oi.mode === "pct_gpr")) return PCT_FMT;
+    return CURRENCY_FMT;
+  }
+
+  const oix = inputs.expenses.opex_inputs;
   // Row 23
-  addInputRow(ws, "Management Fee (% of EGI)", inputs.expenses.management_fee_rate, PCT_FMT);
+  addInputRow(ws, opexLabel("Management Fee", oix?.management_fees, "% EGI"), opexValue(oix?.management_fees, inputs.expenses.management_fee_rate), opexFmt(oix?.management_fees));
   // Row 24
-  addInputRow(ws, "Payroll (Annual)", inputs.expenses.payroll_annual, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Payroll", oix?.payroll, "$/yr"), opexValue(oix?.payroll, inputs.expenses.payroll_annual), opexFmt(oix?.payroll));
   // Row 25
-  addInputRow(ws, "R&M ($/Unit/Year)", inputs.expenses.repairs_maintenance_per_unit, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("R&M", oix?.repairs_maintenance, "$/unit/yr"), opexValue(oix?.repairs_maintenance, inputs.expenses.repairs_maintenance_per_unit), opexFmt(oix?.repairs_maintenance));
   // Row 26
-  addInputRow(ws, "Turnover ($/Unit/Year)", inputs.expenses.turnover_cost_per_unit, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Turnover", oix?.turnover, "$/unit/yr"), opexValue(oix?.turnover, inputs.expenses.turnover_cost_per_unit), opexFmt(oix?.turnover));
   // Row 27
-  addInputRow(ws, "Insurance ($/Unit/Year)", inputs.expenses.insurance_per_unit, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Insurance", oix?.insurance, "$/unit/yr"), opexValue(oix?.insurance, inputs.expenses.insurance_per_unit), opexFmt(oix?.insurance));
   // Row 28
-  addInputRow(ws, "Property Tax (Annual Total)", inputs.expenses.property_tax_total, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Property Tax", oix?.property_tax, "$/yr"), opexValue(oix?.property_tax, inputs.expenses.property_tax_total), opexFmt(oix?.property_tax));
   // Row 29
   addInputRow(ws, "Tax Escalation Rate", inputs.expenses.tax_escalation_rate, PCT_FMT);
   // Row 30
-  addInputRow(ws, "Utilities ($/Unit/Year)", inputs.expenses.utilities_per_unit, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Utilities", oix?.utilities, "$/unit/yr"), opexValue(oix?.utilities, inputs.expenses.utilities_per_unit), opexFmt(oix?.utilities));
   // Row 31
-  addInputRow(ws, "Admin/Legal/Marketing (Annual)", inputs.expenses.admin_legal_marketing, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Admin/Legal/Marketing", oix?.admin_legal_marketing, "$/yr"), opexValue(oix?.admin_legal_marketing, inputs.expenses.admin_legal_marketing), opexFmt(oix?.admin_legal_marketing));
   // Row 32
-  addInputRow(ws, "Contract Services (Annual)", inputs.expenses.contract_services, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Contract Services", oix?.contract_services, "$/yr"), opexValue(oix?.contract_services, inputs.expenses.contract_services), opexFmt(oix?.contract_services));
   // Row 33
-  addInputRow(ws, "Reserves ($/Unit/Year)", inputs.expenses.reserves_per_unit, CURRENCY_FMT);
+  addInputRow(ws, opexLabel("Reserves", oix?.reserves, "$/unit/yr"), opexValue(oix?.reserves, inputs.expenses.reserves_per_unit), opexFmt(oix?.reserves));
   ws.addRow([]);
 
   // Row 35
