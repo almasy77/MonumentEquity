@@ -86,6 +86,24 @@ export interface OpexInput {
   mode: OpexInputMode;
 }
 
+export interface UtilitiesSublines {
+  electric?: OpexInput;
+  water_sewer?: OpexInput;
+  gas?: OpexInput;
+  trash?: OpexInput;
+  internet?: OpexInput;
+  other_utilities?: OpexInput;
+}
+
+export interface ServicesSublines {
+  landscaping?: OpexInput;
+  snow_removal?: OpexInput;
+  pest_control?: OpexInput;
+  security?: OpexInput;
+  cleaning?: OpexInput;
+  other_services?: OpexInput;
+}
+
 export interface OpexInputs {
   management_fees?: OpexInput;
   payroll?: OpexInput;
@@ -94,10 +112,19 @@ export interface OpexInputs {
   insurance?: OpexInput;
   property_tax?: OpexInput;
   utilities?: OpexInput;
+  utilities_sublines?: UtilitiesSublines;
   admin_legal_marketing?: OpexInput;
   contract_services?: OpexInput;
+  services_sublines?: ServicesSublines;
   reserves?: OpexInput;
 }
+
+export const UTILITIES_SUBLINE_KEYS: (keyof UtilitiesSublines)[] = [
+  "electric", "water_sewer", "gas", "trash", "internet", "other_utilities",
+];
+export const SERVICES_SUBLINE_KEYS: (keyof ServicesSublines)[] = [
+  "landscaping", "snow_removal", "pest_control", "security", "cleaning", "other_services",
+];
 
 export interface ExpenseAssumptions {
   management_fee_rate: number; // % of EGI (legacy)
@@ -383,6 +410,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const opexCtx = { totalUnits, monthlyEgi: egi, monthlyGpr: gpr, escalation: annualExpEscalation };
     const taxCtx = { ...opexCtx, escalation: annualTaxEscalation };
 
+    const utilSubSum = resolveSublinesMonthly(oi?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, opexCtx);
+    const svcSubSum = resolveSublinesMonthly(oi?.services_sublines as Record<string, OpexInput | undefined> | undefined, opexCtx);
     const opexBk: OpexBreakdown = {
       management_fees: resolveOpexMonthly(oi?.management_fees, expenses.management_fee_rate, "pct_egi", opexCtx),
       payroll: resolveOpexMonthly(oi?.payroll, expenses.payroll_annual, "total_annual", opexCtx),
@@ -390,9 +419,9 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
       property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
-      utilities: resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
+      utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
       admin_legal_marketing: resolveOpexMonthly(oi?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", opexCtx),
-      contract_services: resolveOpexMonthly(oi?.contract_services, expenses.contract_services, "total_annual", opexCtx),
+      contract_services: svcSubSum !== null ? svcSubSum : resolveOpexMonthly(oi?.contract_services, expenses.contract_services, "total_annual", opexCtx),
       reserves: resolveOpexMonthly(oi?.reserves, expenses.reserves_per_unit, "per_unit_annual", opexCtx),
     };
     const monthlyOpex = Object.values(opexBk).reduce((s, v) => s + v, 0);
@@ -634,6 +663,42 @@ function resolveOpexAnnual(
     case "pct_gpr":          return ctx.annualGpr * v;
     default:                 return v * esc;
   }
+}
+
+/** Sum monthly resolution of sublines; returns null if no subline has a nonzero value */
+function resolveSublinesMonthly(
+  sublines: Record<string, OpexInput | undefined> | undefined,
+  ctx: { totalUnits: number; monthlyEgi: number; monthlyGpr: number; escalation: number },
+): number | null {
+  if (!sublines) return null;
+  let anyHasValue = false;
+  let sum = 0;
+  for (const key of Object.keys(sublines)) {
+    const s = sublines[key];
+    if (s && s.value) {
+      anyHasValue = true;
+      sum += resolveOpexMonthly(s, 0, s.mode, ctx);
+    }
+  }
+  return anyHasValue ? sum : null;
+}
+
+/** Sum annual resolution of sublines; returns null if no subline has a nonzero value */
+function resolveSublinesAnnual(
+  sublines: Record<string, OpexInput | undefined> | undefined,
+  ctx: { totalUnits: number; annualEgi: number; annualGpr: number; escalation: number },
+): number | null {
+  if (!sublines) return null;
+  let anyHasValue = false;
+  let sum = 0;
+  for (const key of Object.keys(sublines)) {
+    const s = sublines[key];
+    if (s && s.value) {
+      anyHasValue = true;
+      sum += resolveOpexAnnual(s, 0, s.mode, ctx);
+    }
+  }
+  return anyHasValue ? sum : null;
 }
 
 function calculateMonthlyPayment(
@@ -914,6 +979,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     const oiS = expenses.opex_inputs;
     const sCtx = { totalUnits, annualEgi: annualEGI, annualGpr: annualGPR, escalation: expEscalation };
     const sTaxCtx = { ...sCtx, escalation: taxEscalation };
+    const utilSubSumS = resolveSublinesAnnual(oiS?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
+    const svcSubSumS = resolveSublinesAnnual(oiS?.services_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
     const annualOpex =
       resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
       resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
@@ -921,9 +988,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", sCtx) +
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
       resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
-      resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx) +
+      (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
       resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
-      resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx) +
+      (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx)) +
       resolveOpexAnnual(oiS?.reserves, expenses.reserves_per_unit, "per_unit_annual", sCtx);
 
     const annualNOI = annualEGI - annualOpex;
@@ -967,6 +1034,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const oiE = expenses.opex_inputs;
   const eCtx = { totalUnits, annualEgi: exitEGI, annualGpr: exitGPR, escalation: expEsc };
   const eTaxCtx = { ...eCtx, escalation: taxEsc };
+  const utilSubSumE = resolveSublinesAnnual(oiE?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, eCtx);
+  const svcSubSumE = resolveSublinesAnnual(oiE?.services_sublines as Record<string, OpexInput | undefined> | undefined, eCtx);
   const exitOpex =
     resolveOpexAnnual(oiE?.management_fees, expenses.management_fee_rate, "pct_egi", eCtx) +
     resolveOpexAnnual(oiE?.payroll, expenses.payroll_annual, "total_annual", eCtx) +
@@ -974,9 +1043,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", eCtx) +
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
     resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
-    resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx) +
+    (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
     resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
-    resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx) +
+    (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx)) +
     resolveOpexAnnual(oiE?.reserves, expenses.reserves_per_unit, "per_unit_annual", eCtx);
   const exitNOI = exitEGI - exitOpex;
 

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines } from "@/lib/underwriting";
 import { sumClosingCostBreakdown } from "@/lib/underwriting";
 
 interface Props {
@@ -234,6 +234,9 @@ function OpexLineField({
   units,
   egi,
   gpr,
+  leftContent,
+  indented,
+  readOnlySum,
 }: {
   label: string;
   input: OpexInput;
@@ -241,6 +244,9 @@ function OpexLineField({
   units: number;
   egi: number;
   gpr: number;
+  leftContent?: React.ReactNode;
+  indented?: boolean;
+  readOnlySum?: number; // when set, render as read-only showing this annual total
 }) {
   const [focused, setFocused] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -251,57 +257,161 @@ function OpexLineField({
       ? `${Math.round(input.value * 10000) / 100}`
       : `$${formatWithCommas(input.value)}`
     : "";
-  const annualDollars = opexToAnnual(input, units, egi, gpr);
+  const annualDollars = readOnlySum !== undefined ? readOnlySum : opexToAnnual(input, units, egi, gpr);
   const pctOfEGI = egi > 0 ? (annualDollars / egi * 100).toFixed(1) : "0.0";
 
   return (
     <div className="grid grid-cols-12 items-center gap-2">
-      <div className="col-span-4 text-sm text-slate-300 truncate" title={label}>{label}</div>
+      <div className={`col-span-4 text-sm truncate flex items-center gap-1 ${indented ? "text-slate-400 pl-6" : "text-slate-300"}`} title={label}>
+        {leftContent}
+        <span className="truncate">{label}</span>
+      </div>
       <div className="col-span-3">
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={focused ? editValue : displayValue}
-          onFocus={() => {
-            setFocused(true);
-            setEditValue(input.value ? String(isPct ? Math.round(input.value * 10000) / 100 : input.value) : "");
-          }}
-          onBlur={() => {
-            setFocused(false);
-            const parsed = parseFloat(editValue.replace(/[^0-9.-]/g, ""));
-            if (!isNaN(parsed)) {
-              onChange({ ...input, value: isPct ? Math.round(parsed * 100) / 10000 : parsed });
-            }
-          }}
-          onChange={(e) => setEditValue(e.target.value)}
-          className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
-        />
+        {readOnlySum !== undefined ? (
+          <div className="bg-slate-800/40 border border-slate-800 rounded-md text-slate-500 text-sm h-8 px-3 flex items-center justify-between italic">
+            <span className="text-[10px]">sum of sub-items</span>
+          </div>
+        ) : (
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={focused ? editValue : displayValue}
+            onFocus={() => {
+              setFocused(true);
+              setEditValue(input.value ? String(isPct ? Math.round(input.value * 10000) / 100 : input.value) : "");
+            }}
+            onBlur={() => {
+              setFocused(false);
+              const parsed = parseFloat(editValue.replace(/[^0-9.-]/g, ""));
+              if (!isNaN(parsed)) {
+                onChange({ ...input, value: isPct ? Math.round(parsed * 100) / 10000 : parsed });
+              }
+            }}
+            onChange={(e) => setEditValue(e.target.value)}
+            className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+          />
+        )}
       </div>
       <div className="col-span-2">
-        <select
-          value={input.mode}
-          onChange={(e) => onChange({ ...input, mode: e.target.value as OpexInputMode })}
-          className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-xs h-8 rounded-md px-1.5 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none"
-          style={{
-            backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 6px center",
-            backgroundSize: "10px",
-            paddingRight: "22px",
-          }}
-        >
-          {OPEX_MODES.map((m) => (
-            <option key={m} value={m}>{OPEX_MODE_LABELS[m]}</option>
-          ))}
-        </select>
+        {readOnlySum !== undefined ? (
+          <div className="h-8" />
+        ) : (
+          <select
+            value={input.mode}
+            onChange={(e) => onChange({ ...input, mode: e.target.value as OpexInputMode })}
+            className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-xs h-8 rounded-md px-1.5 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none"
+            style={{
+              backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 6px center",
+              backgroundSize: "10px",
+              paddingRight: "22px",
+            }}
+          >
+            {OPEX_MODES.map((m) => (
+              <option key={m} value={m}>{OPEX_MODE_LABELS[m]}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="col-span-3 text-right">
         <span className="text-slate-500 text-xs mr-1">=</span>
-        <span className={`text-sm font-semibold tabular-nums ${isPct ? "text-blue-400" : "text-white"}`}>
+        <span className={`text-sm font-semibold tabular-nums ${readOnlySum !== undefined ? "text-white" : isPct ? "text-blue-400" : "text-white"}`}>
           {fmtCurrency(annualDollars)}/yr
         </span>
         <span className="text-slate-500 text-[10px] ml-1 tabular-nums">{pctOfEGI}%</span>
       </div>
+    </div>
+  );
+}
+
+const UTIL_SUBLINE_DEFS: { key: keyof UtilitiesSublines; label: string; defaultMode: OpexInputMode }[] = [
+  { key: "electric", label: "Electric", defaultMode: "total_annual" },
+  { key: "water_sewer", label: "Water / Sewer", defaultMode: "total_annual" },
+  { key: "gas", label: "Gas", defaultMode: "total_annual" },
+  { key: "trash", label: "Trash", defaultMode: "total_annual" },
+  { key: "internet", label: "Internet / Cable", defaultMode: "total_annual" },
+  { key: "other_utilities", label: "Other Utilities", defaultMode: "total_annual" },
+];
+
+const SVC_SUBLINE_DEFS: { key: keyof ServicesSublines; label: string; defaultMode: OpexInputMode }[] = [
+  { key: "landscaping", label: "Landscaping", defaultMode: "total_annual" },
+  { key: "snow_removal", label: "Snow Removal", defaultMode: "total_annual" },
+  { key: "pest_control", label: "Pest Control", defaultMode: "total_annual" },
+  { key: "security", label: "Security", defaultMode: "total_annual" },
+  { key: "cleaning", label: "Cleaning", defaultMode: "total_annual" },
+  { key: "other_services", label: "Other Services", defaultMode: "total_annual" },
+];
+
+function OpexGroup<K extends string>({
+  label,
+  topInput,
+  onTopChange,
+  sublines,
+  onSublineChange,
+  sublineDefs,
+  units,
+  egi,
+  gpr,
+}: {
+  label: string;
+  topInput: OpexInput;
+  onTopChange: (input: OpexInput) => void;
+  sublines: Record<string, OpexInput | undefined> | undefined;
+  onSublineChange: (key: K, input: OpexInput) => void;
+  sublineDefs: { key: K; label: string; defaultMode: OpexInputMode }[];
+  units: number;
+  egi: number;
+  gpr: number;
+}) {
+  // Default to expanded when sublines have any values
+  const sublineSum = sublineDefs.reduce((sum, def) => {
+    const s = sublines?.[def.key as string];
+    return sum + (s ? opexToAnnual(s, units, egi, gpr) : 0);
+  }, 0);
+  const hasSublineValues = sublineSum > 0;
+  const [expanded, setExpanded] = useState(hasSublineValues);
+
+  return (
+    <div className="space-y-1.5">
+      <OpexLineField
+        label={label}
+        input={topInput}
+        onChange={onTopChange}
+        units={units}
+        egi={egi}
+        gpr={gpr}
+        readOnlySum={hasSublineValues ? sublineSum : undefined}
+        leftContent={
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="text-slate-500 hover:text-slate-200 transition-colors"
+            title={expanded ? "Hide sub-items" : "Show sub-items"}
+          >
+            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        }
+      />
+      {expanded && (
+        <div className="border-l border-slate-700/50 ml-2 space-y-1">
+          {sublineDefs.map((def) => {
+            const current = (sublines?.[def.key as string]) || { value: 0, mode: def.defaultMode };
+            return (
+              <OpexLineField
+                key={def.key}
+                label={def.label}
+                input={current}
+                onChange={(v) => onSublineChange(def.key, v)}
+                units={units}
+                egi={egi}
+                gpr={gpr}
+                indented
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -396,8 +506,42 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
   // ── OpEx inputs — initialize from legacy fields if not already set ──
   function getOpexInputs(): OpexInputs {
-    if (e.opex_inputs) return e.opex_inputs;
-    return {
+    if (e.opex_inputs) {
+      // Migrate legacy utilities/services breakdowns to sublines on the fly if not already present
+      const migrated: OpexInputs = { ...e.opex_inputs };
+      if (!migrated.utilities_sublines && e.utilities_breakdown) {
+        const ub = e.utilities_breakdown;
+        const hasAny = (ub.electric_per_unit || 0) + (ub.water_sewer_per_unit || 0) +
+          (ub.gas_per_unit || 0) + (ub.trash_per_unit || 0) + (ub.other_utilities_per_unit || 0) > 0;
+        if (hasAny) {
+          migrated.utilities_sublines = {
+            electric: { value: ub.electric_per_unit || 0, mode: "per_unit_annual" },
+            water_sewer: { value: ub.water_sewer_per_unit || 0, mode: "per_unit_annual" },
+            gas: { value: ub.gas_per_unit || 0, mode: "per_unit_annual" },
+            trash: { value: ub.trash_per_unit || 0, mode: "per_unit_annual" },
+            other_utilities: { value: ub.other_utilities_per_unit || 0, mode: "per_unit_annual" },
+          };
+        }
+      }
+      if (!migrated.services_sublines && e.services_breakdown) {
+        const sb = e.services_breakdown;
+        const hasAny = (sb.landscaping || 0) + (sb.snow_removal || 0) + (sb.pest_control || 0) +
+          (sb.security || 0) + (sb.cleaning || 0) + (sb.other_services || 0) > 0;
+        if (hasAny) {
+          migrated.services_sublines = {
+            landscaping: { value: sb.landscaping || 0, mode: "total_annual" },
+            snow_removal: { value: sb.snow_removal || 0, mode: "total_annual" },
+            pest_control: { value: sb.pest_control || 0, mode: "total_annual" },
+            security: { value: sb.security || 0, mode: "total_annual" },
+            cleaning: { value: sb.cleaning || 0, mode: "total_annual" },
+            other_services: { value: sb.other_services || 0, mode: "total_annual" },
+          };
+        }
+      }
+      return migrated;
+    }
+    // Fully seed from legacy fields
+    const inputs: OpexInputs = {
       management_fees: { value: e.management_fee_rate || 0, mode: "pct_egi" },
       payroll: { value: e.payroll_annual || 0, mode: "total_annual" },
       repairs_maintenance: { value: e.repairs_maintenance_per_unit || 0, mode: "per_unit_annual" },
@@ -409,11 +553,51 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       contract_services: { value: e.contract_services || 0, mode: "total_annual" },
       reserves: { value: e.reserves_per_unit || 0, mode: "per_unit_annual" },
     };
+    if (e.utilities_breakdown) {
+      const ub = e.utilities_breakdown;
+      inputs.utilities_sublines = {
+        electric: { value: ub.electric_per_unit || 0, mode: "per_unit_annual" },
+        water_sewer: { value: ub.water_sewer_per_unit || 0, mode: "per_unit_annual" },
+        gas: { value: ub.gas_per_unit || 0, mode: "per_unit_annual" },
+        trash: { value: ub.trash_per_unit || 0, mode: "per_unit_annual" },
+        other_utilities: { value: ub.other_utilities_per_unit || 0, mode: "per_unit_annual" },
+      };
+    }
+    if (e.services_breakdown) {
+      const sb = e.services_breakdown;
+      inputs.services_sublines = {
+        landscaping: { value: sb.landscaping || 0, mode: "total_annual" },
+        snow_removal: { value: sb.snow_removal || 0, mode: "total_annual" },
+        pest_control: { value: sb.pest_control || 0, mode: "total_annual" },
+        security: { value: sb.security || 0, mode: "total_annual" },
+        cleaning: { value: sb.cleaning || 0, mode: "total_annual" },
+        other_services: { value: sb.other_services || 0, mode: "total_annual" },
+      };
+    }
+    return inputs;
   }
   const opexInputs = getOpexInputs();
 
   function updateOpexLine(key: keyof OpexInputs, input: OpexInput) {
     const updated = { ...opexInputs, [key]: input };
+    setE({ ...e, opex_inputs: updated });
+    markDirty();
+  }
+
+  function updateUtilitiesSubline(key: keyof UtilitiesSublines, input: OpexInput) {
+    const updated: OpexInputs = {
+      ...opexInputs,
+      utilities_sublines: { ...(opexInputs.utilities_sublines || {}), [key]: input },
+    };
+    setE({ ...e, opex_inputs: updated });
+    markDirty();
+  }
+
+  function updateServicesSubline(key: keyof ServicesSublines, input: OpexInput) {
+    const updated: OpexInputs = {
+      ...opexInputs,
+      services_sublines: { ...(opexInputs.services_sublines || {}), [key]: input },
+    };
     setE({ ...e, opex_inputs: updated });
     markDirty();
   }
@@ -424,10 +608,31 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
   function opexLineAnnual(key: keyof OpexInputs): number {
     const oi = opexInputs[key];
-    return oi ? opexToAnnual(oi, totalUnits, t12EGI, t12GPR) : 0;
+    if (!oi || typeof oi !== "object" || !("mode" in oi)) return 0;
+    return opexToAnnual(oi as OpexInput, totalUnits, t12EGI, t12GPR);
   }
-  const t12TotalOpex = (["management_fees", "payroll", "repairs_maintenance", "turnover", "insurance", "property_tax", "utilities", "admin_legal_marketing", "contract_services", "reserves"] as (keyof OpexInputs)[])
-    .reduce((sum, k) => sum + opexLineAnnual(k), 0);
+  function sumSublinesAnnual(sublines: UtilitiesSublines | ServicesSublines | undefined): number {
+    if (!sublines) return 0;
+    return Object.values(sublines as Record<string, OpexInput | undefined>).reduce(
+      (sum, s) => sum + (s ? opexToAnnual(s, totalUnits, t12EGI, t12GPR) : 0),
+      0,
+    );
+  }
+  const utilSubSum = sumSublinesAnnual(opexInputs.utilities_sublines);
+  const svcSubSum = sumSublinesAnnual(opexInputs.services_sublines);
+  const utilEffective = utilSubSum > 0 ? utilSubSum : opexLineAnnual("utilities");
+  const svcEffective = svcSubSum > 0 ? svcSubSum : opexLineAnnual("contract_services");
+  const t12TotalOpex =
+    opexLineAnnual("management_fees") +
+    opexLineAnnual("payroll") +
+    opexLineAnnual("repairs_maintenance") +
+    opexLineAnnual("turnover") +
+    opexLineAnnual("insurance") +
+    opexLineAnnual("property_tax") +
+    utilEffective +
+    opexLineAnnual("admin_legal_marketing") +
+    svcEffective +
+    opexLineAnnual("reserves");
   const t12NOI = t12EGI - t12TotalOpex;
 
   return (
@@ -727,14 +932,40 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
             {/* Utilities */}
             <div>
-              <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Utilities</div>
-              <OpexLineField label="Utilities" input={opexInputs.utilities || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("utilities", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
+              <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">
+                Utilities
+                <span className="text-slate-600 font-normal normal-case ml-2">enter total or break out by type</span>
+              </div>
+              <OpexGroup<keyof UtilitiesSublines>
+                label="Utilities"
+                topInput={opexInputs.utilities || { value: 0, mode: "per_unit_annual" }}
+                onTopChange={(v) => updateOpexLine("utilities", v)}
+                sublines={opexInputs.utilities_sublines as Record<string, OpexInput | undefined> | undefined}
+                onSublineChange={(k, v) => updateUtilitiesSubline(k, v)}
+                sublineDefs={UTIL_SUBLINE_DEFS}
+                units={totalUnits}
+                egi={t12EGI}
+                gpr={t12GPR}
+              />
             </div>
 
             {/* Contract Services */}
             <div>
-              <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">Contract Services</div>
-              <OpexLineField label="Contract Services" input={opexInputs.contract_services || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("contract_services", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
+              <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2 border-l-2 border-slate-600 pl-2">
+                Contract Services
+                <span className="text-slate-600 font-normal normal-case ml-2">enter total or break out by service</span>
+              </div>
+              <OpexGroup<keyof ServicesSublines>
+                label="Contract Services"
+                topInput={opexInputs.contract_services || { value: 0, mode: "total_annual" }}
+                onTopChange={(v) => updateOpexLine("contract_services", v)}
+                sublines={opexInputs.services_sublines as Record<string, OpexInput | undefined> | undefined}
+                onSublineChange={(k, v) => updateServicesSubline(k, v)}
+                sublineDefs={SVC_SUBLINE_DEFS}
+                units={totalUnits}
+                egi={t12EGI}
+                gpr={t12GPR}
+              />
             </div>
           </div>
         </Section>
