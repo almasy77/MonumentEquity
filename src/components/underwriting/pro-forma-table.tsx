@@ -4,7 +4,14 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { MonthlyRow, AnnualSummary, OpexBreakdown } from "@/lib/underwriting";
+import type { MonthlyRow, AnnualSummary, OpexBreakdown, RentBasis } from "@/lib/underwriting";
+
+const RENT_BASIS_LABELS: Record<RentBasis, string> = {
+  current: "Current Rents",
+  market: "Market Rents",
+  current_plus_reno: "Current + Reno Premium",
+  market_plus_reno: "Market + Reno Premium",
+};
 
 function fmt(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -51,9 +58,13 @@ function getMonthlyValue(m: MonthlyRow, key: string): number {
 export function ProFormaTable({
   monthly,
   annual,
+  rentBasis,
+  onRentBasisChange,
 }: {
   monthly: MonthlyRow[];
   annual: AnnualSummary[];
+  rentBasis?: RentBasis;
+  onRentBasisChange?: (basis: RentBasis) => void;
 }) {
   const [view, setView] = useState<ViewMode>("annual");
   const [selectedYear, setSelectedYear] = useState(1);
@@ -128,33 +139,55 @@ export function ProFormaTable({
   return (
     <Card className="bg-slate-900 border-slate-800">
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-white text-base">Pro Forma</CardTitle>
-          <div className="flex items-center gap-1">
-            <Button
-              variant={view === "annual" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("annual")}
-              className={
-                view === "annual"
-                  ? "bg-blue-600 text-white h-7 text-xs"
-                  : "border-slate-700 text-slate-400 h-7 text-xs"
-              }
-            >
-              Annual
-            </Button>
-            <Button
-              variant={view === "monthly" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("monthly")}
-              className={
-                view === "monthly"
-                  ? "bg-blue-600 text-white h-7 text-xs"
-                  : "border-slate-700 text-slate-400 h-7 text-xs"
-              }
-            >
-              Monthly
-            </Button>
+          <div className="flex items-center gap-3">
+            {onRentBasisChange && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">Rents:</span>
+                <select
+                  value={rentBasis || "current"}
+                  onChange={(ev) => onRentBasisChange(ev.target.value as RentBasis)}
+                  className="bg-slate-800 border border-slate-700 text-slate-300 text-xs h-7 rounded-md px-2 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none pr-6"
+                  style={{
+                    backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 6px center",
+                    backgroundSize: "10px",
+                  }}
+                >
+                  {(Object.keys(RENT_BASIS_LABELS) as RentBasis[]).map((k) => (
+                    <option key={k} value={k}>{RENT_BASIS_LABELS[k]}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant={view === "annual" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("annual")}
+                className={
+                  view === "annual"
+                    ? "bg-blue-600 text-white h-7 text-xs"
+                    : "border-slate-700 text-slate-400 h-7 text-xs"
+                }
+              >
+                Annual
+              </Button>
+              <Button
+                variant={view === "monthly" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("monthly")}
+                className={
+                  view === "monthly"
+                    ? "bg-blue-600 text-white h-7 text-xs"
+                    : "border-slate-700 text-slate-400 h-7 text-xs"
+                }
+              >
+                Monthly
+              </Button>
+            </div>
           </div>
         </div>
 
