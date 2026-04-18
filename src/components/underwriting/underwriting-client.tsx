@@ -503,6 +503,7 @@ function ScenarioAnalysis({
 
       {/* Full Assumptions Form */}
       <AssumptionsForm
+        key={scenario.id}
         scenario={scenario}
         onUpdate={onUpdate}
         onDelete={() => {}}
@@ -515,6 +516,14 @@ function ScenarioAnalysis({
       <ProFormaTable
         monthly={result.monthly}
         annual={result.annual}
+        rentBasis={
+          (scenario.exit_assumptions as { proforma_rent_basis?: RentBasis })
+            ?.proforma_rent_basis
+        }
+        onRentBasisChange={(basis: RentBasis) => {
+          const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
+          onUpdate({ exit_assumptions: { ...currentExit, proforma_rent_basis: basis } });
+        }}
       />
 
       {/* Sensitivity */}

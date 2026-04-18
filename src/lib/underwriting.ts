@@ -191,6 +191,7 @@ export interface ExitAssumptions {
   selling_cost_rate: number;
   sale_price?: number; // if provided, overrides exit_cap_rate-derived value
   sensitivity_rent_basis?: RentBasis; // which rents to use in sensitivity grid
+  proforma_rent_basis?: RentBasis; // which rents to use in pro forma (default: "current")
 }
 
 export interface ScenarioInputs {
@@ -364,6 +365,10 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
 
+  const pfRentBasis: RentBasis = exit.proforma_rent_basis || "current";
+  // When basis is "*_plus_reno", treat all units as fully renovated from month 1
+  const pfHasRenoAllUnits = pfRentBasis === "current_plus_reno" || pfRentBasis === "market_plus_reno";
+
   for (let m = 1; m <= totalMonths; m++) {
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
     const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
@@ -391,10 +396,20 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       // Paying unrenovated = total - paying renovated - offline
       const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
 
-      const baseRent = unit.current_rent * monthlyRentGrowth;
-      const renovatedRent = (unit.current_rent + unit.renovated_rent_premium) * monthlyRentGrowth;
+      // Base rent per the selected pro forma basis (current vs market)
+      const baseRentRaw = (pfRentBasis === "market" || pfRentBasis === "market_plus_reno")
+        ? unit.market_rent
+        : unit.current_rent;
+      const baseRent = baseRentRaw * monthlyRentGrowth;
+      const renovatedRent = (baseRentRaw + unit.renovated_rent_premium) * monthlyRentGrowth;
 
-      gpr += payingUnrenovatedInType * baseRent + payingRenovatedInType * renovatedRent;
+      if (pfHasRenoAllUnits) {
+        // "*_plus_reno": assume all units already renovated — reno premium applied to every paying unit
+        const payingAll = payingUnrenovatedInType + payingRenovatedInType;
+        gpr += payingAll * renovatedRent;
+      } else {
+        gpr += payingUnrenovatedInType * baseRent + payingRenovatedInType * renovatedRent;
+      }
     }
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
