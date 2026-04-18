@@ -503,6 +503,7 @@ function ScenarioAnalysis({
 
       {/* Full Assumptions Form */}
       <AssumptionsForm
+        key={scenario.id}
         scenario={scenario}
         onUpdate={onUpdate}
         onDelete={() => {}}
