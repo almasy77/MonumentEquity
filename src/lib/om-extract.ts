@@ -174,20 +174,35 @@ export async function extractFromOM(
         source: { type: "base64", media_type: mediaType, data: fileBase64 },
       };
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: [
-          fileBlock,
-          { type: "text", text: EXTRACTION_PROMPT },
-        ],
-      },
-    ],
-  });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 16000,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            fileBlock,
+            { type: "text", text: EXTRACTION_PROMPT },
+          ],
+        },
+      ],
+    });
+  } catch (err: unknown) {
+    const apiErr = err as { status?: number; message?: string };
+    if (apiErr.status === 401) {
+      throw new Error("Invalid API key. Check ANTHROPIC_API_KEY in your environment variables.");
+    }
+    if (apiErr.status === 429) {
+      throw new Error("API rate limit exceeded. Please try again in a moment.");
+    }
+    if (apiErr.status === 400) {
+      throw new Error(`API request error: ${apiErr.message || "Bad request"}. The file may be too large or in an unsupported format.`);
+    }
+    throw new Error(`Claude API error: ${apiErr.message || "Unknown error"}`);
+  }
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
@@ -200,7 +215,12 @@ export async function extractFromOM(
     jsonStr = fenceMatch[1].trim();
   }
 
-  const parsed = JSON.parse(jsonStr) as OMExtractedData;
+  let parsed: OMExtractedData;
+  try {
+    parsed = JSON.parse(jsonStr) as OMExtractedData;
+  } catch {
+    throw new Error(`Failed to parse AI response. Raw output: ${jsonStr.slice(0, 200)}...`);
+  }
 
   if (!parsed.property) parsed.property = {};
   if (!parsed.financials) parsed.financials = {};
