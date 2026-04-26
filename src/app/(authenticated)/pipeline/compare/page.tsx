@@ -19,8 +19,22 @@ async function getActiveDeals(): Promise<Deal[]> {
   }
 }
 
-export default async function ComparePage() {
+export default async function ComparePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const deals = await getActiveDeals();
+  const params = await searchParams;
 
-  return <CompareDeals deals={deals} />;
+  const filters = {
+    state: typeof params.state === "string" ? params.state : undefined,
+    city: typeof params.city === "string" ? params.city : undefined,
+    minUnits: typeof params.minUnits === "string" ? parseInt(params.minUnits) || undefined : undefined,
+    maxUnits: typeof params.maxUnits === "string" ? parseInt(params.maxUnits) || undefined : undefined,
+  };
+
+  const hasFilters = filters.state || filters.city || filters.minUnits || filters.maxUnits;
+
+  return <CompareDeals deals={deals} filters={hasFilters ? filters : undefined} />;
 }

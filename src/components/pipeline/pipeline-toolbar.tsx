@@ -54,6 +54,16 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
 
   const hasActiveFilters = filters.state || filters.city || filters.minUnits || filters.maxUnits;
 
+  const compareHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filters.state) params.set("state", filters.state);
+    if (filters.city) params.set("city", filters.city);
+    if (filters.minUnits) params.set("minUnits", filters.minUnits);
+    if (filters.maxUnits) params.set("maxUnits", filters.maxUnits);
+    const qs = params.toString();
+    return qs ? `/pipeline/compare?${qs}` : "/pipeline/compare";
+  }, [filters]);
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -109,10 +119,10 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
           </Button>
           <ExportCSVButton type="deals" />
           <ImportDealsDialog />
-          <Link href="/pipeline/compare">
+          <Link href={compareHref}>
             <Button variant="outline" size="sm" className="border-slate-700 text-slate-300 hover:text-white">
               <GitCompareArrows className="h-4 w-4 mr-1.5" />
-              Compare
+              Compare{hasActiveFilters ? " Filtered" : ""}
             </Button>
           </Link>
           <AddDealDialog />
