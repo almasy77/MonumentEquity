@@ -271,7 +271,7 @@ export async function extractFromOM(
   let response;
   try {
     response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       messages: [
@@ -285,7 +285,8 @@ export async function extractFromOM(
       ],
     });
   } catch (err: unknown) {
-    const apiErr = err as { status?: number; message?: string };
+    const apiErr = err as { status?: number; message?: string; error?: { message?: string } };
+    const detail = apiErr.error?.message || apiErr.message || "Unknown error";
     if (apiErr.status === 401) {
       throw new Error("Invalid API key. Check ANTHROPIC_API_KEY in your environment variables.");
     }
@@ -293,9 +294,9 @@ export async function extractFromOM(
       throw new Error("API rate limit exceeded. Please try again in a moment.");
     }
     if (apiErr.status === 400) {
-      throw new Error(`API request error: ${apiErr.message || "Bad request"}. The file may be too large or in an unsupported format.`);
+      throw new Error(`API request error: ${detail}. The file may be too large or in an unsupported format.`);
     }
-    throw new Error(`Claude API error: ${apiErr.message || "Unknown error"}`);
+    throw new Error(`Claude API error (${apiErr.status || "network"}): ${detail}`);
   }
 
   const textBlock = response.content.find((b) => b.type === "text");
