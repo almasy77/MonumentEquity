@@ -131,7 +131,25 @@ const sections: { title: string; rows: RowDef[] }[] = [
   },
 ];
 
-export function CompareDeals({ deals }: { deals: Deal[] }) {
+interface CompareFilters {
+  state?: string;
+  city?: string;
+  minUnits?: number;
+  maxUnits?: number;
+}
+
+export function CompareDeals({ deals, filters }: { deals: Deal[]; filters?: CompareFilters }) {
+  const filteredDeals = deals.filter((d) => {
+    if (filters?.state && d.state !== filters.state) return false;
+    if (filters?.city && d.city !== filters.city) return false;
+    if (filters?.minUnits && d.units < filters.minUnits) return false;
+    if (filters?.maxUnits && d.units > filters.maxUnits) return false;
+    return true;
+  });
+
+  const hasFilters = filters?.state || filters?.city || filters?.minUnits || filters?.maxUnits;
+  const displayDeals = hasFilters ? filteredDeals : deals;
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   function toggleDeal(id: string) {
@@ -146,7 +164,7 @@ export function CompareDeals({ deals }: { deals: Deal[] }) {
     });
   }
 
-  const selectedDeals = deals.filter((d) => selectedIds.has(d.id));
+  const selectedDeals = displayDeals.filter((d) => selectedIds.has(d.id));
 
   return (
     <div className="space-y-6">
@@ -161,6 +179,11 @@ export function CompareDeals({ deals }: { deals: Deal[] }) {
           <h1 className="text-2xl font-bold text-white">Compare Deals</h1>
           <p className="text-slate-400 text-sm mt-1">
             Select up to {MAX_COMPARE} deals to compare side-by-side
+            {hasFilters && (
+              <span className="text-blue-400 ml-2">
+                (filtered: {displayDeals.length} of {deals.length} deals)
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -171,7 +194,7 @@ export function CompareDeals({ deals }: { deals: Deal[] }) {
           Select Deals ({selectedIds.size}/{MAX_COMPARE})
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-          {deals.map((deal) => {
+          {displayDeals.map((deal) => {
             const isSelected = selectedIds.has(deal.id);
             const isDisabled = !isSelected && selectedIds.size >= MAX_COMPARE;
 
@@ -202,7 +225,7 @@ export function CompareDeals({ deals }: { deals: Deal[] }) {
             );
           })}
         </div>
-        {deals.length === 0 && (
+        {displayDeals.length === 0 && (
           <p className="text-slate-500 text-sm">No active deals found.</p>
         )}
       </Card>
@@ -264,7 +287,7 @@ export function CompareDeals({ deals }: { deals: Deal[] }) {
         </Card>
       )}
 
-      {selectedDeals.length === 0 && deals.length > 0 && (
+      {selectedDeals.length === 0 && displayDeals.length > 0 && (
         <div className="text-center py-12 text-slate-500">
           Select deals above to start comparing
         </div>

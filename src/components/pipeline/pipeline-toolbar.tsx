@@ -2,15 +2,19 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { GitCompareArrows, Filter, X } from "lucide-react";
+import { GitCompareArrows, Filter, X, Kanban, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExportCSVButton } from "@/components/contacts/export-csv-button";
 import { AddDealDialog } from "@/components/deals/add-deal-dialog";
+import { ImportOMDialog } from "@/components/deals/import-om-dialog";
 import { ImportDealsDialog } from "./import-deals-dialog";
 import { KanbanBoard } from "./kanban-board";
+import { PipelineTable } from "./pipeline-table";
 import type { Deal } from "@/lib/validations";
+
+type ViewMode = "kanban" | "table";
 
 interface Filters {
   state: string;
@@ -24,6 +28,7 @@ const EMPTY_FILTERS: Filters = { state: "", city: "", minUnits: "", maxUnits: ""
 export function PipelineToolbar({ deals }: { deals: Deal[] }) {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
+  const [view, setView] = useState<ViewMode>("kanban");
 
   const states = useMemo(() => {
     const set = new Set(deals.map((d) => d.state).filter(Boolean));
@@ -50,6 +55,16 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
 
   const hasActiveFilters = filters.state || filters.city || filters.minUnits || filters.maxUnits;
 
+  const compareHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filters.state) params.set("state", filters.state);
+    if (filters.city) params.set("city", filters.city);
+    if (filters.minUnits) params.set("minUnits", filters.minUnits);
+    if (filters.maxUnits) params.set("maxUnits", filters.maxUnits);
+    const qs = params.toString();
+    return qs ? `/pipeline/compare?${qs}` : "/pipeline/compare";
+  }, [filters]);
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -65,6 +80,30 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-md border border-slate-700 overflow-hidden">
+            <button
+              onClick={() => setView("kanban")}
+              className={`px-2.5 py-1.5 text-xs flex items-center gap-1 transition-colors ${
+                view === "kanban"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <Kanban className="h-3.5 w-3.5" />
+              Board
+            </button>
+            <button
+              onClick={() => setView("table")}
+              className={`px-2.5 py-1.5 text-xs flex items-center gap-1 transition-colors ${
+                view === "table"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+              Table
+            </button>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -81,10 +120,11 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
           </Button>
           <ExportCSVButton type="deals" />
           <ImportDealsDialog />
-          <Link href="/pipeline/compare">
+          <ImportOMDialog />
+          <Link href={compareHref}>
             <Button variant="outline" size="sm" className="border-slate-700 text-slate-300 hover:text-white">
               <GitCompareArrows className="h-4 w-4 mr-1.5" />
-              Compare
+              Compare{hasActiveFilters ? " Filtered" : ""}
             </Button>
           </Link>
           <AddDealDialog />
@@ -167,7 +207,11 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
         </div>
       )}
 
-      <KanbanBoard deals={filteredDeals} />
+      {view === "kanban" ? (
+        <KanbanBoard deals={filteredDeals} />
+      ) : (
+        <PipelineTable deals={filteredDeals} />
+      )}
     </>
   );
 }
