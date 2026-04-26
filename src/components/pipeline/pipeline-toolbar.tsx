@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExportCSVButton } from "@/components/contacts/export-csv-button";
 import { AddDealDialog } from "@/components/deals/add-deal-dialog";
+import { ImportOMDialog } from "@/components/deals/import-om-dialog";
 import { ImportDealsDialog } from "./import-deals-dialog";
 import { KanbanBoard } from "./kanban-board";
 import { PipelineTable } from "./pipeline-table";
@@ -119,6 +120,7 @@ export function PipelineToolbar({ deals }: { deals: Deal[] }) {
           </Button>
           <ExportCSVButton type="deals" />
           <ImportDealsDialog />
+          <ImportOMDialog />
           <Link href={compareHref}>
             <Button variant="outline" size="sm" className="border-slate-700 text-slate-300 hover:text-white">
               <GitCompareArrows className="h-4 w-4 mr-1.5" />

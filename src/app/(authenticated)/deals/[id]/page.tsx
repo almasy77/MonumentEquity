@@ -18,6 +18,7 @@ import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
+import { ImportOMDialog } from "@/components/deals/import-om-dialog";
 import {
   ArrowLeft,
   Building2,
@@ -25,6 +26,7 @@ import {
   Clock,
   ListTodo,
   MapPin,
+  FileText,
 } from "lucide-react";
 import type { Deal, Contact, Task, Scenario } from "@/lib/validations";
 import type { ActivityEntry } from "@/lib/activity";
@@ -177,6 +179,14 @@ export default async function DealDetailPage({
             >
               <DollarSign className="h-4 w-4" /> Underwrite
             </Link>
+            <ImportOMDialog
+              dealId={id}
+              trigger={
+                <button className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
+                  <FileText className="h-4 w-4" /> Import OM
+                </button>
+              }
+            />
             <AdminOnly>
               <ShareDealButton dealId={id} />
             </AdminOnly>
