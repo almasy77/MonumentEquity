@@ -630,7 +630,9 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   if (revenue.vacancy_rate < 0.03) warnings.push("Vacancy below 3% — may be aggressive");
   if (revenue.vacancy_rate > 0.20) warnings.push("Vacancy above 20% — verify assumption");
   if (revenue.rent_growth_rate > 0.05) warnings.push("Rent growth above 5%/yr — may be aggressive");
-  if (exit.exit_cap_rate < goingInCap) warnings.push("Exit cap below going-in — optimistic assumption");
+  if (exit.exit_cap_rate > 0 && goingInCap > 0 && exit.exit_cap_rate < goingInCap * 0.85) {
+    warnings.push("Exit cap significantly below going-in — verify exit assumptions");
+  }
 
   const totalCapex = capex.per_unit_cost * capex.units_to_renovate +
     capex.projects.reduce((s, p) => s + p.cost, 0);
