@@ -689,6 +689,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               />
             </div>
             <CurrencyField label="Earnest Money" value={p.earnest_money} onChange={(v) => { setP({ ...p, earnest_money: v }); markDirty(); }} />
+            <NumField label="Due Diligence (days)" value={p.due_diligence_days || 0} onChange={(v) => { setP({ ...p, due_diligence_days: v }); markDirty(); }} />
+            <NumField label="Closing Timeline (days)" value={p.closing_days || 0} onChange={(v) => { setP({ ...p, closing_days: v }); markDirty(); }} />
+            <div>
+              <Label className="text-xs text-slate-400">Buyer Entity</Label>
+              <Input
+                value={p.buyer_entity || ""}
+                onChange={(e) => { setP({ ...p, buyer_entity: e.target.value }); markDirty(); }}
+                placeholder="e.g. Monument Equity LLC"
+                className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+              />
+            </div>
           </div>
         </Section>
 

@@ -34,6 +34,9 @@ export interface PurchaseAssumptions {
   loi_amount?: number;
   loi_date?: string;
   loi_expiration?: string;
+  due_diligence_days?: number;
+  closing_days?: number;
+  buyer_entity?: string;
 }
 
 export interface FinancingAssumptions {
