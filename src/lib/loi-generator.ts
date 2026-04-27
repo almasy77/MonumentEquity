@@ -18,6 +18,12 @@ interface LOIData {
   contacts: Contact[];
 }
 
+const HEADING_FONT = "DM Serif Display";
+const BODY_FONT = "DM Sans";
+const BODY_SIZE = 22;
+const HEADING_SIZE = 24;
+const TITLE_SIZE = 32;
+
 function fmt(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
@@ -36,15 +42,23 @@ function addDays(dateStr: string | undefined, days: number): string {
 }
 
 function bold(text: string): TextRun {
-  return new TextRun({ text, bold: true, font: "Calibri", size: 22 });
+  return new TextRun({ text, bold: true, font: BODY_FONT, size: BODY_SIZE });
 }
 
 function normal(text: string): TextRun {
-  return new TextRun({ text, font: "Calibri", size: 22 });
+  return new TextRun({ text, font: BODY_FONT, size: BODY_SIZE });
+}
+
+function italic(text: string): TextRun {
+  return new TextRun({ text, font: BODY_FONT, size: BODY_SIZE, italics: true });
 }
 
 function placeholder(text: string): TextRun {
-  return new TextRun({ text, font: "Calibri", size: 22, color: "808080", italics: true });
+  return new TextRun({ text, font: BODY_FONT, size: BODY_SIZE, color: "808080", italics: true });
+}
+
+function contactFullName(c: Contact): string {
+  return `${c.first_name}${c.last_name ? ` ${c.last_name}` : ""}`;
 }
 
 export async function generateLOI(data: LOIData): Promise<Buffer> {
@@ -55,32 +69,28 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
   const ddDays = purchase.due_diligence_days || 30;
   const closingDays = purchase.closing_days || 60;
   const loiDate = purchase.loi_date;
-  const buyerEntity = purchase.buyer_entity || "[BUYER ENTITY NAME]";
+  const buyerEntity = purchase.buyer_entity || "Monument Equity";
 
-  const sellerContact = contacts.find((c) => c.type === "seller");
   const brokerContact = contacts.find((c) => c.type === "broker");
+  const sellerContact = contacts.find((c) => c.type === "seller");
 
-  const sellerName = sellerContact
-    ? `${sellerContact.first_name}${sellerContact.last_name ? ` ${sellerContact.last_name}` : ""}`
-    : "[SELLER NAME]";
-  const sellerCompany = sellerContact?.company || "[SELLER COMPANY]";
   const brokerName = brokerContact
-    ? `${brokerContact.first_name}${brokerContact.last_name ? ` ${brokerContact.last_name}` : ""}`
-    : undefined;
-  const brokerCompany = brokerContact?.company || undefined;
+    ? contactFullName(brokerContact)
+    : "[BROKER NAME]";
+  const brokerCompany = brokerContact?.company;
+
+  const sellerName = sellerContact ? contactFullName(sellerContact) : undefined;
+  const sellerCompany = sellerContact?.company;
 
   const propertyDesc = `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`.trim();
   const unitCount = deal.units;
   const propertyType = deal.property_type || "multifamily";
 
-  const ddDeadline = addDays(loiDate, ddDays);
-  const closingDeadline = addDays(loiDate, closingDays);
-
   const doc = new Document({
     styles: {
       default: {
         document: {
-          run: { font: "Calibri", size: 22 },
+          run: { font: BODY_FONT, size: BODY_SIZE },
         },
       },
     },
@@ -97,14 +107,14 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
             alignment: AlignmentType.CENTER,
             spacing: { after: 100 },
             children: [
-              new TextRun({ text: "LETTER OF INTENT", bold: true, font: "Calibri", size: 32 }),
+              new TextRun({ text: "LETTER OF INTENT", bold: true, font: HEADING_FONT, size: TITLE_SIZE }),
             ],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 100 },
             children: [
-              new TextRun({ text: "Non-Binding Expression of Interest", font: "Calibri", size: 22, italics: true, color: "666666" }),
+              new TextRun({ text: "Non-Binding Expression of Interest", font: BODY_FONT, size: BODY_SIZE, italics: true, color: "666666" }),
             ],
           }),
           new Paragraph({
@@ -121,16 +131,8 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
           }),
           new Paragraph({
             spacing: { after: 100 },
-            children: [bold("To: "), normal(`${sellerName}${sellerCompany !== "[SELLER COMPANY]" ? `, ${sellerCompany}` : ""}`)],
+            children: [bold("To: "), normal(`${brokerName}${brokerCompany ? `, ${brokerCompany}` : ""}`)],
           }),
-          ...(brokerName
-            ? [
-                new Paragraph({
-                  spacing: { after: 100 },
-                  children: [bold("Via: "), normal(`${brokerName}${brokerCompany ? `, ${brokerCompany}` : ""}`)],
-                }),
-              ]
-            : []),
           new Paragraph({
             spacing: { after: 100 },
             children: [bold("From: "), normal(buyerEntity)],
@@ -144,7 +146,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
           new Paragraph({
             spacing: { after: 200 },
             children: [
-              normal(`Dear ${sellerName},`),
+              normal(`Dear ${brokerName},`),
             ],
           }),
           new Paragraph({
@@ -193,12 +195,10 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
             children: [
               normal(`Buyer shall have a period of `),
               bold(`${ddDays} days`),
+              normal(` from the `),
+              italic("effective date"),
               normal(
-                ` from the effective date of the PSA (the "Due Diligence Period") to conduct its inspections, investigations, and review of the Property, including but not limited to: physical inspections, environmental assessments, title review, survey, financial and operational review, lease audits, and any other investigations Buyer deems necessary. The Due Diligence Period shall expire on or about `
-              ),
-              bold(ddDeadline),
-              normal(
-                `. Buyer may terminate the PSA for any reason during the Due Diligence Period, in which case the Deposit shall be returned in full.`
+                ` of the PSA (the "Due Diligence Period") to conduct its inspections, investigations, and review of the Property, including but not limited to: physical inspections, environmental assessments, title review, survey, financial and operational review, lease audits, and any other investigations Buyer deems necessary. Buyer may terminate the PSA for any reason during the Due Diligence Period, in which case the Deposit shall be returned in full.`
               ),
             ],
           }),
@@ -215,10 +215,8 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
               ),
               bold(`${closingDays - ddDays > 0 ? closingDays - ddDays : 15} days`),
               normal(
-                ` after the expiration of the Due Diligence Period, whichever is later. The anticipated closing date is on or about `
+                ` after the expiration of the Due Diligence Period, whichever is later.`
               ),
-              bold(closingDeadline),
-              normal(`.`),
             ],
           }),
 
@@ -339,7 +337,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
           }),
           new Paragraph({
             spacing: { after: 50 },
-            children: [bold("By: "), placeholder("[Authorized Signatory Name & Title]")],
+            children: [bold("By: "), normal("Bryan Frank")],
           }),
           new Paragraph({
             spacing: { after: 300 },
@@ -359,7 +357,12 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
           }),
           new Paragraph({
             spacing: { after: 50 },
-            children: [bold("Seller: "), normal(`${sellerName}${sellerCompany !== "[SELLER COMPANY]" ? `, ${sellerCompany}` : ""}`)],
+            children: [
+              bold("Seller: "),
+              normal(sellerName
+                ? `${sellerName}${sellerCompany ? `, ${sellerCompany}` : ""}`
+                : (sellerCompany || "[SELLER NAME]")),
+            ],
           }),
           new Paragraph({
             spacing: { after: 50 },
@@ -383,7 +386,7 @@ function sectionHeading(text: string): Paragraph {
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 200, after: 100 },
     children: [
-      new TextRun({ text, bold: true, font: "Calibri", size: 24 }),
+      new TextRun({ text, bold: true, font: HEADING_FONT, size: HEADING_SIZE }),
     ],
   });
 }
