@@ -207,7 +207,7 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
               />
             </div>
             <p className="text-xs text-slate-500">
-              Max 25MB. Your document is sent to Claude AI for extraction and is not stored.
+              PDF up to 25MB. Images (PNG/JPG) up to 3.5MB — for larger scans, use PDF.
             </p>
             {error && <p className="text-red-400 text-sm">{error}</p>}
           </div>

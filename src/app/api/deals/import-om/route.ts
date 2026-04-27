@@ -6,6 +6,8 @@ import { extractFromOM } from "@/lib/om-extract";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
 
+export const maxDuration = 120;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
@@ -25,11 +27,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const maxSize = 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
-    }
-
     const fileName = file.name.toLowerCase();
     let mediaType: "application/pdf" | "image/png" | "image/jpeg" = "application/pdf";
     if (fileName.endsWith(".png")) mediaType = "image/png";
@@ -39,6 +36,18 @@ export async function POST(req: NextRequest) {
         { error: "Unsupported file format. Use PDF, PNG, or JPG." },
         { status: 400 }
       );
+    }
+
+    const isImage = mediaType !== "application/pdf";
+    const maxSize = isImage ? 3.5 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (file.size > maxSize) {
+      if (isImage) {
+        return NextResponse.json(
+          { error: "Image too large (max ~3.5 MB). For larger documents, please upload as PDF instead." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
     }
 
     const buffer = await file.arrayBuffer();
@@ -58,7 +67,13 @@ export async function POST(req: NextRequest) {
 
     return await createNewDeal(extracted, userId(session));
   } catch (err) {
-    console.error("POST /api/deals/import-om error:", err);
+    const errObj = err as { status?: number; message?: string; error?: unknown };
+    console.error("POST /api/deals/import-om error:", {
+      message: errObj.message,
+      status: errObj.status,
+      error: errObj.error,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     const message = err instanceof Error ? err.message : "Failed to process offering memo";
     return NextResponse.json({ error: message }, { status: 500 });
   }
