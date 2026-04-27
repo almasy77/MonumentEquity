@@ -95,7 +95,6 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
   const units = deal.units;
   const pType = deal.property_type || "multifamily";
   const state = STATE_NAMES[deal.state] || deal.state;
-  const county = deal.county || `[COUNTY]`;
 
   const expDate = purchase.loi_expiration
     ? formatDate(purchase.loi_expiration)
@@ -218,7 +217,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Rent (collected only), real estate taxes, utilities, and operating expenses"),
     bullet("Tenant security deposits (and any interest thereon) shall be credited to Buyer at Closing"),
     bullet("Prepaid rent shall be credited to Buyer; delinquent rent shall be addressed in the PSA"),
-    p([n(`Closing costs shall be allocated in accordance with ${county} County, ${state} custom. Seller shall pay the ${state} real estate transfer tax, the cost of a standard owner's title insurance policy, and one-half of escrow fees. Buyer shall pay recording fees, the cost of any lender's title policy, survey costs, and one-half of escrow fees. Each party shall bear its own attorneys' fees.`)], 200),
+    p([n(`Closing costs shall be allocated in accordance with local custom. Seller shall pay any applicable real estate transfer taxes, the cost of a standard owner's title insurance policy, and one-half of escrow fees. Buyer shall pay recording fees, the cost of any lender's title policy, survey costs, and one-half of escrow fees. Each party shall bear its own attorneys' fees.`)], 200),
 
     // 12. Title and Survey Review
     heading("12. Title and Survey Review"),
