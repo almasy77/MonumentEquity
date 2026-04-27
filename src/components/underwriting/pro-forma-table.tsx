@@ -111,6 +111,7 @@ export function ProFormaTable({
     },
     { key: "noi", label: "Net Operating Income", bold: true, highlight: true },
     { key: "debt_service", label: "Less: Debt Service", negative: true },
+    { key: "cash_flow_before_capex", label: "Cash Flow before CapEx", bold: true },
     { key: "capex", label: "Less: CapEx", negative: true },
     { key: "cash_flow", label: "Cash Flow", bold: true, highlight: true },
   ];
