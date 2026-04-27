@@ -268,24 +268,34 @@ export async function extractFromOM(
         source: { type: "base64", media_type: mediaType, data: fileBase64 },
       };
 
+  const requestBody = {
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 16000,
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user" as const,
+        content: [
+          fileBlock,
+          { type: "text" as const, text: EXTRACTION_PROMPT },
+        ],
+      },
+    ],
+  };
+
   let response;
   try {
-    response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
-            fileBlock,
-            { type: "text", text: EXTRACTION_PROMPT },
-          ],
-        },
-      ],
-    });
+    response = await client.messages.create(requestBody);
   } catch (err: unknown) {
-    const apiErr = err as { status?: number; message?: string; error?: { message?: string } };
+    const apiErr = err as { status?: number; message?: string; error?: { type?: string; message?: string }; headers?: Record<string, string> };
+    console.error("Claude API error details:", JSON.stringify({
+      status: apiErr.status,
+      message: apiErr.message,
+      error: apiErr.error,
+      model: requestBody.model,
+      mediaType,
+      base64Length: fileBase64.length,
+    }));
     const detail = apiErr.error?.message || apiErr.message || "Unknown error";
     if (apiErr.status === 401) {
       throw new Error("Invalid API key. Check ANTHROPIC_API_KEY in your environment variables.");
@@ -294,7 +304,7 @@ export async function extractFromOM(
       throw new Error("API rate limit exceeded. Please try again in a moment.");
     }
     if (apiErr.status === 400) {
-      throw new Error(`API request error: ${detail}. The file may be too large or in an unsupported format.`);
+      throw new Error(`API request error: ${detail}`);
     }
     throw new Error(`Claude API error (${apiErr.status || "network"}): ${detail}`);
   }

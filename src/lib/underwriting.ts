@@ -235,6 +235,8 @@ export interface MonthlyRow {
   noi: number;
   // Debt Service
   debt_service: number;
+  // Cash Flow before CapEx
+  cash_flow_before_capex: number; // NOI - debt service
   // CapEx
   capex: number;
   // Cash Flow
@@ -254,6 +256,7 @@ export interface AnnualSummary {
   opex_breakdown: OpexBreakdown;
   noi: number;
   debt_service: number;
+  cash_flow_before_capex: number;
   capex: number;
   cash_flow: number;
   cumulative_cash_flow: number;
@@ -449,7 +452,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     // CapEx for this month
     const monthCapex = calculateMonthCapex(capex, m);
 
-    const cashFlow = noi - ds - monthCapex;
+    const cashFlowBeforeCapex = noi - ds;
+    const cashFlow = cashFlowBeforeCapex - monthCapex;
     cumulativeCF += cashFlow;
 
     monthly.push({
@@ -464,6 +468,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       opex_breakdown: opexBk,
       noi,
       debt_service: ds,
+      cash_flow_before_capex: cashFlowBeforeCapex,
       capex: monthCapex,
       cash_flow: cashFlow,
       cumulative_cash_flow: cumulativeCF,
@@ -505,6 +510,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       },
       noi: sum((r) => r.noi),
       debt_service: sum((r) => r.debt_service),
+      cash_flow_before_capex: sum((r) => r.cash_flow_before_capex),
       capex: sum((r) => r.capex),
       cash_flow: annualCF,
       cumulative_cash_flow: annualCumulativeCF,

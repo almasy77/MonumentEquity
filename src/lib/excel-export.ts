@@ -315,6 +315,7 @@ function buildMonthlySheet(
     { label: "Total Operating Expenses", getValue: r => r.total_opex, negative: true, bold: true },
     { label: "Net Operating Income", getValue: r => r.noi, bold: true },
     { label: "Less: Debt Service", getValue: r => r.debt_service, negative: true },
+    { label: "Cash Flow before CapEx", getValue: r => r.cash_flow_before_capex, bold: true },
     { label: "Less: CapEx", getValue: r => r.capex, negative: true },
     { label: "Cash Flow (Before Taxes)", getValue: r => r.cash_flow, bold: true },
     { label: "Cumulative Cash Flow", getValue: r => r.cumulative_cash_flow },
@@ -382,6 +383,7 @@ function buildAnnualSheet(
     { label: "Less: Operating Expenses", key: "total_opex", negative: true, formula: true },
     { label: "Net Operating Income", key: "noi", bold: true, formula: true },
     { label: "Less: Debt Service", key: "debt_service", negative: true, formula: true },
+    { label: "Cash Flow before CapEx", key: "cash_flow_before_capex", bold: true, formula: true },
     { label: "Less: CapEx", key: "capex", negative: true, formula: true },
     { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true, formula: true },
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
@@ -390,11 +392,11 @@ function buildAnnualSheet(
 
   // Monthly sheet row map (after adding 10 opex breakdown rows):
   // gpr=2, vacancy=3, bad_debt=4, concessions=5, other=6, egi=7,
-  // opex breakdown=8-17, total_opex=18, noi=19, ds=20, capex=21, cf=22, cum=23
+  // opex breakdown=8-17, total_opex=18, noi=19, ds=20, cf_before_capex=21, capex=22, cf=23, cum=24
   const monthlyRowMap: Record<string, number> = {
     gpr: 2, vacancy_loss: 3, bad_debt: 4, concessions: 5,
     other_income: 6, egi: 7, total_opex: 18, noi: 19,
-    debt_service: 20, capex: 21, cash_flow: 22,
+    debt_service: 20, cash_flow_before_capex: 21, capex: 22, cash_flow: 23,
   };
 
   for (const item of lineItems) {
