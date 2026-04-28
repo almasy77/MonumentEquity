@@ -1132,6 +1132,37 @@ export interface DealData {
   };
 }
 
+export function buildUnitMixFromRentRoll(
+  rentRoll: { unit_type?: string; current_rent?: number; market_rent?: number }[],
+  totalUnits: number,
+): UnitMix[] {
+  if (rentRoll.length > 0) {
+    const typeMap = new Map<string, { count: number; totalRent: number; totalMarket: number }>();
+    for (const unit of rentRoll) {
+      const type = unit.unit_type || "Average";
+      const existing = typeMap.get(type) || { count: 0, totalRent: 0, totalMarket: 0 };
+      existing.count += 1;
+      existing.totalRent += unit.current_rent || 0;
+      existing.totalMarket += unit.market_rent || unit.current_rent || 0;
+      typeMap.set(type, existing);
+    }
+    return Array.from(typeMap.entries()).map(([type, data]) => ({
+      type,
+      count: data.count,
+      current_rent: data.count > 0 ? Math.round(data.totalRent / data.count) : 1000,
+      market_rent: data.count > 0 ? Math.round(data.totalMarket / data.count) : 1100,
+      renovated_rent_premium: 200,
+    }));
+  }
+  return [{
+    type: "Average",
+    count: totalUnits,
+    current_rent: 1000,
+    market_rent: 1100,
+    renovated_rent_premium: 200,
+  }];
+}
+
 export function buildDefaultInputs(
   deal: DealData,
   defaults: Record<string, number>
@@ -1161,34 +1192,7 @@ export function buildDefaultInputs(
   const origFeeRate = deal.origination_fee_rate ?? d.origination_fee_rate ?? 0.01;
 
   // Revenue from rent roll
-  let unitMix: UnitMix[];
-  if (deal.rent_roll && deal.rent_roll.length > 0) {
-    // Group by unit_type
-    const typeMap = new Map<string, { count: number; totalRent: number; totalMarket: number }>();
-    for (const unit of deal.rent_roll) {
-      const type = unit.unit_type || "Average";
-      const existing = typeMap.get(type) || { count: 0, totalRent: 0, totalMarket: 0 };
-      existing.count += 1;
-      existing.totalRent += unit.current_rent || 0;
-      existing.totalMarket += unit.market_rent || unit.current_rent || 0;
-      typeMap.set(type, existing);
-    }
-    unitMix = Array.from(typeMap.entries()).map(([type, data]) => ({
-      type,
-      count: data.count,
-      current_rent: data.count > 0 ? Math.round(data.totalRent / data.count) : 1000,
-      market_rent: data.count > 0 ? Math.round(data.totalMarket / data.count) : 1100,
-      renovated_rent_premium: 200,
-    }));
-  } else {
-    unitMix = [{
-      type: "Average",
-      count: deal.units,
-      current_rent: 1000,
-      market_rent: 1100,
-      renovated_rent_premium: 200,
-    }];
-  }
+  const unitMix = buildUnitMixFromRentRoll(deal.rent_roll || [], deal.units);
 
   // Vacancy from deal occupancy
   const vacancyRate = deal.current_occupancy

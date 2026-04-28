@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, RefreshCw } from "lucide-react";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
@@ -35,6 +35,7 @@ export function UnderwritingClient({
   const [confirmAction, setConfirmAction] = useState<{ id: string; type: "delete" | "archive" } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const loadScenario = useCallback(async (id: string) => {
     setLoading(true);
@@ -222,6 +223,30 @@ export function UnderwritingClient({
     setRenamingId(null);
   }
 
+  async function syncFromDeal() {
+    if (!activeId) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/scenarios/${activeId}/sync-rent-roll`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data: ScenarioWithResult = await res.json();
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === activeId ? data.scenario : s))
+        );
+        setActiveResult(data.underwriting);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to sync rent roll");
+      }
+    } catch (err) {
+      console.error("Failed to sync from deal:", err);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   function handleConfirmedAction() {
     if (!confirmAction) return;
     if (confirmAction.type === "delete") {
@@ -401,13 +426,23 @@ export function UnderwritingClient({
             <Button
               variant="outline"
               size="sm"
+              onClick={syncFromDeal}
+              disabled={syncing}
+              className="border-slate-700 text-amber-400 hover:bg-amber-900/20 ml-auto"
+            >
+              {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+              Sync from Deal
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 window.open(
                   `/api/loi/${deal.id}?scenario_id=${activeId}`,
                   "_blank"
                 );
               }}
-              className="border-slate-700 text-blue-400 hover:bg-blue-900/20 ml-auto"
+              className="border-slate-700 text-blue-400 hover:bg-blue-900/20"
             >
               <FileText className="h-3 w-3 mr-1" /> Generate LOI
             </Button>
