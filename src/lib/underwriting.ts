@@ -1210,7 +1210,8 @@ export function buildDefaultInputs(
   const utilitiesTotal = sumT12Field(t12Months, "utilities") +
     sumT12Field(t12Months, "utilities_water") +
     sumT12Field(t12Months, "utilities_electric") +
-    sumT12Field(t12Months, "utilities_gas");
+    sumT12Field(t12Months, "utilities_gas") +
+    sumT12Field(t12Months, "trash_removal");
   const utilitiesPerUnit = utilitiesTotal > 0 && deal.units > 0
     ? utilitiesTotal / deal.units
     : d.utilities_per_unit ?? 1200;
@@ -1222,6 +1223,37 @@ export function buildDefaultInputs(
   const turnoverPerUnit = turnoverTotal > 0 && deal.units > 0
     ? turnoverTotal / deal.units
     : d.turnover_cost_per_unit ?? 500;
+
+  // Other income from T12
+  const t12OtherIncome = sumT12Field(t12Months, "laundry_income") +
+    sumT12Field(t12Months, "parking_income") +
+    sumT12Field(t12Months, "pet_fees") +
+    sumT12Field(t12Months, "application_fees") +
+    sumT12Field(t12Months, "late_fees") +
+    sumT12Field(t12Months, "utility_reimbursements") +
+    sumT12Field(t12Months, "storage_income") +
+    sumT12Field(t12Months, "other_income");
+  const otherIncomeMonthly = t12OtherIncome > 0 && t12Months.length > 0
+    ? Math.round(t12OtherIncome / t12Months.length)
+    : 0;
+
+  // Admin + marketing from T12
+  const adminMarketingTotal = sumT12Field(t12Months, "admin_expenses") + sumT12Field(t12Months, "marketing");
+
+  // Management fee rate from T12 if available
+  const t12MgmtFees = sumT12Field(t12Months, "management_fees");
+  const t12GPR = sumT12Field(t12Months, "gross_potential_rent");
+  const t12VacancyLoss = sumT12Field(t12Months, "vacancy_loss");
+  const t12EGI = t12GPR - t12VacancyLoss + t12OtherIncome;
+  const mgmtFeeRate = t12MgmtFees > 0 && t12EGI > 0
+    ? Math.round((t12MgmtFees / t12EGI) * 1000) / 1000
+    : d.management_fee_rate ?? 0.08;
+
+  // Contract services includes landscaping, pest control, and other miscellaneous expenses
+  const contractServicesTotal = sumT12Field(t12Months, "contract_services") +
+    sumT12Field(t12Months, "landscaping") +
+    sumT12Field(t12Months, "pest_control") +
+    sumT12Field(t12Months, "other_expenses");
 
   // CapEx from buy box scores
   const rehabPerUnit = deal.buy_box_scores?.rehab_per_unit || 0;
@@ -1242,14 +1274,14 @@ export function buildDefaultInputs(
     },
     revenue: {
       unit_mix: unitMix,
-      other_income_monthly: 0,
+      other_income_monthly: otherIncomeMonthly,
       vacancy_rate: vacancyRate,
       bad_debt_rate: d.bad_debt_rate ?? 0.02,
       concessions_rate: d.concessions_rate ?? 0,
       rent_growth_rate: d.rent_growth_rate ?? 0.03,
     },
     expenses: {
-      management_fee_rate: d.management_fee_rate ?? 0.08,
+      management_fee_rate: mgmtFeeRate,
       payroll_annual: payrollAnnual,
       repairs_maintenance_per_unit: repairsPerUnit,
       turnover_cost_per_unit: turnoverPerUnit,
@@ -1258,24 +1290,21 @@ export function buildDefaultInputs(
       tax_escalation_rate: d.tax_escalation_rate ?? 0.02,
       expense_escalation_rate: d.expense_escalation_rate ?? 0.02,
       utilities_per_unit: utilitiesPerUnit,
-      admin_legal_marketing: d.admin_legal_marketing ?? 0,
-      contract_services: d.contract_services ?? 0,
+      admin_legal_marketing: adminMarketingTotal || d.admin_legal_marketing || 0,
+      contract_services: contractServicesTotal || d.contract_services || 0,
       reserves_per_unit: d.reserves_per_unit ?? 300,
       t12_baseline: t12Months.length > 0 ? {
         gross_potential_rent: sumT12Field(t12Months, "gross_potential_rent"),
         vacancy_loss: sumT12Field(t12Months, "vacancy_loss"),
-        other_income: sumT12Field(t12Months, "laundry_income") + sumT12Field(t12Months, "parking_income") +
-          sumT12Field(t12Months, "pet_fees") + sumT12Field(t12Months, "application_fees") +
-          sumT12Field(t12Months, "late_fees") + sumT12Field(t12Months, "utility_reimbursements") +
-          sumT12Field(t12Months, "storage_income") + sumT12Field(t12Months, "other_income"),
+        other_income: t12OtherIncome,
         property_taxes: annualTaxes,
         insurance: annualInsurance,
         utilities: utilitiesTotal,
         repairs_maintenance: repairsTotal,
         payroll: payrollAnnual,
         management_fees: sumT12Field(t12Months, "management_fees"),
-        admin_marketing: sumT12Field(t12Months, "admin_expenses") + sumT12Field(t12Months, "marketing"),
-        contract_services: sumT12Field(t12Months, "contract_services"),
+        admin_marketing: adminMarketingTotal,
+        contract_services: contractServicesTotal,
       } : undefined,
     },
     capex: {
