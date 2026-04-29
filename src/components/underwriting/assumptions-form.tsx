@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -434,6 +434,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [ex, setEx] = useState(exit);
   const [dep, setDep] = useState(depreciation);
   const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    setP(purchase);
+    setF(financing);
+    setR(revenue);
+    setE(expenses);
+    setC(capex);
+    setEx(exit);
+    setDep(depreciation);
+    setDirty(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenario.version]);
 
   function markDirty() {
     setDirty(true);

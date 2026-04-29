@@ -245,6 +245,7 @@ export function UnderwritingClient({
       }
     } catch (err) {
       console.error(`Failed to import ${type}:`, err);
+      alert(`Failed to import ${type === "rent_roll" ? "rent roll" : "T12"}. ${err instanceof Error ? err.message : "Please try again."}`);
     } finally {
       setImporting(null);
       if (rentRollInputRef.current) rentRollInputRef.current.value = "";
