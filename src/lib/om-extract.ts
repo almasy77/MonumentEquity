@@ -17,6 +17,7 @@ export interface OMExtractedData {
     state?: string;
     zip?: string;
     county?: string;
+    parcel_number?: string;
     units?: number;
     year_built?: number;
     property_type?: string;
@@ -140,6 +141,7 @@ Return JSON matching this structure:
     "state": "2-letter abbreviation",
     "zip": "string",
     "county": "string",
+    "parcel_number": "string (tax parcel / APN)",
     "units": number,
     "year_built": number,
     "property_type": "string",

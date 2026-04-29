@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { normalizeRentRoll } from "@/lib/import-normalize";
+import { fetchBlobFile } from "@/lib/blob-helpers";
 import { calculateUnderwriting, buildUnitMixFromRentRoll, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -23,16 +24,34 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params;
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
+    const blobUrl = formData.get("blobUrl") as string | null;
+    const blobFileName = formData.get("fileName") as string | null;
 
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
-      return NextResponse.json({ error: "Unsupported format. Use CSV, XLSX, or PDF." }, { status: 400 });
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
+    let buffer: ArrayBuffer;
+    let actualFileName: string;
+    let blobCleanup: (() => Promise<void>) | null = null;
+
+    if (blobUrl) {
+      if (!blobFileName) {
+        return NextResponse.json({ error: "fileName is required with blobUrl" }, { status: 400 });
+      }
+      const blob = await fetchBlobFile(blobUrl);
+      buffer = blob.buffer;
+      blobCleanup = blob.cleanup;
+      actualFileName = blobFileName;
+    } else {
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      const fileName = file.name.toLowerCase();
+      if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
+        return NextResponse.json({ error: "Unsupported format. Use CSV, XLSX, or PDF." }, { status: 400 });
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
+      }
+      buffer = await file.arrayBuffer();
+      actualFileName = file.name;
     }
 
     const redis = getRedis();
@@ -46,8 +65,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    const buffer = await file.arrayBuffer();
-    const rentRoll = await normalizeRentRoll(buffer, file.name);
+    const rentRoll = await normalizeRentRoll(buffer, actualFileName);
+    if (blobCleanup) await blobCleanup();
 
     if (rentRoll.length === 0) {
       return NextResponse.json({ error: "No units found in the uploaded file." }, { status: 422 });
@@ -102,7 +121,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       entity_id: id,
       details: {
         name: updated.name,
-        file_name: file.name,
+        file_name: actualFileName,
         units_imported: rentRoll.length,
         unit_types: unitMix.length,
       },

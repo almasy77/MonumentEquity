@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, RefreshCw, Upload } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, Upload } from "lucide-react";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
 import type { UnderwritingResult, RentBasis } from "@/lib/underwriting";
+import { uploadFile } from "@/lib/upload-client";
 
 interface ScenarioWithResult {
   scenario: Scenario;
@@ -35,7 +36,6 @@ export function UnderwritingClient({
   const [confirmAction, setConfirmAction] = useState<{ id: string; type: "delete" | "archive" } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState<"rent_roll" | "t12" | null>(null);
   const rentRollInputRef = useRef<HTMLInputElement>(null);
   const t12InputRef = useRef<HTMLInputElement>(null);
@@ -226,41 +226,13 @@ export function UnderwritingClient({
     setRenamingId(null);
   }
 
-  async function syncFromDeal() {
-    if (!activeId) return;
-    setSyncing(true);
-    try {
-      const res = await fetch(`/api/scenarios/${activeId}/sync-rent-roll`, {
-        method: "POST",
-      });
-      if (res.ok) {
-        const data: ScenarioWithResult = await res.json();
-        setScenarios((prev) =>
-          prev.map((s) => (s.id === activeId ? data.scenario : s))
-        );
-        setActiveResult(data.underwriting);
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to sync rent roll");
-      }
-    } catch (err) {
-      console.error("Failed to sync from deal:", err);
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function handleFileImport(file: File, type: "rent_roll" | "t12") {
     if (!activeId) return;
     setImporting(type);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
       const endpoint = type === "rent_roll" ? "import-rent-roll" : "import-t12";
-      const res = await fetch(`/api/scenarios/${activeId}/${endpoint}`, {
-        method: "POST",
-        body: formData,
-      });
+      const res = await uploadFile(file, `/api/scenarios/${activeId}/${endpoint}`);
       if (res.ok) {
         const data: ScenarioWithResult & { imported: Record<string, number> } = await res.json();
         setScenarios((prev) =>
@@ -495,16 +467,6 @@ export function UnderwritingClient({
             >
               {importing === "t12" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
               Import T12
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={syncFromDeal}
-              disabled={syncing || importing !== null}
-              className="border-slate-700 text-amber-400 hover:bg-amber-900/20"
-            >
-              {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-              Sync from Deal
             </Button>
             <Button
               variant="outline"

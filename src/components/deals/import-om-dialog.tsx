@@ -24,6 +24,7 @@ import {
   Mail,
 } from "lucide-react";
 import type { OMExtractedData } from "@/lib/om-extract";
+import { uploadFile } from "@/lib/upload-client";
 
 type Step = "upload" | "extracting" | "preview" | "saving" | "done";
 
@@ -82,11 +83,7 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
     setStep("extracting");
 
     try {
-      const formData = new FormData();
-      formData.append("file", f);
-      formData.append("mode", "preview");
-
-      const res = await fetch("/api/deals/import-om", { method: "POST", body: formData });
+      const res = await uploadFile(f, "/api/deals/import-om", { mode: "preview" });
       if (!res.ok) {
         let msg = "Failed to extract data";
         try {
@@ -114,12 +111,10 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
     setError("");
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("mode", "save");
-      if (targetDealId) formData.append("deal_id", targetDealId);
+      const extra: Record<string, string> = { mode: "save" };
+      if (targetDealId) extra.deal_id = targetDealId;
 
-      const res = await fetch("/api/deals/import-om", { method: "POST", body: formData });
+      const res = await uploadFile(file, "/api/deals/import-om", extra);
       if (!res.ok) {
         let msg = "Failed to save";
         try {

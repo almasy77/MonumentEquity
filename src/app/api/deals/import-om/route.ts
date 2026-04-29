@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
+import { fetchBlobFile } from "@/lib/blob-helpers";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
 
@@ -20,40 +21,59 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const blobUrl = formData.get("blobUrl") as string | null;
+    const blobFileName = formData.get("fileName") as string | null;
     const mode = formData.get("mode") as string | null;
     const dealId = formData.get("deal_id") as string | null;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    let buffer: ArrayBuffer;
+    let actualFileName: string;
+    let blobCleanup: (() => Promise<void>) | null = null;
+
+    if (blobUrl) {
+      if (!blobFileName) {
+        return NextResponse.json({ error: "fileName is required with blobUrl" }, { status: 400 });
+      }
+      const blob = await fetchBlobFile(blobUrl);
+      buffer = blob.buffer;
+      blobCleanup = blob.cleanup;
+      actualFileName = blobFileName;
+    } else {
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      actualFileName = file.name;
+
+      const isImage = file.name.toLowerCase().endsWith(".png") || file.name.toLowerCase().endsWith(".jpg") || file.name.toLowerCase().endsWith(".jpeg");
+      const maxSize = isImage ? 3.5 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (file.size > maxSize) {
+        if (isImage) {
+          return NextResponse.json(
+            { error: "Image too large (max ~3.5 MB). For larger documents, please upload as PDF instead." },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
+      }
+      buffer = await file.arrayBuffer();
     }
 
-    const fileName = file.name.toLowerCase();
+    const fileName = actualFileName.toLowerCase();
     let mediaType: "application/pdf" | "image/png" | "image/jpeg" = "application/pdf";
     if (fileName.endsWith(".png")) mediaType = "image/png";
     else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) mediaType = "image/jpeg";
     else if (!fileName.endsWith(".pdf")) {
+      if (blobCleanup) await blobCleanup();
       return NextResponse.json(
         { error: "Unsupported file format. Use PDF, PNG, or JPG." },
         { status: 400 }
       );
     }
 
-    const isImage = mediaType !== "application/pdf";
-    const maxSize = isImage ? 3.5 * 1024 * 1024 : 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      if (isImage) {
-        return NextResponse.json(
-          { error: "Image too large (max ~3.5 MB). For larger documents, please upload as PDF instead." },
-          { status: 400 }
-        );
-      }
-      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
-    }
-
-    const buffer = await file.arrayBuffer();
     const base64 = Buffer.from(buffer).toString("base64");
 
     const extracted = await extractFromOM(base64, mediaType);
+    if (blobCleanup) await blobCleanup();
 
     if (mode === "preview") {
       const duplicates = await findDuplicates(extracted);
@@ -180,6 +200,7 @@ async function createNewDeal(data: OMExtractedData, createdBy: string) {
     state: p.state,
     zip: p.zip,
     county: p.county,
+    parcel_number: p.parcel_number,
     units: p.units,
     year_built: p.year_built,
     property_type: p.property_type,
@@ -267,6 +288,7 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     ...existing,
     zip: p.zip || existing.zip,
     county: p.county || existing.county,
+    parcel_number: p.parcel_number || existing.parcel_number,
     year_built: p.year_built || existing.year_built,
     property_type: p.property_type || existing.property_type,
     square_footage: p.square_footage || existing.square_footage,

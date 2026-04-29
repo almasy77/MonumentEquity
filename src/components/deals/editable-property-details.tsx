@@ -87,6 +87,8 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Property Type" value={deal.property_type || ""} onSave={(v) => updateDeal("property_type", v)} placeholder="e.g. Multifamily" />
           <EditableField label="Square Footage" value={deal.square_footage?.toString() || ""} onSave={(v) => updateDeal("square_footage", v)} type="number" suffix=" SF" placeholder="Total SF" />
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
+          <EditableField label="County" value={deal.county || ""} onSave={(v) => updateDeal("county", v)} placeholder="Enter county" />
+          <EditableField label="Tax Parcel #" value={deal.parcel_number || ""} onSave={(v) => updateDeal("parcel_number", v)} placeholder="APN / Parcel number" />
         </div>
 
         {/* Links row */}
