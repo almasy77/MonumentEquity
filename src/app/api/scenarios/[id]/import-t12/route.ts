@@ -20,6 +20,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Read-only access" }, { status: 403 });
   }
 
+  let blobCleanup: (() => Promise<void>) | null = null;
+
   try {
     const { id } = await ctx.params;
     const formData = await req.formData();
@@ -29,11 +31,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     let buffer: ArrayBuffer;
     let actualFileName: string;
-    let blobCleanup: (() => Promise<void>) | null = null;
 
     if (blobUrl) {
       if (!blobFileName) {
         return NextResponse.json({ error: "fileName is required with blobUrl" }, { status: 400 });
+      }
+      const lower = blobFileName.toLowerCase();
+      if (!lower.endsWith(".csv") && !lower.endsWith(".xlsx") && !lower.endsWith(".pdf")) {
+        return NextResponse.json({ error: "Unsupported format. Use CSV, XLSX, or PDF." }, { status: 400 });
       }
       const blob = await fetchBlobFile(blobUrl);
       buffer = blob.buffer;
@@ -160,6 +165,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       imported: { months: t12.months.length, total_noi: t12.total_noi },
     });
   } catch (err) {
+    if (blobCleanup) await blobCleanup().catch(() => {});
     console.error("POST /api/scenarios/[id]/import-t12 error:", err);
     const message = err instanceof Error ? err.message : "Failed to import T12";
     return NextResponse.json({ error: message }, { status: 500 });

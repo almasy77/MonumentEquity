@@ -61,6 +61,7 @@ export function UnderwritingClient({
 
   useEffect(() => {
     if (activeId) {
+      setActiveResult(null);
       loadScenario(activeId);
     }
   }, [activeId, loadScenario]);

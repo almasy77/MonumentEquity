@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Read-only access" }, { status: 403 });
   }
 
+  let blobCleanup: (() => Promise<void>) | null = null;
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -28,7 +30,6 @@ export async function POST(req: NextRequest) {
 
     let buffer: ArrayBuffer;
     let actualFileName: string;
-    let blobCleanup: (() => Promise<void>) | null = null;
 
     if (blobUrl) {
       if (!blobFileName) {
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
 
     return await createNewDeal(extracted, userId(session));
   } catch (err) {
+    if (blobCleanup) await blobCleanup().catch(() => {});
     const errObj = err as { status?: number; message?: string; error?: unknown };
     console.error("POST /api/deals/import-om error:", {
       message: errObj.message,
@@ -289,12 +291,12 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     zip: p.zip || existing.zip,
     county: p.county || existing.county,
     parcel_number: p.parcel_number || existing.parcel_number,
-    year_built: p.year_built || existing.year_built,
+    year_built: p.year_built ?? existing.year_built,
     property_type: p.property_type || existing.property_type,
-    square_footage: p.square_footage || existing.square_footage,
+    square_footage: p.square_footage ?? existing.square_footage,
     lot_size: p.lot_size || existing.lot_size,
-    stories: p.stories || existing.stories,
-    parking_spaces: p.parking_spaces || existing.parking_spaces,
+    stories: p.stories ?? existing.stories,
+    parking_spaces: p.parking_spaces ?? existing.parking_spaces,
     parking_type: p.parking_type || existing.parking_type,
     construction_type: p.construction_type || existing.construction_type,
     roof_type: p.roof_type || existing.roof_type,
@@ -305,16 +307,16 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     plumbing: p.plumbing || existing.plumbing,
     foundation: p.foundation || existing.foundation,
     amenities: p.amenities || existing.amenities,
-    current_noi: f.current_noi || existing.current_noi,
-    pro_forma_noi: f.pro_forma_noi || existing.pro_forma_noi,
-    current_occupancy: f.current_occupancy || existing.current_occupancy,
-    in_place_cap_rate: f.in_place_cap_rate || existing.in_place_cap_rate,
-    pro_forma_cap_rate: f.pro_forma_cap_rate || existing.pro_forma_cap_rate,
-    current_annual_taxes: f.current_annual_taxes || existing.current_annual_taxes,
-    current_annual_insurance: f.current_annual_insurance || existing.current_annual_insurance,
-    assessed_value: f.assessed_value || existing.assessed_value,
-    tax_rate: f.tax_rate || existing.tax_rate,
-    grm: f.grm || existing.grm,
+    current_noi: f.current_noi ?? existing.current_noi,
+    pro_forma_noi: f.pro_forma_noi ?? existing.pro_forma_noi,
+    current_occupancy: f.current_occupancy ?? existing.current_occupancy,
+    in_place_cap_rate: f.in_place_cap_rate ?? existing.in_place_cap_rate,
+    pro_forma_cap_rate: f.pro_forma_cap_rate ?? existing.pro_forma_cap_rate,
+    current_annual_taxes: f.current_annual_taxes ?? existing.current_annual_taxes,
+    current_annual_insurance: f.current_annual_insurance ?? existing.current_annual_insurance,
+    assessed_value: f.assessed_value ?? existing.assessed_value,
+    tax_rate: f.tax_rate ?? existing.tax_rate,
+    grm: f.grm ?? existing.grm,
     rent_roll: data.rent_roll.length > 0 ? data.rent_roll.map((u) => ({ ...u, status: u.status || "occupied" })) : existing.rent_roll,
     t12: data.t12.months.length > 0 ? data.t12 : existing.t12,
     market_notes: data.market_notes || existing.market_notes,
