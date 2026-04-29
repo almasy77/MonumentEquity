@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
+import { fetchBlobFile } from "@/lib/blob-helpers";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
 
@@ -17,43 +18,63 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Read-only access" }, { status: 403 });
   }
 
+  let blobCleanup: (() => Promise<void>) | null = null;
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const blobUrl = formData.get("blobUrl") as string | null;
+    const blobFileName = formData.get("fileName") as string | null;
     const mode = formData.get("mode") as string | null;
     const dealId = formData.get("deal_id") as string | null;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    let buffer: ArrayBuffer;
+    let actualFileName: string;
+
+    if (blobUrl) {
+      if (!blobFileName) {
+        return NextResponse.json({ error: "fileName is required with blobUrl" }, { status: 400 });
+      }
+      const blob = await fetchBlobFile(blobUrl);
+      buffer = blob.buffer;
+      blobCleanup = blob.cleanup;
+      actualFileName = blobFileName;
+    } else {
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      actualFileName = file.name;
+
+      const isImage = file.name.toLowerCase().endsWith(".png") || file.name.toLowerCase().endsWith(".jpg") || file.name.toLowerCase().endsWith(".jpeg");
+      const maxSize = isImage ? 3.5 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (file.size > maxSize) {
+        if (isImage) {
+          return NextResponse.json(
+            { error: "Image too large (max ~3.5 MB). For larger documents, please upload as PDF instead." },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
+      }
+      buffer = await file.arrayBuffer();
     }
 
-    const fileName = file.name.toLowerCase();
+    const fileName = actualFileName.toLowerCase();
     let mediaType: "application/pdf" | "image/png" | "image/jpeg" = "application/pdf";
     if (fileName.endsWith(".png")) mediaType = "image/png";
     else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) mediaType = "image/jpeg";
     else if (!fileName.endsWith(".pdf")) {
+      if (blobCleanup) await blobCleanup();
       return NextResponse.json(
         { error: "Unsupported file format. Use PDF, PNG, or JPG." },
         { status: 400 }
       );
     }
 
-    const isImage = mediaType !== "application/pdf";
-    const maxSize = isImage ? 3.5 * 1024 * 1024 : 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      if (isImage) {
-        return NextResponse.json(
-          { error: "Image too large (max ~3.5 MB). For larger documents, please upload as PDF instead." },
-          { status: 400 }
-        );
-      }
-      return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
-    }
-
-    const buffer = await file.arrayBuffer();
     const base64 = Buffer.from(buffer).toString("base64");
 
     const extracted = await extractFromOM(base64, mediaType);
+    if (blobCleanup) await blobCleanup();
 
     if (mode === "preview") {
       const duplicates = await findDuplicates(extracted);
@@ -67,6 +88,7 @@ export async function POST(req: NextRequest) {
 
     return await createNewDeal(extracted, userId(session));
   } catch (err) {
+    if (blobCleanup) await blobCleanup().catch(() => {});
     const errObj = err as { status?: number; message?: string; error?: unknown };
     console.error("POST /api/deals/import-om error:", {
       message: errObj.message,
@@ -180,6 +202,7 @@ async function createNewDeal(data: OMExtractedData, createdBy: string) {
     state: p.state,
     zip: p.zip,
     county: p.county,
+    parcel_number: p.parcel_number,
     units: p.units,
     year_built: p.year_built,
     property_type: p.property_type,
@@ -267,12 +290,13 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     ...existing,
     zip: p.zip || existing.zip,
     county: p.county || existing.county,
-    year_built: p.year_built || existing.year_built,
+    parcel_number: p.parcel_number || existing.parcel_number,
+    year_built: p.year_built ?? existing.year_built,
     property_type: p.property_type || existing.property_type,
-    square_footage: p.square_footage || existing.square_footage,
+    square_footage: p.square_footage ?? existing.square_footage,
     lot_size: p.lot_size || existing.lot_size,
-    stories: p.stories || existing.stories,
-    parking_spaces: p.parking_spaces || existing.parking_spaces,
+    stories: p.stories ?? existing.stories,
+    parking_spaces: p.parking_spaces ?? existing.parking_spaces,
     parking_type: p.parking_type || existing.parking_type,
     construction_type: p.construction_type || existing.construction_type,
     roof_type: p.roof_type || existing.roof_type,
@@ -283,16 +307,16 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     plumbing: p.plumbing || existing.plumbing,
     foundation: p.foundation || existing.foundation,
     amenities: p.amenities || existing.amenities,
-    current_noi: f.current_noi || existing.current_noi,
-    pro_forma_noi: f.pro_forma_noi || existing.pro_forma_noi,
-    current_occupancy: f.current_occupancy || existing.current_occupancy,
-    in_place_cap_rate: f.in_place_cap_rate || existing.in_place_cap_rate,
-    pro_forma_cap_rate: f.pro_forma_cap_rate || existing.pro_forma_cap_rate,
-    current_annual_taxes: f.current_annual_taxes || existing.current_annual_taxes,
-    current_annual_insurance: f.current_annual_insurance || existing.current_annual_insurance,
-    assessed_value: f.assessed_value || existing.assessed_value,
-    tax_rate: f.tax_rate || existing.tax_rate,
-    grm: f.grm || existing.grm,
+    current_noi: f.current_noi ?? existing.current_noi,
+    pro_forma_noi: f.pro_forma_noi ?? existing.pro_forma_noi,
+    current_occupancy: f.current_occupancy ?? existing.current_occupancy,
+    in_place_cap_rate: f.in_place_cap_rate ?? existing.in_place_cap_rate,
+    pro_forma_cap_rate: f.pro_forma_cap_rate ?? existing.pro_forma_cap_rate,
+    current_annual_taxes: f.current_annual_taxes ?? existing.current_annual_taxes,
+    current_annual_insurance: f.current_annual_insurance ?? existing.current_annual_insurance,
+    assessed_value: f.assessed_value ?? existing.assessed_value,
+    tax_rate: f.tax_rate ?? existing.tax_rate,
+    grm: f.grm ?? existing.grm,
     rent_roll: data.rent_roll.length > 0 ? data.rent_roll.map((u) => ({ ...u, status: u.status || "occupied" })) : existing.rent_roll,
     t12: data.t12.months.length > 0 ? data.t12 : existing.t12,
     market_notes: data.market_notes || existing.market_notes,

@@ -119,6 +119,7 @@ export const dealSchema = z.object({
   state: z.string().min(1),
   zip: z.string().optional(),
   county: z.string().optional(),
+  parcel_number: z.string().optional(),
   units: z.number().int().positive(),
   year_built: z.number().int().optional(),
   property_type: z.string().optional(),
