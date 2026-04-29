@@ -88,8 +88,15 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
 
       const res = await fetch("/api/deals/import-om", { method: "POST", body: formData });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to extract data");
+        let msg = "Failed to extract data";
+        try {
+          const data = await res.json();
+          msg = data.error || msg;
+        } catch {
+          if (res.status === 413) msg = "File too large. Try a smaller file or compress the PDF.";
+          else msg = `Server error (${res.status}). Please try again.`;
+        }
+        throw new Error(msg);
       }
 
       const result: PreviewData = await res.json();
@@ -114,8 +121,15 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
 
       const res = await fetch("/api/deals/import-om", { method: "POST", body: formData });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to save");
+        let msg = "Failed to save";
+        try {
+          const data = await res.json();
+          msg = data.error || msg;
+        } catch {
+          if (res.status === 413) msg = "File too large. Try a smaller file or compress the PDF.";
+          else msg = `Server error (${res.status}). Please try again.`;
+        }
+        throw new Error(msg);
       }
 
       const result = await res.json();
