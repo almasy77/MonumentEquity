@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { extractDealFromUrl } from "@/lib/ai-extract";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
