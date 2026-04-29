@@ -85,6 +85,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       expense_assumptions: {
         ...scenario.expense_assumptions,
         ...expenseUpdates,
+        opex_inputs: undefined,
       },
       version: scenario.version + 1,
       updated_at: now,

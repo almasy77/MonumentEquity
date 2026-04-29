@@ -99,12 +99,13 @@ export async function normalizeRentRoll(
   const { text, isPdf } = await fileToText(buffer, fileName);
   const client = getClient();
 
+  const truncated = isPdf ? text : text.slice(0, 100000);
   const content: Anthropic.Messages.ContentBlockParam[] = isPdf
     ? [
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: text } },
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: truncated } },
         { type: "text", text: RENT_ROLL_PROMPT },
       ]
-    : [{ type: "text", text: `${RENT_ROLL_PROMPT}\n\nData:\n${text}` }];
+    : [{ type: "text", text: `${RENT_ROLL_PROMPT}\n\nData:\n${truncated}` }];
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
@@ -198,12 +199,13 @@ export async function normalizeT12(
   const { text, isPdf } = await fileToText(buffer, fileName);
   const client = getClient();
 
+  const truncated = isPdf ? text : text.slice(0, 100000);
   const content: Anthropic.Messages.ContentBlockParam[] = isPdf
     ? [
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: text } },
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: truncated } },
         { type: "text", text: T12_PROMPT },
       ]
-    : [{ type: "text", text: `${T12_PROMPT}\n\nData:\n${text}` }];
+    : [{ type: "text", text: `${T12_PROMPT}\n\nData:\n${truncated}` }];
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",

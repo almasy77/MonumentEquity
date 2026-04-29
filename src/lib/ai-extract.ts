@@ -1,3 +1,5 @@
+import Anthropic from "@anthropic-ai/sdk";
+
 export interface ExtractedDeal {
   address?: string;
   city?: string;
@@ -45,7 +47,86 @@ export async function extractDealFromUrl(
   }
 
   const html = await response.text();
-  return extractFromHtml(html, url);
+  const text = htmlToText(html);
+
+  // Try JSON-LD and regex first for fast structured data
+  const regexResult = extractFromHtml(html, url);
+  const hasGoodData = regexResult.address && regexResult.units && regexResult.asking_price;
+
+  if (hasGoodData) {
+    return regexResult;
+  }
+
+  // Fall back to Claude AI extraction for messy / SPA pages
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return regexResult;
+  }
+
+  try {
+    const pageContent = text.slice(0, 15000);
+    const client = new Anthropic({ apiKey });
+    const aiResponse = await client.messages.create({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 1000,
+      system: `You are a commercial real estate data extraction assistant. Extract listing details from webpage text. Return ONLY valid JSON with no markdown fences. For state, use 2-letter abbreviations. For prices, use raw numbers. Omit any field you cannot find.`,
+      messages: [{
+        role: "user",
+        content: `Extract real estate listing data from this webpage (URL: ${url}).
+
+Return JSON:
+{
+  "address": "street address",
+  "city": "city name",
+  "state": "XX (2-letter)",
+  "zip": "XXXXX",
+  "units": number,
+  "asking_price": number,
+  "year_built": number,
+  "property_type": "Multifamily|Garden-Style|Mid-Rise|High-Rise|Townhome|Duplex|Triplex|Quadplex|Mixed-Use|Office|Retail|Industrial",
+  "square_footage": number,
+  "market_notes": "Brief summary of key details, value-add opportunity, highlights"
+}
+
+Page content:
+${pageContent}`,
+      }],
+    });
+
+    const block = aiResponse.content.find((b) => b.type === "text");
+    if (!block || block.type !== "text") return regexResult;
+
+    let json = block.text.trim();
+    const fence = json.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) json = fence[1].trim();
+
+    const aiResult = JSON.parse(json) as ExtractedDeal;
+    const merged: ExtractedDeal = {};
+    const addr = aiResult.address || regexResult.address;
+    const city = aiResult.city || regexResult.city;
+    const state = aiResult.state || regexResult.state;
+    const zip = aiResult.zip || regexResult.zip;
+    const units = aiResult.units || regexResult.units;
+    const price = aiResult.asking_price || regexResult.asking_price;
+    const year = aiResult.year_built || regexResult.year_built;
+    const ptype = aiResult.property_type || regexResult.property_type;
+    const sf = aiResult.square_footage || regexResult.square_footage;
+    const notes = aiResult.market_notes || regexResult.market_notes;
+    if (addr) merged.address = addr;
+    if (city) merged.city = city;
+    if (state) merged.state = state;
+    if (zip) merged.zip = zip;
+    if (units) merged.units = units;
+    if (price) merged.asking_price = price;
+    if (year) merged.year_built = year;
+    if (ptype) merged.property_type = ptype;
+    if (sf) merged.square_footage = sf;
+    if (notes) merged.market_notes = notes;
+    return merged;
+  } catch (err) {
+    console.error("AI URL extraction failed, using regex fallback:", err);
+    return regexResult;
+  }
 }
 
 export async function extractDealFromText(
