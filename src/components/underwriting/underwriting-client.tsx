@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, RefreshCw } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, RefreshCw, Upload } from "lucide-react";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
@@ -36,6 +36,9 @@ export function UnderwritingClient({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState<"rent_roll" | "t12" | null>(null);
+  const rentRollInputRef = useRef<HTMLInputElement>(null);
+  const t12InputRef = useRef<HTMLInputElement>(null);
 
   const loadScenario = useCallback(async (id: string) => {
     setLoading(true);
@@ -247,6 +250,36 @@ export function UnderwritingClient({
     }
   }
 
+  async function handleFileImport(file: File, type: "rent_roll" | "t12") {
+    if (!activeId) return;
+    setImporting(type);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const endpoint = type === "rent_roll" ? "import-rent-roll" : "import-t12";
+      const res = await fetch(`/api/scenarios/${activeId}/${endpoint}`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data: ScenarioWithResult & { imported: Record<string, number> } = await res.json();
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === activeId ? data.scenario : s))
+        );
+        setActiveResult(data.underwriting);
+      } else {
+        const err = await res.json();
+        alert(err.error || `Failed to import ${type === "rent_roll" ? "rent roll" : "T12"}`);
+      }
+    } catch (err) {
+      console.error(`Failed to import ${type}:`, err);
+    } finally {
+      setImporting(null);
+      if (rentRollInputRef.current) rentRollInputRef.current.value = "";
+      if (t12InputRef.current) t12InputRef.current.value = "";
+    }
+  }
+
   function handleConfirmedAction() {
     if (!confirmAction) return;
     if (confirmAction.type === "delete") {
@@ -423,12 +456,52 @@ export function UnderwritingClient({
         )}
         {activeId && activeResult && (
           <>
+            <input
+              ref={rentRollInputRef}
+              type="file"
+              accept=".csv,.xls,.xlsx,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileImport(f, "rent_roll");
+              }}
+            />
+            <input
+              ref={t12InputRef}
+              type="file"
+              accept=".csv,.xls,.xlsx,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileImport(f, "t12");
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => rentRollInputRef.current?.click()}
+              disabled={importing !== null}
+              className="border-slate-700 text-purple-400 hover:bg-purple-900/20 ml-auto"
+            >
+              {importing === "rent_roll" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+              Import Rent Roll
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => t12InputRef.current?.click()}
+              disabled={importing !== null}
+              className="border-slate-700 text-purple-400 hover:bg-purple-900/20"
+            >
+              {importing === "t12" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+              Import T12
+            </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={syncFromDeal}
-              disabled={syncing}
-              className="border-slate-700 text-amber-400 hover:bg-amber-900/20 ml-auto"
+              disabled={syncing || importing !== null}
+              className="border-slate-700 text-amber-400 hover:bg-amber-900/20"
             >
               {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
               Sync from Deal

@@ -1325,6 +1325,80 @@ export function buildDefaultInputs(
 }
 
 /** Sum a numeric field across T12 months */
-function sumT12Field(months: Array<Record<string, number | string | undefined>>, field: string): number {
+export function sumT12Field(months: Array<Record<string, number | string | undefined>>, field: string): number {
   return months.reduce((sum, m) => sum + (typeof m[field] === "number" ? (m[field] as number) : 0), 0);
+}
+
+export function buildExpensesFromT12(
+  t12Months: Array<Record<string, number | string | undefined>>,
+  units: number,
+  existing?: Partial<ExpenseAssumptions>,
+): Partial<ExpenseAssumptions> {
+  if (t12Months.length === 0) return {};
+
+  const annualTaxes = sumT12Field(t12Months, "property_taxes");
+  const annualInsurance = sumT12Field(t12Months, "insurance");
+  const insurancePerUnit = annualInsurance > 0 && units > 0 ? annualInsurance / units : existing?.insurance_per_unit ?? 600;
+
+  const payrollAnnual = sumT12Field(t12Months, "payroll");
+  const utilitiesTotal = sumT12Field(t12Months, "utilities") +
+    sumT12Field(t12Months, "utilities_water") +
+    sumT12Field(t12Months, "utilities_electric") +
+    sumT12Field(t12Months, "utilities_gas") +
+    sumT12Field(t12Months, "trash_removal");
+  const utilitiesPerUnit = utilitiesTotal > 0 && units > 0 ? utilitiesTotal / units : existing?.utilities_per_unit ?? 1200;
+
+  const repairsTotal = sumT12Field(t12Months, "repairs_maintenance");
+  const repairsPerUnit = repairsTotal > 0 && units > 0 ? repairsTotal / units : existing?.repairs_maintenance_per_unit ?? 750;
+
+  const turnoverTotal = sumT12Field(t12Months, "turnover_costs");
+  const turnoverPerUnit = turnoverTotal > 0 && units > 0 ? turnoverTotal / units : existing?.turnover_cost_per_unit ?? 500;
+
+  const t12OtherIncome = sumT12Field(t12Months, "laundry_income") +
+    sumT12Field(t12Months, "parking_income") +
+    sumT12Field(t12Months, "pet_fees") +
+    sumT12Field(t12Months, "application_fees") +
+    sumT12Field(t12Months, "late_fees") +
+    sumT12Field(t12Months, "utility_reimbursements") +
+    sumT12Field(t12Months, "storage_income") +
+    sumT12Field(t12Months, "other_income");
+
+  const t12MgmtFees = sumT12Field(t12Months, "management_fees");
+  const t12GPR = sumT12Field(t12Months, "gross_potential_rent");
+  const t12VacancyLoss = sumT12Field(t12Months, "vacancy_loss");
+  const t12EGI = t12GPR - t12VacancyLoss + t12OtherIncome;
+  const mgmtFeeRate = t12MgmtFees > 0 && t12EGI > 0
+    ? Math.round((t12MgmtFees / t12EGI) * 1000) / 1000
+    : existing?.management_fee_rate ?? 0.08;
+
+  const adminMarketingTotal = sumT12Field(t12Months, "admin_expenses") + sumT12Field(t12Months, "marketing");
+  const contractServicesTotal = sumT12Field(t12Months, "contract_services") +
+    sumT12Field(t12Months, "landscaping") +
+    sumT12Field(t12Months, "pest_control") +
+    sumT12Field(t12Months, "other_expenses");
+
+  return {
+    management_fee_rate: mgmtFeeRate,
+    payroll_annual: payrollAnnual || existing?.payroll_annual || 0,
+    repairs_maintenance_per_unit: repairsPerUnit,
+    turnover_cost_per_unit: turnoverPerUnit,
+    insurance_per_unit: insurancePerUnit,
+    property_tax_total: annualTaxes || existing?.property_tax_total || 0,
+    utilities_per_unit: utilitiesPerUnit,
+    admin_legal_marketing: adminMarketingTotal || existing?.admin_legal_marketing || 0,
+    contract_services: contractServicesTotal || existing?.contract_services || 0,
+    t12_baseline: {
+      gross_potential_rent: t12GPR,
+      vacancy_loss: t12VacancyLoss,
+      other_income: t12OtherIncome,
+      property_taxes: annualTaxes,
+      insurance: annualInsurance,
+      utilities: utilitiesTotal,
+      repairs_maintenance: repairsTotal,
+      payroll: payrollAnnual,
+      management_fees: t12MgmtFees,
+      admin_marketing: adminMarketingTotal,
+      contract_services: contractServicesTotal,
+    },
+  };
 }
