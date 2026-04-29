@@ -459,7 +459,7 @@ export function UnderwritingClient({
             <input
               ref={rentRollInputRef}
               type="file"
-              accept=".csv,.xls,.xlsx,.pdf"
+              accept=".csv,.xlsx,.pdf"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -469,7 +469,7 @@ export function UnderwritingClient({
             <input
               ref={t12InputRef}
               type="file"
-              accept=".csv,.xls,.xlsx,.pdf"
+              accept=".csv,.xlsx,.pdf"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];

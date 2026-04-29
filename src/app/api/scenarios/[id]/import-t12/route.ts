@@ -28,8 +28,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xls") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
-      return NextResponse.json({ error: "Unsupported format. Use CSV, XLS, XLSX, or PDF." }, { status: 400 });
+    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
+      return NextResponse.json({ error: "Unsupported format. Use CSV, XLSX, or PDF." }, { status: 400 });
     }
     if (file.size > 25 * 1024 * 1024) {
       return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       sumT12Field(t12Months, "other_income");
     const otherIncomeMonthly = t12OtherIncome > 0 && t12Months.length > 0
       ? Math.round(t12OtherIncome / t12Months.length)
-      : scenario.revenue_assumptions.other_income_monthly;
+      : (scenario.revenue_assumptions as Record<string, unknown>).other_income_monthly as number ?? 0;
 
     const updated: Scenario = {
       ...scenario,

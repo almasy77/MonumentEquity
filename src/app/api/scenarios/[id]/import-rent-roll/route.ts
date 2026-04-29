@@ -28,8 +28,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xls") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
-      return NextResponse.json({ error: "Unsupported format. Use CSV, XLS, XLSX, or PDF." }, { status: 400 });
+    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".pdf")) {
+      return NextResponse.json({ error: "Unsupported format. Use CSV, XLSX, or PDF." }, { status: 400 });
     }
     if (file.size > 25 * 1024 * 1024) {
       return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });

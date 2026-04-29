@@ -23,15 +23,23 @@ export async function fileToText(
     return { text, isPdf: false };
   }
 
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+  if (lower.endsWith(".xlsx")) {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(Buffer.from(buffer) as unknown as ArrayBuffer);
     const lines: string[] = [];
     workbook.eachSheet((sheet) => {
       sheet.eachRow((row) => {
-        const cells = (row.values as (string | number | null | undefined)[])
-          .slice(1)
-          .map((v) => (v == null ? "" : String(v)));
+        const vals = row.values as unknown[];
+        const cells = vals.slice(1).map((v) => {
+          if (v == null) return "";
+          if (typeof v === "object" && v !== null) {
+            const cell = v as { result?: unknown; text?: string; richText?: { text: string }[] };
+            if (cell.result !== undefined) return String(cell.result);
+            if (cell.richText) return cell.richText.map((r) => r.text).join("");
+            if (cell.text !== undefined) return cell.text;
+          }
+          return String(v);
+        });
         lines.push(cells.join("\t"));
       });
     });
@@ -42,7 +50,7 @@ export async function fileToText(
     return { text: Buffer.from(buffer).toString("base64"), isPdf: true };
   }
 
-  throw new Error("Unsupported file format. Use CSV, XLS, XLSX, or PDF.");
+  throw new Error("Unsupported file format. Use CSV, XLSX, or PDF.");
 }
 
 // ─── Rent Roll Normalization ───────────────────────────────
