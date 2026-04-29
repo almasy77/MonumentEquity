@@ -83,8 +83,16 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     deal.updated_at = now;
     await redis.set(`deal:${scenario.deal_id}`, JSON.stringify(deal));
 
-    // Update scenario unit mix
-    const unitMix = buildUnitMixFromRentRoll(rentRoll, deal.units);
+    // Build individual unit mix entries (one per unit, preserving actual rents)
+    const unitMix = rentRoll.map((u) => ({
+      type: u.unit_type
+        ? `${u.unit_type} #${u.unit_number}`
+        : `Unit ${u.unit_number}`,
+      count: 1,
+      current_rent: u.current_rent || 0,
+      market_rent: u.market_rent || u.current_rent || 0,
+      renovated_rent_premium: 200,
+    }));
     const updated: Scenario = {
       ...scenario,
       revenue_assumptions: {
