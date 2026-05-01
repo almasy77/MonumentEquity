@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Building2 } from "lucide-react";
 import type { Deal } from "@/lib/validations";
@@ -18,13 +20,32 @@ function daysSince(dateStr: string): number {
 export function DealCard({ deal }: { deal: Deal }) {
   const daysInPipeline = daysSince(deal.created_at);
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
+  const photoUrl = deal.photos?.[0];
+  const [imgError, setImgError] = useState(false);
 
   return (
     <Link href={`/deals/${deal.id}`}>
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 hover:border-blue-500/50 transition-colors cursor-pointer group">
+      <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden hover:border-blue-500/50 transition-colors cursor-pointer group">
+        {photoUrl && !imgError ? (
+          <div className="relative w-full h-28 bg-slate-700">
+            <Image
+              src={photoUrl}
+              alt={deal.address}
+              fill
+              className="object-cover"
+              sizes="300px"
+              onError={() => setImgError(true)}
+              unoptimized
+            />
+          </div>
+        ) : (
+          <div className="w-full h-16 bg-slate-700/50 flex items-center justify-center">
+            <Building2 className="h-6 w-6 text-slate-600" />
+          </div>
+        )}
+        <div className="p-3">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
-            <Building2 className="h-4 w-4 text-slate-500 shrink-0" />
             <span className="text-sm font-medium text-white truncate">
               {deal.address}
             </span>
@@ -50,6 +71,7 @@ export function DealCard({ deal }: { deal: Deal }) {
           <span className="text-xs text-slate-500">
             {daysInPipeline}d
           </span>
+        </div>
         </div>
       </div>
     </Link>

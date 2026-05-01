@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       bid_price: body.bid_price || undefined,
       source: body.source,
       source_url: body.source_url || undefined,
+      photos: body.photos || undefined,
       market_notes: body.market_notes || undefined,
       contact_ids: body.contact_ids || [],
       created_by: session.user.id,
