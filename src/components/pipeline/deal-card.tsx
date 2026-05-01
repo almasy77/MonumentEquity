@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
-import { Building2 } from "lucide-react";
+import { Building2, Camera } from "lucide-react";
+import { PhotoUploadModal } from "@/components/deals/photo-upload-modal";
 import type { Deal } from "@/lib/validations";
 
 function formatCurrency(n: number): string {
@@ -18,62 +20,83 @@ function daysSince(dateStr: string): number {
 }
 
 export function DealCard({ deal }: { deal: Deal }) {
+  const router = useRouter();
   const daysInPipeline = daysSince(deal.created_at);
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
   const photoUrl = deal.photos?.[0];
   const [imgError, setImgError] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   return (
-    <Link href={`/deals/${deal.id}`}>
-      <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden hover:border-blue-500/50 transition-colors cursor-pointer group">
-        {photoUrl && !imgError ? (
-          <div className="relative w-full h-28 bg-slate-700">
-            <Image
-              src={photoUrl}
-              alt={deal.address}
-              fill
-              className="object-cover"
-              sizes="300px"
-              onError={() => setImgError(true)}
-              unoptimized
-            />
+    <>
+      <Link href={`/deals/${deal.id}`}>
+        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden hover:border-blue-500/50 transition-colors cursor-pointer group">
+          {photoUrl && !imgError ? (
+            <div className="relative w-full h-28 bg-slate-700">
+              <Image
+                src={photoUrl}
+                alt={deal.address}
+                fill
+                className="object-cover"
+                sizes="300px"
+                onError={() => setImgError(true)}
+                unoptimized
+              />
+            </div>
+          ) : (
+            <div
+              className="w-full h-16 bg-slate-700/50 flex items-center justify-center hover:bg-slate-700 transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setUploadOpen(true);
+              }}
+              title="Upload property photo"
+            >
+              <div className="flex items-center gap-1.5 text-slate-600 group-hover:text-slate-400 transition-colors">
+                <Building2 className="h-5 w-5" />
+                <Camera className="h-3.5 w-3.5" />
+              </div>
+            </div>
+          )}
+          <div className="p-3">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-medium text-white truncate">
+                {deal.address}
+              </span>
+            </div>
           </div>
-        ) : (
-          <div className="w-full h-16 bg-slate-700/50 flex items-center justify-center">
-            <Building2 className="h-6 w-6 text-slate-600" />
+          <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
+            <span>{deal.city}, {deal.state}</span>
+            <span className="text-slate-600">|</span>
+            <span>{deal.units} units</span>
           </div>
-        )}
-        <div className="p-3">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-medium text-white truncate">
-              {deal.address}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-blue-400">
+              {formatCurrency(deal.asking_price)}
+            </span>
+            <span className="text-xs text-slate-500">
+              {formatCurrency(pricePerUnit)}/unit
             </span>
           </div>
+          <div className="flex items-center justify-between mt-2">
+            <Badge variant="outline" className="text-xs border-slate-600 text-slate-400">
+              {deal.source}
+            </Badge>
+            <span className="text-xs text-slate-500">
+              {daysInPipeline}d
+            </span>
+          </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
-          <span>{deal.city}, {deal.state}</span>
-          <span className="text-slate-600">|</span>
-          <span>{deal.units} units</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-blue-400">
-            {formatCurrency(deal.asking_price)}
-          </span>
-          <span className="text-xs text-slate-500">
-            {formatCurrency(pricePerUnit)}/unit
-          </span>
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <Badge variant="outline" className="text-xs border-slate-600 text-slate-400">
-            {deal.source}
-          </Badge>
-          <span className="text-xs text-slate-500">
-            {daysInPipeline}d
-          </span>
-        </div>
-        </div>
-      </div>
-    </Link>
+      </Link>
+      <PhotoUploadModal
+        dealId={deal.id}
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={() => router.refresh()}
+      />
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
+import { extractImageFromUrl } from "@/lib/ai-extract";
 import { fetchBlobFile } from "@/lib/blob-helpers";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
@@ -324,6 +325,16 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     updated_at: now,
     last_activity_at: now,
   };
+
+  // Auto-extract photo from listing URL if deal has no photos
+  if ((!updated.photos || updated.photos.length === 0) && updated.source_url) {
+    try {
+      const imageUrl = await extractImageFromUrl(updated.source_url);
+      if (imageUrl) updated.photos = [imageUrl];
+    } catch {
+      // Non-critical
+    }
+  }
 
   await redis.set(`deal:${dealId}`, JSON.stringify(updated));
 

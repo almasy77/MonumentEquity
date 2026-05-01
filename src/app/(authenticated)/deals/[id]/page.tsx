@@ -12,7 +12,7 @@ import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
-import { DealPhoto } from "@/components/deals/deal-photo";
+import { DealPhoto, DealPhotoActions } from "@/components/deals/deal-photo";
 import { SellerBrokerFinancials } from "@/components/deals/seller-broker-financials";
 import { DueDiligenceClosing } from "@/components/deals/due-diligence-closing";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
@@ -188,6 +188,7 @@ export default async function DealDetailPage({
                 </button>
               }
             />
+            <DealPhotoActions dealId={id} photos={deal.photos} sourceUrl={deal.source_url} />
             <AdminOnly>
               <ShareDealButton dealId={id} />
             </AdminOnly>
@@ -205,7 +206,7 @@ export default async function DealDetailPage({
       <DealKPIBar scenarios={scenarios.filter(s => s.is_active !== false)} />
 
       {/* Deal Photo */}
-      <DealPhoto dealId={id} photos={deal.photos} sourceUrl={deal.source_url} />
+      <DealPhoto dealId={id} photos={deal.photos} />
 
       {/* Property Details — property facts only */}
       <EditablePropertyDetails deal={deal} />
