@@ -31,6 +31,26 @@ const US_STATES: Record<string, string> = {
 
 const STATE_ABBREVS = new Set(Object.values(US_STATES));
 
+export async function extractImageFromUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const ogImage = extractMeta(html, "og:image") || extractMeta(html, "twitter:image");
+    if (!ogImage) return null;
+    return ogImage.startsWith("http") ? ogImage : new URL(ogImage, url).href;
+  } catch {
+    return null;
+  }
+}
+
 export async function extractDealFromUrl(
   url: string
 ): Promise<ExtractedDeal> {
