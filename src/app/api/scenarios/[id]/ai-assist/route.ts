@@ -20,7 +20,7 @@ Rules:
   - purchase_assumptions: { purchase_price, closing_cost_rate, capex_reserve, ... }
   - financing_assumptions: { ltv, interest_rate, loan_term_years, amortization_years, io_period_months, origination_fee_rate, ... }
   - revenue_assumptions: { unit_mix: [{ type, count, current_rent, market_rent, renovated_rent_premium }], other_income_monthly, vacancy_rate, bad_debt_rate, concessions_rate, rent_growth_rate }
-  - expense_assumptions: { opex_inputs: { management_fees, payroll, property_tax, insurance, utilities, repairs_maintenance, admin_legal_marketing, contract_services, reserves: { value, mode } }, expense_escalation_rate, tax_escalation_rate, ... }
+  - expense_assumptions: { opex_inputs: { management_fees, payroll, property_tax, insurance, utilities, repairs_maintenance, turnover, admin_legal_marketing, contract_services, reserves: { value, mode } }, turnover_rate, turnover_cost_per_unit, expense_escalation_rate, tax_escalation_rate, ... }
   - capex_assumptions: { per_unit_cost, units_to_renovate, renovation_start_month, renovation_duration_months, projects: [{ name, cost, start_month, duration_months }] }
   - exit_assumptions: { exit_cap_rate, hold_period_months, selling_costs_rate }
 
@@ -36,6 +36,8 @@ Common field mappings:
 - "LTV" → ltv (decimal)
 - "other income" → other_income_monthly
 - "rent growth" → rent_growth_rate (decimal)
+- "turnover rate" or "turnover %" → turnover_rate (decimal, e.g. 0.50 = 50%)
+- "turnover cost" → turnover_cost_per_unit (dollars per unit per year)
 - "expense growth" → expense_escalation_rate (decimal)
 - "capex" or "renovation cost" → per_unit_cost or projects
 - Rates/percentages should be decimals (5% = 0.05)
