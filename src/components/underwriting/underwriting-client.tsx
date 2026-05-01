@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, Upload } from "lucide-react";
-import { AiChatbot } from "./ai-chatbot";
+import { useAiChatbot } from "./ai-chatbot-context";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
@@ -40,6 +40,25 @@ export function UnderwritingClient({
   const [importing, setImporting] = useState<"rent_roll" | "t12" | null>(null);
   const rentRollInputRef = useRef<HTMLInputElement>(null);
   const t12InputRef = useRef<HTMLInputElement>(null);
+  const { setScenarioId, setOnAiResult } = useAiChatbot();
+
+  useEffect(() => {
+    setScenarioId(activeId);
+    if (activeId) {
+      setOnAiResult((data) => {
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === activeId ? data.scenario : s))
+        );
+        setActiveResult(data.underwriting);
+      });
+    } else {
+      setOnAiResult(null);
+    }
+    return () => {
+      setScenarioId(null);
+      setOnAiResult(null);
+    };
+  }, [activeId, setScenarioId, setOnAiResult]);
 
   const loadScenario = useCallback(async (id: string) => {
     setLoading(true);
@@ -536,24 +555,13 @@ export function UnderwritingClient({
 
       {/* Active Scenario Content */}
       {activeScenario && activeResult && (
-        <>
-          <ScenarioAnalysis
-            scenario={activeScenario}
-            result={activeResult}
-            deal={deal}
-            loading={loading}
-            onUpdate={updateScenario}
-          />
-          <AiChatbot
-            scenarioId={activeScenario.id}
-            onAiResult={(data) => {
-              setScenarios((prev) =>
-                prev.map((s) => (s.id === activeId ? data.scenario : s))
-              );
-              setActiveResult(data.underwriting);
-            }}
-          />
-        </>
+        <ScenarioAnalysis
+          scenario={activeScenario}
+          result={activeResult}
+          deal={deal}
+          loading={loading}
+          onUpdate={updateScenario}
+        />
       )}
 
       {/* Loading state */}
