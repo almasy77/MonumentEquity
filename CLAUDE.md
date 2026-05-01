@@ -99,3 +99,4 @@ Production deploys automatically when code is merged to `main`. To push changes 
 - **No migration system** — schema changes are backwards-compatible JSON shape changes.
 - Security headers are set in `next.config.ts` (X-Frame-Options DENY, nosniff, etc.).
 - The `share/` route is publicly accessible (no auth required) — be careful with data exposure.
+
