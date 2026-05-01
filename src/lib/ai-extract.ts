@@ -11,6 +11,7 @@ export interface ExtractedDeal {
   property_type?: string;
   square_footage?: number;
   market_notes?: string;
+  photo_url?: string;
 }
 
 const US_STATES: Record<string, string> = {
@@ -151,6 +152,15 @@ function extractFromHtml(html: string, url: string): ExtractedDeal {
   // Try Open Graph / meta tags
   const ogTitle = extractMeta(html, "og:title") || extractMeta(html, "title");
   const ogDesc = extractMeta(html, "og:description") || extractMeta(html, "description");
+  const ogImage = extractMeta(html, "og:image") || extractMeta(html, "twitter:image");
+  if (ogImage) {
+    try {
+      const imgUrl = ogImage.startsWith("http") ? ogImage : new URL(ogImage, url).href;
+      result.photo_url = imgUrl;
+    } catch {
+      // Invalid image URL, skip
+    }
+  }
 
   // Extract from text patterns
   const textResult = extractFromPlainText(text);

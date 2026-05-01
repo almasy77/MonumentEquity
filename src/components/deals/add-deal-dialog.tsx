@@ -39,6 +39,7 @@ export function AddDealDialog() {
   // URL import state
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState("");
 
   function resetForm() {
     setAddress("");
@@ -52,6 +53,7 @@ export function AddDealDialog() {
     setYearBuilt("");
     setMarketNotes("");
     setImportUrl("");
+    setPhotoUrl("");
     setError("");
   }
 
@@ -75,6 +77,8 @@ export function AddDealDialog() {
           source,
           year_built: yearBuilt ? parseInt(yearBuilt) : undefined,
           market_notes: marketNotes || undefined,
+          source_url: importUrl || undefined,
+          photos: photoUrl ? [photoUrl] : undefined,
         }),
       });
 
@@ -122,6 +126,7 @@ export function AddDealDialog() {
       if (extracted.asking_price) setAskingPrice(String(extracted.asking_price));
       if (extracted.year_built) setYearBuilt(String(extracted.year_built));
       if (extracted.market_notes) setMarketNotes(extracted.market_notes);
+      if (extracted.photo_url) setPhotoUrl(extracted.photo_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed. Please enter details manually.");
     } finally {
