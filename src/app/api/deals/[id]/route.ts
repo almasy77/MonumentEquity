@@ -4,6 +4,7 @@ import { getRedis, addToIndex, removeFromIndex, getFromIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
+import { extractImageFromUrl } from "@/lib/ai-extract";
 import type { Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -110,6 +111,19 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         },
         user_id: session.user.id,
       });
+    }
+
+    // Auto-extract photo when source_url is set/changed and no photos exist
+    const newSourceUrl = body.source_url as string | undefined;
+    const sourceUrlChanged = newSourceUrl && newSourceUrl !== existing.source_url;
+    const noPhotos = !body.photos && (!existing.photos || existing.photos.length === 0);
+    if (sourceUrlChanged && noPhotos) {
+      try {
+        const imageUrl = await extractImageFromUrl(newSourceUrl);
+        if (imageUrl) body.photos = [imageUrl];
+      } catch {
+        // Non-critical — continue without photo
+      }
     }
 
     const updated: Deal = {
