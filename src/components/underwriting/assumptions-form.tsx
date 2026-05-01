@@ -863,7 +863,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
             {unitMix.map((unit, i) => (
-              <div key={i} className="grid grid-cols-7 gap-2 items-end">
+              <div key={i} className="grid grid-cols-3 sm:grid-cols-7 gap-2 items-end">
                 <div>
                   <Label className="text-xs text-slate-400">Type</Label>
                   <Input
@@ -902,7 +902,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             ))}
 
             {/* Subtotals row */}
-            <div className="grid grid-cols-7 gap-2 items-end border-t border-slate-700 pt-2">
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 items-end border-t border-slate-700 pt-2">
               <div className="text-xs text-slate-400 font-medium flex items-center h-8">Subtotals</div>
               <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{subtotalUnits} units</div>
               <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{fmtCurrency(subtotalCurrent)}/mo</div>
