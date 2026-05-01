@@ -128,12 +128,12 @@ function buildSummarySheet(
   const m = result.metrics;
 
   // Formulas referencing Returns sheet
-  addLabelFormula(ws, "IRR", "Returns!B3", PCT_FMT);
-  addLabelFormula(ws, "Equity Multiple", "Returns!B4", MULT_FMT);
-  addLabelFormula(ws, "Average Cash-on-Cash", "Returns!B5", PCT_FMT);
-  addLabelFormula(ws, "Year 1 DSCR", "Returns!B6", '0.00');
-  addLabelFormula(ws, "Going-In Cap Rate", "Returns!B7", PCT_FMT);
-  addLabelFormula(ws, "Stabilized Cap Rate", "Returns!B8", PCT_FMT);
+  addLabelFormula(ws, "IRR", "Returns!B2", PCT_FMT);
+  addLabelFormula(ws, "Equity Multiple", "Returns!B3", MULT_FMT);
+  addLabelFormula(ws, "Average Cash-on-Cash", "Returns!B4", PCT_FMT);
+  addLabelFormula(ws, "Year 1 DSCR", "Returns!B5", '0.00');
+  addLabelFormula(ws, "Going-In Cap Rate", "Returns!B6", PCT_FMT);
+  addLabelFormula(ws, "Stabilized Cap Rate", "Returns!B7", PCT_FMT);
   ws.addRow([]);
 
   // Purchase Summary
@@ -172,47 +172,29 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
   const ws = wb.addWorksheet("Assumptions");
   ws.columns = [{ width: 30 }, { width: 18 }, { width: 4 }, { width: 30 }, { width: 18 }];
 
-  // These cells are the SOURCE that other sheets reference
   addSectionHeader(ws, "Purchase Assumptions", 5);
-  // Row 3
   addInputRow(ws, "Purchase Price", inputs.purchase.purchase_price, CURRENCY_FMT);
-  // Row 4
   addInputRow(ws, "Closing Cost Rate", inputs.purchase.closing_cost_rate, PCT_FMT);
-  // Row 5
   addInputRow(ws, "Earnest Money", inputs.purchase.earnest_money, CURRENCY_FMT);
   ws.addRow([]);
 
-  // Row 7
   addSectionHeader(ws, "Financing Assumptions", 5);
-  // Row 8
   addInputRow(ws, "LTV", inputs.financing.ltv, PCT_FMT);
-  // Row 9
   addInputRow(ws, "Interest Rate", inputs.financing.interest_rate, PCT_FMT);
-  // Row 10
   addInputRow(ws, "Amortization (Years)", inputs.financing.amortization_years, NUMBER_FMT);
-  // Row 11
   addInputRow(ws, "Loan Term (Years)", inputs.financing.loan_term_years, NUMBER_FMT);
-  // Row 12
   addInputRow(ws, "IO Period (Months)", inputs.financing.io_period_months, NUMBER_FMT);
-  // Row 13
   addInputRow(ws, "Origination Fee Rate", inputs.financing.origination_fee_rate, PCT_FMT);
   ws.addRow([]);
 
-  // Row 15
   addSectionHeader(ws, "Revenue Assumptions", 5);
-  // Row 16
   addInputRow(ws, "Vacancy Rate", inputs.revenue.vacancy_rate, PCT_FMT);
-  // Row 17
   addInputRow(ws, "Bad Debt Rate", inputs.revenue.bad_debt_rate, PCT_FMT);
-  // Row 18
   addInputRow(ws, "Concessions Rate", inputs.revenue.concessions_rate, PCT_FMT);
-  // Row 19
   addInputRow(ws, "Rent Growth Rate (Annual)", inputs.revenue.rent_growth_rate, PCT_FMT);
-  // Row 20
   addInputRow(ws, "Other Income (Monthly)", inputs.revenue.other_income_monthly, CURRENCY_FMT);
   ws.addRow([]);
 
-  // Row 22
   addSectionHeader(ws, "Expense Assumptions", 5);
 
   const MODE_LABELS: Record<OpexInputMode, string> = {
@@ -235,37 +217,23 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
   }
 
   const oix = inputs.expenses.opex_inputs;
-  // Row 23
   addInputRow(ws, opexLabel("Management Fee", oix?.management_fees, "% EGI"), opexValue(oix?.management_fees, inputs.expenses.management_fee_rate), opexFmt(oix?.management_fees));
-  // Row 24
   addInputRow(ws, opexLabel("Payroll", oix?.payroll, "$/yr"), opexValue(oix?.payroll, inputs.expenses.payroll_annual), opexFmt(oix?.payroll));
-  // Row 25
   addInputRow(ws, opexLabel("R&M", oix?.repairs_maintenance, "$/unit/yr"), opexValue(oix?.repairs_maintenance, inputs.expenses.repairs_maintenance_per_unit), opexFmt(oix?.repairs_maintenance));
-  // Row 26
-  addInputRow(ws, opexLabel("Turnover", oix?.turnover, "$/unit/yr"), opexValue(oix?.turnover, inputs.expenses.turnover_cost_per_unit), opexFmt(oix?.turnover));
-  // Row 27
+  addInputRow(ws, opexLabel("Turnover Cost", oix?.turnover, "$/unit/yr"), opexValue(oix?.turnover, inputs.expenses.turnover_cost_per_unit), opexFmt(oix?.turnover));
+  addInputRow(ws, "Turnover Rate", inputs.expenses.turnover_rate ?? 0.50, PCT_FMT);
   addInputRow(ws, opexLabel("Insurance", oix?.insurance, "$/unit/yr"), opexValue(oix?.insurance, inputs.expenses.insurance_per_unit), opexFmt(oix?.insurance));
-  // Row 28
   addInputRow(ws, opexLabel("Property Tax", oix?.property_tax, "$/yr"), opexValue(oix?.property_tax, inputs.expenses.property_tax_total), opexFmt(oix?.property_tax));
-  // Row 29
   addInputRow(ws, "Tax Escalation Rate", inputs.expenses.tax_escalation_rate, PCT_FMT);
-  // Row 30
   addInputRow(ws, opexLabel("Utilities", oix?.utilities, "$/unit/yr"), opexValue(oix?.utilities, inputs.expenses.utilities_per_unit), opexFmt(oix?.utilities));
-  // Row 31
   addInputRow(ws, opexLabel("Admin/Legal/Marketing", oix?.admin_legal_marketing, "$/yr"), opexValue(oix?.admin_legal_marketing, inputs.expenses.admin_legal_marketing), opexFmt(oix?.admin_legal_marketing));
-  // Row 32
   addInputRow(ws, opexLabel("Contract Services", oix?.contract_services, "$/yr"), opexValue(oix?.contract_services, inputs.expenses.contract_services), opexFmt(oix?.contract_services));
-  // Row 33
   addInputRow(ws, opexLabel("Reserves", oix?.reserves, "$/unit/yr"), opexValue(oix?.reserves, inputs.expenses.reserves_per_unit), opexFmt(oix?.reserves));
   ws.addRow([]);
 
-  // Row 35
   addSectionHeader(ws, "Exit Assumptions", 5);
-  // Row 36
   addInputRow(ws, "Hold Period (Years)", inputs.exit.hold_period_years, NUMBER_FMT);
-  // Row 37
   addInputRow(ws, "Exit Cap Rate", inputs.exit.exit_cap_rate, PCT_FMT);
-  // Row 38
   addInputRow(ws, "Selling Cost Rate", inputs.exit.selling_cost_rate, PCT_FMT);
 }
 
@@ -407,12 +375,13 @@ function buildAnnualSheet(
 
       if (item.formula && monthlyRowMap[item.key] !== undefined) {
         // Formula: =SUM('Monthly Pro Forma'!B{row}:M{row}) for year 1, etc.
+        // Monthly sheet already stores negative values for expense lines,
+        // so SUM gives the correct sign — no extra negation needed.
         const monthlyRow = monthlyRowMap[item.key];
         const startCol = colLetter(y * 12 + 2); // B for year 1
         const endCol = colLetter(y * 12 + 13); // M for year 1
-        const sign = item.negative ? "-" : "";
         rowData.push({
-          formula: `${sign}SUM('Monthly Pro Forma'!${startCol}${monthlyRow}:${endCol}${monthlyRow})`,
+          formula: `SUM('Monthly Pro Forma'!${startCol}${monthlyRow}:${endCol}${monthlyRow})`,
         });
       } else if (item.key === "cumulative_cash_flow" && y > 0) {
         // Cumulative = previous cumulative + this year's cash flow
@@ -423,8 +392,13 @@ function buildAnnualSheet(
         rowData.push({
           formula: `${prevCol}${thisRow}+${thisCol}${cfRow}`,
         });
-      } else if (item.key === "cash_on_cash" && yearData) {
-        rowData.push(yearData.cash_on_cash);
+      } else if (item.key === "cash_on_cash") {
+        // Cash-on-Cash = Annual Cash Flow / Total Equity (formula)
+        const cfRow = lineItems.findIndex(i => i.key === "cash_flow") + 2;
+        const col = colLetter(y + 2);
+        rowData.push({
+          formula: `${col}${cfRow}/Returns!B10`,
+        });
       } else if (yearData) {
         const val = yearData[item.key] as number;
         rowData.push(item.negative ? -val : val);
@@ -457,45 +431,65 @@ function buildReturnsSheet(
 ) {
   const ws = wb.addWorksheet("Returns");
   ws.columns = [{ width: 28 }, { width: 18 }];
-
-  addSectionHeader(ws, "Return Metrics", 2);
   const m = result.metrics;
 
-  // Row 3 — IRR (use XIRR-like approach but store the calculated value with a note)
-  addMetricRow(ws, "IRR", m.irr, PCT_FMT);
-  // Row 4
-  addMetricRow(ws, "Equity Multiple", m.equity_multiple, MULT_FMT);
-  // Row 5
-  addMetricRow(ws, "Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT);
-  // Row 6
-  addMetricRow(ws, "Year 1 DSCR", m.year1_dscr, '0.00');
-  // Row 7 — Going-in cap = Year 1 NOI / Purchase Price (formula)
-  const r7 = ws.addRow(["Going-In Cap Rate"]);
-  r7.getCell(1).font = NORMAL_FONT;
-  // Reference: Annual sheet row 9 (NOI) col B (year 1) / Assumptions B3 (purchase price)
-  r7.getCell(2).value = { formula: "'Annual Pro Forma'!B9/Assumptions!B3" } as ExcelJS.CellFormulaValue;
-  r7.getCell(2).numFmt = PCT_FMT;
-  r7.getCell(2).border = THIN_BORDER;
+  addSectionHeader(ws, "Return Metrics", 2);
 
-  // Row 8 — Stabilized cap
+  addMetricRow(ws, "IRR", m.irr, PCT_FMT);
+  const irrRow = ws.rowCount;
+
+  // Equity Multiple — placeholder, will be set to formula after we know the row positions
+  addMetricRow(ws, "Equity Multiple", m.equity_multiple, MULT_FMT);
+  const emRow = ws.rowCount;
+
+  addMetricRow(ws, "Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT);
+  addMetricRow(ws, "Year 1 DSCR", m.year1_dscr, '0.00');
+
+  // Going-in cap = Year 1 NOI / Purchase Price
+  addMetricRow(ws, "Going-In Cap Rate", m.going_in_cap, PCT_FMT);
   addMetricRow(ws, "Stabilized Cap Rate", m.stabilized_cap, PCT_FMT);
   ws.addRow([]);
 
-  // Row 10
   addSectionHeader(ws, "Cash Flow Summary", 2);
-  // Row 11
+
   addMetricRow(ws, "Total Equity Invested", m.total_equity, CURRENCY_FMT);
-  // Row 12
+  const equityRow = ws.rowCount;
+
   addMetricRow(ws, "Total Cash Flow", result.annual.reduce((s, a) => s + a.cash_flow, 0), CURRENCY_FMT);
-  // Row 13
+  const cfRow = ws.rowCount;
+
   addMetricRow(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
-  // Row 14
-  addMetricRow(ws, "Total Distributions", m.total_equity * m.equity_multiple, CURRENCY_FMT);
-  // Row 15
-  addMetricRow(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
+  const nspRow = ws.rowCount;
+
+  // Total Distributions = Cash Flow + Sale Proceeds (formula)
+  {
+    const r = ws.addRow(["Total Distributions"]);
+    r.getCell(1).font = NORMAL_FONT;
+    r.getCell(2).value = { formula: `B${cfRow}+B${nspRow}` } as ExcelJS.CellFormulaValue;
+    r.getCell(2).font = BOLD_FONT;
+    r.getCell(2).numFmt = CURRENCY_FMT;
+    r.getCell(2).border = THIN_BORDER;
+  }
+  const distRow = ws.rowCount;
+
+  // Total Profit = Total Distributions - Total Equity (formula)
+  {
+    const r = ws.addRow(["Total Profit"]);
+    r.getCell(1).font = NORMAL_FONT;
+    r.getCell(2).value = { formula: `B${distRow}-B${equityRow}` } as ExcelJS.CellFormulaValue;
+    r.getCell(2).font = BOLD_FONT;
+    r.getCell(2).numFmt = CURRENCY_FMT;
+    r.getCell(2).border = THIN_BORDER;
+  }
+
+  // Now set Equity Multiple formula referencing known rows
+  ws.getCell(`B${emRow}`).value = { formula: `B${distRow}/B${equityRow}` } as ExcelJS.CellFormulaValue;
+  ws.getCell(`B${emRow}`).numFmt = MULT_FMT;
+  ws.getCell(`B${emRow}`).font = BOLD_FONT;
+  ws.getCell(`B${emRow}`).border = THIN_BORDER;
+
   ws.addRow([]);
 
-  // Row 17 — Annual cash-on-cash table
   addSectionHeader(ws, "Annual Cash-on-Cash", 2);
   for (const a of result.annual) {
     const row = ws.addRow([`Year ${a.year}`]);
@@ -504,6 +498,11 @@ function buildReturnsSheet(
     row.getCell(2).numFmt = PCT_FMT;
     row.getCell(2).border = THIN_BORDER;
   }
+
+  // Export the key row numbers for cross-sheet references
+  (ws as unknown as Record<string, number>)._irrRow = irrRow;
+  (ws as unknown as Record<string, number>)._emRow = emRow;
+  (ws as unknown as Record<string, number>)._equityRow = equityRow;
 }
 
 function buildSensitivitySheet(
@@ -598,8 +597,8 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
       u.renovated_rent_premium,
     ]);
 
-    // Renovated Rent = Current Rent + Premium (formula)
-    row.getCell(6).value = { formula: `C${rowNum}+E${rowNum}` } as ExcelJS.CellFormulaValue;
+    // Renovated Rent = Market Rent + Premium (formula)
+    row.getCell(6).value = { formula: `D${rowNum}+E${rowNum}` } as ExcelJS.CellFormulaValue;
     // Annual GPR = Count * Current Rent * 12 (formula)
     row.getCell(7).value = { formula: `B${rowNum}*C${rowNum}*12` } as ExcelJS.CellFormulaValue;
 
