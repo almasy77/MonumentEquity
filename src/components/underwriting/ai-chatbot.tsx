@@ -3,8 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Send, X, Loader2, MessageSquare } from "lucide-react";
-import type { Scenario } from "@/lib/validations";
-import type { UnderwritingResult } from "@/lib/underwriting";
+import { useAiChatbot } from "./ai-chatbot-context";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -12,13 +11,8 @@ interface ChatMessage {
   success?: boolean;
 }
 
-export function AiChatbot({
-  scenarioId,
-  onAiResult,
-}: {
-  scenarioId: string;
-  onAiResult: (data: { scenario: Scenario; underwriting: UnderwritingResult }) => void;
-}) {
+export function AiChatbot() {
+  const { scenarioId, onAiResult } = useAiChatbot();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [processing, setProcessing] = useState(false);
@@ -36,8 +30,10 @@ export function AiChatbot({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const canSend = !!scenarioId && !!onAiResult;
+
   async function handleSend() {
-    if (!input.trim() || processing) return;
+    if (!input.trim() || processing || !scenarioId || !onAiResult) return;
     const instruction = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: instruction }]);
@@ -101,10 +97,21 @@ export function AiChatbot({
             {messages.length === 0 && (
               <div className="text-center py-8">
                 <MessageSquare className="h-8 w-8 text-slate-700 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 mb-1">Ask AI to modify assumptions</p>
-                <p className="text-xs text-slate-600">
-                  Try: &ldquo;set all reno premiums to $0&rdquo; or &ldquo;change vacancy to 8%&rdquo;
-                </p>
+                {canSend ? (
+                  <>
+                    <p className="text-sm text-slate-500 mb-1">Ask AI to modify assumptions</p>
+                    <p className="text-xs text-slate-600">
+                      Try: &ldquo;set all reno premiums to $0&rdquo; or &ldquo;change vacancy to 8%&rdquo;
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-slate-500 mb-1">AI Assistant</p>
+                    <p className="text-xs text-slate-600">
+                      Open a deal&apos;s underwriting tab and select a scenario to start modifying assumptions with AI.
+                    </p>
+                  </>
+                )}
               </div>
             )}
             {messages.map((msg, i) => (
@@ -145,14 +152,14 @@ export function AiChatbot({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                placeholder="Type an instruction..."
-                disabled={processing}
+                placeholder={canSend ? "Type an instruction..." : "Select a scenario to use AI..."}
+                disabled={processing || !canSend}
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500 disabled:opacity-50"
               />
               <Button
                 size="sm"
                 onClick={handleSend}
-                disabled={!input.trim() || processing}
+                disabled={!input.trim() || processing || !canSend}
                 className="bg-purple-600 hover:bg-purple-500 text-white h-9 px-3"
               >
                 <Send className="h-4 w-4" />
