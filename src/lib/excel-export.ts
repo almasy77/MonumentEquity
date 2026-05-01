@@ -104,7 +104,7 @@ function buildSummarySheet(
   result: UnderwritingResult
 ) {
   const ws = wb.addWorksheet("Summary");
-  ws.columns = [{ width: 28 }, { width: 18 }, { width: 4 }, { width: 28 }, { width: 18 }];
+  ws.columns = [{ width: 28 }, { width: 18 }, { width: 14 }, { width: 28 }, { width: 18 }];
 
   // Title
   const titleRow = ws.addRow(["Monument Equity — Deal Summary"]);
@@ -127,11 +127,22 @@ function buildSummarySheet(
   addSectionHeader(ws, "Key Metrics", 5);
   const m = result.metrics;
 
-  // Formulas referencing Returns sheet
-  addLabelFormula(ws, "IRR", "Returns!B2", PCT_FMT);
-  addLabelFormula(ws, "Equity Multiple", "Returns!B3", MULT_FMT);
-  addLabelFormula(ws, "Average Cash-on-Cash", "Returns!B4", PCT_FMT);
-  addLabelFormula(ws, "Year 1 DSCR", "Returns!B5", '0.00');
+  // Column C header for hurdles
+  {
+    const hdrRow = ws.addRow(["", "Actual", "Hurdle"]);
+    hdrRow.getCell(2).font = SUBHEADER_FONT;
+    hdrRow.getCell(2).fill = SUBHEADER_FILL;
+    hdrRow.getCell(2).border = THIN_BORDER;
+    hdrRow.getCell(3).font = SUBHEADER_FONT;
+    hdrRow.getCell(3).fill = SUBHEADER_FILL;
+    hdrRow.getCell(3).border = THIN_BORDER;
+  }
+
+  // Formulas referencing Returns sheet, with hurdle targets
+  addLabelFormulaWithHurdle(ws, "IRR", "Returns!B2", PCT_FMT, 0.15, m.irr ?? 0, true);
+  addLabelFormulaWithHurdle(ws, "Equity Multiple", "Returns!B3", MULT_FMT, 2.0, m.equity_multiple, true);
+  addLabelFormulaWithHurdle(ws, "Average Cash-on-Cash", "Returns!B4", PCT_FMT, 0.08, m.average_cash_on_cash, true);
+  addLabelFormulaWithHurdle(ws, "Year 1 DSCR", "Returns!B5", '0.00', 1.25, m.year1_dscr, true);
   addLabelFormula(ws, "Going-In Cap Rate", "Returns!B6", PCT_FMT);
   addLabelFormula(ws, "Stabilized Cap Rate", "Returns!B7", PCT_FMT);
   ws.addRow([]);
@@ -808,6 +819,27 @@ function addLabelFormula(ws: ExcelJS.Worksheet, label: string, formula: string, 
   row.getCell(2).font = BOLD_FONT;
   row.getCell(2).numFmt = fmt;
   row.getCell(2).border = THIN_BORDER;
+}
+
+function addLabelFormulaWithHurdle(
+  ws: ExcelJS.Worksheet, label: string, formula: string, fmt: string,
+  hurdle: number, actual: number, higherIsBetter: boolean,
+) {
+  const row = ws.addRow([label]);
+  row.getCell(1).font = NORMAL_FONT;
+  row.getCell(2).value = { formula } as ExcelJS.CellFormulaValue;
+  row.getCell(2).font = BOLD_FONT;
+  row.getCell(2).numFmt = fmt;
+  row.getCell(2).border = THIN_BORDER;
+  const meets = higherIsBetter ? actual >= hurdle : actual <= hurdle;
+  row.getCell(2).fill = meets
+    ? { type: "pattern", pattern: "solid", fgColor: { argb: "FFD4EDDA" } }
+    : { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8D7DA" } };
+  row.getCell(3).value = hurdle;
+  row.getCell(3).numFmt = fmt;
+  row.getCell(3).font = NORMAL_FONT;
+  row.getCell(3).border = THIN_BORDER;
+  row.getCell(3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFDE7" } };
 }
 
 function addInputRow(ws: ExcelJS.Worksheet, label: string, value: number, fmt: string) {
