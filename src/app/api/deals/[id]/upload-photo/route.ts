@@ -29,13 +29,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "File must be an image" }, { status: 400 });
-    }
-
-    const blob = await put(`deal-photos/${id}-${Date.now()}.jpg`, file, {
+    const bytes = await file.arrayBuffer();
+    const blob = await put(`deal-photos/${id}-${Date.now()}.jpg`, bytes, {
       access: "public",
-      contentType: file.type,
+      contentType: "image/jpeg",
     });
 
     deal.photos = [blob.url];
@@ -44,7 +41,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ photo_url: blob.url });
   } catch (err) {
-    console.error("Upload photo error:", err);
-    return NextResponse.json({ error: "Failed to upload photo" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Upload photo error:", message, err);
+    return NextResponse.json({ error: `Failed to upload photo: ${message}` }, { status: 500 });
   }
 }
