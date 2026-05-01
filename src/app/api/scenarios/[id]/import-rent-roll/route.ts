@@ -4,7 +4,7 @@ import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { normalizeRentRoll } from "@/lib/import-normalize";
 import { fetchBlobFile } from "@/lib/blob-helpers";
-import { calculateUnderwriting, buildUnitMixFromRentRoll, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
 export const maxDuration = 120;

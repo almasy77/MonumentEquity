@@ -434,6 +434,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [ex, setEx] = useState(exit);
   const [dep, setDep] = useState(depreciation);
   const [dirty, setDirty] = useState(false);
+  const [renovatedBasis, setRenovatedBasis] = useState<"current" | "market">("market");
 
   useEffect(() => {
     setP(purchase);
@@ -515,6 +516,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   }
 
   const totalUnits = unitMix.reduce((sum, u) => sum + u.count, 0);
+
+  const subtotalUnits = totalUnits;
+  const subtotalCurrent = unitMix.reduce((sum, u) => sum + u.count * u.current_rent, 0);
+  const subtotalMarket = unitMix.reduce((sum, u) => sum + u.count * u.market_rent, 0);
+  const subtotalPremium = unitMix.reduce((sum, u) => sum + u.count * u.renovated_rent_premium, 0);
+  const subtotalRenovated = renovatedBasis === "market"
+    ? unitMix.reduce((sum, u) => sum + u.count * (u.market_rent + u.renovated_rent_premium), 0)
+    : unitMix.reduce((sum, u) => sum + u.count * (u.current_rent + u.renovated_rent_premium), 0);
+  const otherIncome = r.other_income_monthly || 0;
 
   // ── OpEx inputs — initialize from legacy fields if not already set ──
   function getOpexInputs(): OpexInputs {
@@ -838,9 +848,22 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         {/* Revenue & Rent Roll */}
         <Section title="Revenue & Rent Roll">
           <div className="space-y-3">
-            <div className="text-xs text-slate-500 font-medium">Unit Mix</div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-medium">Unit Mix</div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Renovated basis:</span>
+                <select
+                  value={renovatedBasis}
+                  onChange={(e) => setRenovatedBasis(e.target.value as "current" | "market")}
+                  className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-1.5 py-0.5 hover:border-slate-500"
+                >
+                  <option value="market">Market + Premium</option>
+                  <option value="current">Current + Premium</option>
+                </select>
+              </div>
+            </div>
             {unitMix.map((unit, i) => (
-              <div key={i} className="grid grid-cols-6 gap-2 items-end">
+              <div key={i} className="grid grid-cols-3 sm:grid-cols-7 gap-2 items-end">
                 <div>
                   <Label className="text-xs text-slate-400">Type</Label>
                   <Input
@@ -854,6 +877,16 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
                 <CurrencyField label="Market Rent" value={unit.market_rent} onChange={(v) => updateUnitMix(i, "market_rent", v)} />
                 <CurrencyField label="Reno Premium" value={unit.renovated_rent_premium} onChange={(v) => updateUnitMix(i, "renovated_rent_premium", v)} />
+                <div>
+                  <Label className="text-xs text-slate-400">Renovated</Label>
+                  <div className="bg-slate-800/50 border border-slate-700 rounded text-sm h-8 px-2 flex items-center text-emerald-400 tabular-nums">
+                    {fmtCurrency(
+                      renovatedBasis === "market"
+                        ? unit.market_rent + unit.renovated_rent_premium
+                        : unit.current_rent + unit.renovated_rent_premium
+                    )}
+                  </div>
+                </div>
                 <div className="flex items-end pb-0.5">
                   <Button
                     variant="outline"
@@ -867,6 +900,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
               </div>
             ))}
+
+            {/* Subtotals row */}
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 items-end border-t border-slate-700 pt-2">
+              <div className="text-xs text-slate-400 font-medium flex items-center h-8">Subtotals</div>
+              <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{subtotalUnits} units</div>
+              <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{fmtCurrency(subtotalCurrent)}/mo</div>
+              <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{fmtCurrency(subtotalMarket)}/mo</div>
+              <div className="text-xs text-slate-300 font-medium flex items-center h-8 tabular-nums">{fmtCurrency(subtotalPremium)}/mo</div>
+              <div className="text-xs text-emerald-400 font-medium flex items-center h-8 tabular-nums">{fmtCurrency(subtotalRenovated)}/mo</div>
+              <div />
+            </div>
+
             <Button
               variant="outline"
               size="sm"
@@ -880,6 +925,25 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               <CurrencyField label="Other Income" value={r.other_income_monthly} suffix="/mo" onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
               <PctField label="Vacancy" value={r.vacancy_rate} onChange={(v) => { setR({ ...r, vacancy_rate: v }); markDirty(); }} />
               <PctField label="Bad Debt" value={r.bad_debt_rate} onChange={(v) => { setR({ ...r, bad_debt_rate: v }); markDirty(); }} />
+            </div>
+
+            {/* Revenue totals */}
+            <div className="border-t border-slate-700 pt-3 mt-2">
+              <div className="text-xs text-slate-500 font-medium mb-2">Monthly Revenue Totals (rent + other income)</div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                  <div className="text-xs text-slate-400 mb-0.5">Current</div>
+                  <div className="text-sm text-white font-semibold tabular-nums">{fmtCurrency(subtotalCurrent + otherIncome)}</div>
+                </div>
+                <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                  <div className="text-xs text-slate-400 mb-0.5">Market</div>
+                  <div className="text-sm text-white font-semibold tabular-nums">{fmtCurrency(subtotalMarket + otherIncome)}</div>
+                </div>
+                <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                  <div className="text-xs text-slate-400 mb-0.5">Renovated</div>
+                  <div className="text-sm text-emerald-400 font-semibold tabular-nums">{fmtCurrency(subtotalRenovated + otherIncome)}</div>
+                </div>
+              </div>
             </div>
           </div>
         </Section>

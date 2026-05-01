@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, Upload } from "lucide-react";
+import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, Upload, Sparkles, Send, X } from "lucide-react";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
@@ -253,6 +253,8 @@ export function UnderwritingClient({
       if (t12InputRef.current) t12InputRef.current.value = "";
     }
   }
+
+
 
   function handleConfirmedAction() {
     if (!confirmAction) return;
@@ -539,6 +541,12 @@ export function UnderwritingClient({
           deal={deal}
           loading={loading}
           onUpdate={updateScenario}
+          onAiResult={(data) => {
+            setScenarios((prev) =>
+              prev.map((s) => (s.id === activeId ? data.scenario : s))
+            );
+            setActiveResult(data.underwriting);
+          }}
         />
       )}
 
@@ -560,13 +568,47 @@ function ScenarioAnalysis({
   deal,
   loading,
   onUpdate,
+  onAiResult,
 }: {
   scenario: Scenario;
   result: UnderwritingResult;
   deal: Deal;
   loading: boolean;
   onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
+  onAiResult: (data: { scenario: Scenario; underwriting: UnderwritingResult }) => void;
 }) {
+  const [aiInput, setAiInput] = useState("");
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [aiLastResult, setAiLastResult] = useState<{ instruction: string; success: boolean; error?: string } | null>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleAiAssist() {
+    if (!aiInput.trim()) return;
+    const instruction = aiInput.trim();
+    setAiProcessing(true);
+    setAiLastResult(null);
+    try {
+      const res = await fetch(`/api/scenarios/${scenario.id}/ai-assist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onAiResult(data);
+        setAiLastResult({ instruction, success: true });
+        setAiInput("");
+      } else {
+        const err = await res.json();
+        setAiLastResult({ instruction, success: false, error: err.error || "Failed to apply changes" });
+      }
+    } catch (err) {
+      setAiLastResult({ instruction, success: false, error: err instanceof Error ? err.message : "Request failed" });
+    } finally {
+      setAiProcessing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Warnings */}
@@ -587,6 +629,48 @@ function ScenarioAnalysis({
 
       {/* Key Metrics — at the top */}
       <MetricsBar metrics={result.metrics} />
+
+      {/* AI Assistant */}
+      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-purple-400 shrink-0" />
+          <input
+            ref={aiInputRef}
+            type="text"
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !aiProcessing) handleAiAssist(); }}
+            placeholder="Ask AI to modify assumptions... e.g. &quot;set all reno premiums to $0&quot;"
+            disabled={aiProcessing}
+            className="flex-1 bg-transparent border-none text-sm text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
+          />
+          {aiProcessing ? (
+            <Loader2 className="h-4 w-4 text-purple-400 animate-spin shrink-0" />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAiAssist}
+              disabled={!aiInput.trim()}
+              className="text-purple-400 hover:text-purple-300 hover:bg-purple-900/20 h-7 px-2"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+        {aiLastResult && (
+          <div className={`flex items-start gap-2 mt-2 pt-2 border-t border-slate-800 text-xs ${aiLastResult.success ? "text-green-400" : "text-red-400"}`}>
+            <span className="flex-1">
+              {aiLastResult.success
+                ? `Applied: "${aiLastResult.instruction}"`
+                : `Failed: ${aiLastResult.error}`}
+            </span>
+            <button onClick={() => setAiLastResult(null)} className="text-slate-500 hover:text-slate-300 shrink-0">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Full Assumptions Form */}
       <AssumptionsForm
