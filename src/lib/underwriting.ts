@@ -133,7 +133,8 @@ export interface ExpenseAssumptions {
   management_fee_rate: number; // % of EGI (legacy)
   payroll_annual: number;
   repairs_maintenance_per_unit: number; // annual
-  turnover_cost_per_unit: number; // annual
+  turnover_cost_per_unit: number; // annual cost per unit that turns over
+  turnover_rate: number; // % of units that turn over per year (e.g. 0.50 = 50%)
   insurance_per_unit: number; // annual
   property_tax_total: number; // annual
   tax_escalation_rate: number; // annual, applied to property taxes only
@@ -437,7 +438,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       management_fees: resolveOpexMonthly(oi?.management_fees, expenses.management_fee_rate, "pct_egi", opexCtx),
       payroll: resolveOpexMonthly(oi?.payroll, expenses.payroll_annual, "total_annual", opexCtx),
       repairs_maintenance: resolveOpexMonthly(oi?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", opexCtx),
-      turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx),
+      turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", opexCtx),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
       property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
@@ -1011,7 +1012,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
       resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
       resolveOpexAnnual(oiS?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", sCtx) +
-      resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", sCtx) +
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
       resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
@@ -1066,7 +1067,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     resolveOpexAnnual(oiE?.management_fees, expenses.management_fee_rate, "pct_egi", eCtx) +
     resolveOpexAnnual(oiE?.payroll, expenses.payroll_annual, "total_annual", eCtx) +
     resolveOpexAnnual(oiE?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", eCtx) +
-    resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", eCtx) +
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
     resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
@@ -1285,6 +1286,7 @@ export function buildDefaultInputs(
       payroll_annual: payrollAnnual,
       repairs_maintenance_per_unit: repairsPerUnit,
       turnover_cost_per_unit: turnoverPerUnit,
+      turnover_rate: d.turnover_rate ?? 0.50,
       insurance_per_unit: insurancePerUnit,
       property_tax_total: annualTaxes,
       tax_escalation_rate: d.tax_escalation_rate ?? 0.02,
@@ -1382,6 +1384,7 @@ export function buildExpensesFromT12(
     payroll_annual: payrollAnnual || existing?.payroll_annual || 0,
     repairs_maintenance_per_unit: repairsPerUnit,
     turnover_cost_per_unit: turnoverPerUnit,
+    turnover_rate: existing?.turnover_rate ?? 0.50,
     insurance_per_unit: insurancePerUnit,
     property_tax_total: annualTaxes || existing?.property_tax_total || 0,
     utilities_per_unit: utilitiesPerUnit,
