@@ -438,7 +438,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       management_fees: resolveOpexMonthly(oi?.management_fees, expenses.management_fee_rate, "pct_egi", opexCtx),
       payroll: resolveOpexMonthly(oi?.payroll, expenses.payroll_annual, "total_annual", opexCtx),
       repairs_maintenance: resolveOpexMonthly(oi?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", opexCtx),
-      turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", opexCtx),
+      turnover: resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx) * (expenses.turnover_rate ?? 0.50),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
       property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
@@ -1012,7 +1012,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
       resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
       resolveOpexAnnual(oiS?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", sCtx) +
-      resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", sCtx) +
+      resolveOpexAnnual(oiS?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", sCtx) * (expenses.turnover_rate ?? 0.50) +
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
       resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
@@ -1067,7 +1067,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     resolveOpexAnnual(oiE?.management_fees, expenses.management_fee_rate, "pct_egi", eCtx) +
     resolveOpexAnnual(oiE?.payroll, expenses.payroll_annual, "total_annual", eCtx) +
     resolveOpexAnnual(oiE?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", eCtx) +
-    resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit * (expenses.turnover_rate ?? 0.50), "per_unit_annual", eCtx) +
+    resolveOpexAnnual(oiE?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", eCtx) * (expenses.turnover_rate ?? 0.50) +
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
     resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +

@@ -925,6 +925,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               <CurrencyField label="Other Income" value={r.other_income_monthly} suffix="/mo" onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
               <PctField label="Vacancy" value={r.vacancy_rate} onChange={(v) => { setR({ ...r, vacancy_rate: v }); markDirty(); }} />
               <PctField label="Bad Debt" value={r.bad_debt_rate} onChange={(v) => { setR({ ...r, bad_debt_rate: v }); markDirty(); }} />
+              <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => { setE({ ...e, turnover_rate: v }); markDirty(); }} />
             </div>
 
             {/* Revenue totals */}
@@ -1011,24 +1012,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <OpexLineField label="Property Tax" input={opexInputs.property_tax || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("property_tax", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Insurance" input={opexInputs.insurance || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("insurance", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Repairs & Maint." input={opexInputs.repairs_maintenance || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("repairs_maintenance", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <OpexLineField label="Turnover Cost" input={opexInputs.turnover || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("turnover", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
-                  </div>
-                  <div className="w-28 shrink-0">
-                    <Label className="text-xs text-slate-400">Turnover %</Label>
-                    <Input
-                      type="number"
-                      step="1"
-                      min="0"
-                      max="100"
-                      value={Math.round((e.turnover_rate ?? 0.50) * 100)}
-                      onChange={(ev) => { setE({ ...e, turnover_rate: parseFloat(ev.target.value) / 100 || 0 }); markDirty(); }}
-                      className="bg-slate-800 border-slate-700 text-white h-8 text-xs"
-                    />
-                    <span className="text-[10px] text-slate-500">% units/yr</span>
-                  </div>
-                </div>
+                <OpexLineField label="Turnover Cost" input={opexInputs.turnover || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("turnover", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Admin / Legal / Mktg" input={opexInputs.admin_legal_marketing || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("admin_legal_marketing", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Reserves" input={opexInputs.reserves || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("reserves", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
               </div>
