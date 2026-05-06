@@ -217,7 +217,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Rent (collected only), real estate taxes, utilities, and operating expenses"),
     bullet("Tenant security deposits (and any interest thereon) shall be credited to Buyer at Closing"),
     bullet("Prepaid rent shall be credited to Buyer; delinquent rent shall be addressed in the PSA"),
-    p([n(`Closing costs shall be allocated in accordance with local custom. Seller shall pay any applicable real estate transfer taxes, the cost of a standard owner's title insurance policy, and one-half of escrow fees. Buyer shall pay recording fees, the cost of any lender's title policy, survey costs, and one-half of escrow fees. Each party shall bear its own attorneys' fees.`)], 200),
+    p([n(`Closing costs shall be allocated in accordance with local custom in the county and state in which the Property is located. Seller shall pay any applicable state, county, or municipal real estate transfer taxes, the cost of a standard owner's title insurance policy, and one-half of escrow fees. Buyer shall pay recording fees, the cost of any lender's title policy, survey costs, and one-half of escrow fees. Each party shall bear its own attorneys' fees.`)], 200),
 
     // 12. Title and Survey Review
     heading("12. Title and Survey Review"),
@@ -227,8 +227,23 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     heading("13. Wire Fraud Prevention and Closing Funds Protocol"),
     p([n("All wire instructions shall be issued solely by the title company on its official letterhead, transmitted via secure channel, and verbally verified by Buyer with a known officer of the title company at a telephone number obtained independently from the title company's public records (and not from any email, attachment, or unverified communication). The parties shall not honor any change to wire instructions communicated by email. Closing funds shall be disbursed only to the Seller of record as identified in the title commitment, and only upon recording of the deed.")], 200),
 
-    // 14. Proof of Funds and Buyer Qualifications
-    heading("14. Proof of Funds and Buyer Qualifications"),
+    // 14. Remedies
+    heading("14. Remedies"),
+    p([
+      b("(a) Buyer Default. "),
+      n(`If, following expiration of the Due Diligence Period and satisfaction or waiver of the Financing Contingency, Buyer fails to consummate the purchase of the Property in breach of the PSA, Seller's sole and exclusive remedy at law or in equity shall be to retain the Deposit, together with any accrued interest, as full and final liquidated damages. The parties acknowledge that actual damages resulting from Buyer's default would be difficult or impossible to determine, and that the Deposit represents a reasonable estimate of such damages. Seller expressly waives any right to specific performance, consequential, special, or punitive damages, and any other remedy at law or in equity arising from such default. The foregoing shall not limit Buyer's obligations under any indemnification, confidentiality, or property-restoration covenants that expressly survive termination.`),
+    ], 200),
+    p([
+      b("(b) Seller Default. "),
+      n(`If Seller fails to consummate the sale of the Property in breach of the PSA, or otherwise materially defaults under the PSA, Buyer shall have the right, at its sole election, to: (i) terminate the PSA, in which case the Deposit shall be promptly returned to Buyer in full, and Seller shall reimburse Buyer for actual, documented third-party due diligence costs and expenses incurred in connection with the transaction, up to a cap of `),
+      b("$50,000"),
+      n(`; or (ii) pursue specific performance of Seller's obligation to convey the Property, provided that any action for specific performance must be commenced within `),
+      b("ninety (90) days"),
+      n(` following the scheduled Closing date. Buyer's rights under this Section 14(b) shall be cumulative with any other rights or remedies expressly reserved to Buyer under the PSA, except that Buyer waives any claim for consequential, special, or punitive damages.`),
+    ], 200),
+
+    // 15. Proof of Funds and Buyer Qualifications
+    heading("15. Proof of Funds and Buyer Qualifications"),
     p([n("Upon execution of the PSA, Buyer shall provide:")]),
     bullet("Proof of equity funds sufficient for the cash portion of the acquisition"),
     bullet("Lender pre-qualification or term sheet (if financing is used)"),
@@ -236,20 +251,20 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Brief portfolio summary and prior multifamily transaction history"),
     spacer(),
 
-    // 15. Non-Binding Nature
-    heading("15. Non-Binding Nature"),
-    p([n("This Letter of Intent is a non-binding expression of interest and does not constitute a contract or agreement to purchase. Neither party shall have any legal obligation arising from this LOI, except for the Exclusivity (Section 6) and Confidentiality (Section 16) provisions, which shall be binding upon execution. A binding obligation to purchase or sell shall arise only upon the execution of a mutually acceptable PSA.")], 200),
+    // 16. Non-Binding Nature
+    heading("16. Non-Binding Nature"),
+    p([n("This Letter of Intent is a non-binding expression of interest and does not constitute a contract or agreement to purchase. Neither party shall have any legal obligation arising from this LOI, except for the Exclusivity (Section 6) and Confidentiality (Section 17) provisions, which shall be binding upon execution. A binding obligation to purchase or sell shall arise only upon the execution of a mutually acceptable PSA.")], 200),
 
-    // 16. Confidentiality
-    heading("16. Confidentiality"),
+    // 17. Confidentiality
+    heading("17. Confidentiality"),
     p([n("Both parties agree to maintain the confidentiality of this LOI and the terms contained herein. Neither party shall disclose the existence or terms of this LOI to any third party without the prior written consent of the other party, except as required by law or to their respective advisors, lenders, attorneys, accountants, prospective investors, and lenders, each of whom shall be bound by equivalent confidentiality obligations.")], 200),
 
-    // 17. Governing Law
-    heading("17. Governing Law"),
+    // 18. Governing Law
+    heading("18. Governing Law"),
     p([n(`This LOI and the resulting PSA shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflicts of law principles.`)], 200),
 
-    // 18. LOI Expiration
-    heading("18. LOI Expiration"),
+    // 19. LOI Expiration
+    heading("19. LOI Expiration"),
     p([
       n(`This Letter of Intent shall expire at 5:00 p.m. Eastern Time on `),
       b(expDate),
