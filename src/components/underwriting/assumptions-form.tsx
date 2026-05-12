@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis } from "@/lib/underwriting";
 import { sumClosingCostBreakdown } from "@/lib/underwriting";
 
 interface Props {
@@ -237,6 +237,7 @@ function OpexLineField({
   leftContent,
   indented,
   readOnlySum,
+  multiplier,
 }: {
   label: string;
   input: OpexInput;
@@ -247,6 +248,7 @@ function OpexLineField({
   leftContent?: React.ReactNode;
   indented?: boolean;
   readOnlySum?: number; // when set, render as read-only showing this annual total
+  multiplier?: number; // post-multiplier applied to annual display (e.g. turnover rate)
 }) {
   const [focused, setFocused] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -257,7 +259,8 @@ function OpexLineField({
       ? `${Math.round(input.value * 10000) / 100}`
       : `$${formatWithCommas(input.value)}`
     : "";
-  const annualDollars = readOnlySum !== undefined ? readOnlySum : opexToAnnual(input, units, egi, gpr);
+  const rawAnnual = readOnlySum !== undefined ? readOnlySum : opexToAnnual(input, units, egi, gpr);
+  const annualDollars = rawAnnual * (multiplier ?? 1);
   const pctOfEGI = egi > 0 ? (annualDollars / egi * 100).toFixed(1) : "0.0";
 
   return (
@@ -624,8 +627,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     markDirty();
   }
 
-  // Lightweight NOI estimate for display in Exit section
-  const t12GPR = unitMix.reduce((sum, u) => sum + u.count * u.current_rent * 12, 0);
+  // Lightweight NOI estimate for display — respects OpEx rent basis
+  const opexRentBasis: RentBasis = e.opex_rent_basis || "current";
+  const t12GPR = unitMix.reduce((sum, u) => {
+    const base = (opexRentBasis === "market" || opexRentBasis === "market_plus_reno") ? u.market_rent : u.current_rent;
+    const rent = (opexRentBasis === "current_plus_reno" || opexRentBasis === "market_plus_reno") ? base + (u.renovated_rent_premium || 0) : base;
+    return sum + u.count * rent * 12;
+  }, 0);
   const t12EGI = t12GPR * (1 - (r.vacancy_rate || 0) - (r.bad_debt_rate || 0) - (r.concessions_rate || 0)) + (r.other_income_monthly || 0) * 12;
 
   function opexLineAnnual(key: keyof OpexInputs): number {
@@ -644,11 +652,12 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const svcSubSum = sumSublinesAnnual(opexInputs.services_sublines);
   const utilEffective = utilSubSum > 0 ? utilSubSum : opexLineAnnual("utilities");
   const svcEffective = svcSubSum > 0 ? svcSubSum : opexLineAnnual("contract_services");
+  const turnoverRate = e.turnover_rate ?? 0.50;
   const t12TotalOpex =
     opexLineAnnual("management_fees") +
     opexLineAnnual("payroll") +
     opexLineAnnual("repairs_maintenance") +
-    opexLineAnnual("turnover") +
+    opexLineAnnual("turnover") * turnoverRate +
     opexLineAnnual("insurance") +
     opexLineAnnual("property_tax") +
     utilEffective +
@@ -958,6 +967,20 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <span>Annual OpEx <span className="text-white font-semibold tabular-nums">{fmtCurrency(t12TotalOpex)}</span></span>
                 <span className="text-slate-600">·</span>
                 <span>OpEx Ratio <span className="text-white font-semibold tabular-nums">{t12EGI > 0 ? `${(t12TotalOpex / t12EGI * 100).toFixed(1)}%` : "—"}</span></span>
+                <span className="text-slate-600">·</span>
+                <span className="flex items-center gap-1">
+                  Rents:
+                  <select
+                    value={opexRentBasis}
+                    onChange={(ev) => { setE({ ...e, opex_rent_basis: ev.target.value as RentBasis }); markDirty(); }}
+                    className="bg-slate-800 border border-slate-700 text-slate-300 text-xs h-6 rounded px-1.5 outline-none focus:border-blue-500"
+                  >
+                    <option value="current">Current</option>
+                    <option value="market">Market</option>
+                    <option value="current_plus_reno">Current + Reno</option>
+                    <option value="market_plus_reno">Market + Reno</option>
+                  </select>
+                </span>
               </div>
               {dealT12 && dealT12.months && dealT12.months.length > 0 && (
                 <Button
@@ -1012,7 +1035,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <OpexLineField label="Property Tax" input={opexInputs.property_tax || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("property_tax", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Insurance" input={opexInputs.insurance || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("insurance", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Repairs & Maint." input={opexInputs.repairs_maintenance || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("repairs_maintenance", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
-                <OpexLineField label="Turnover Cost" input={opexInputs.turnover || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("turnover", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
+                <OpexLineField label="Turnover Cost" input={opexInputs.turnover || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("turnover", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} multiplier={turnoverRate} />
                 <OpexLineField label="Admin / Legal / Mktg" input={opexInputs.admin_legal_marketing || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("admin_legal_marketing", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Reserves" input={opexInputs.reserves || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("reserves", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
               </div>

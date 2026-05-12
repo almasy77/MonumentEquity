@@ -105,10 +105,16 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
               View listing
             </a>
           )}
+          {deal.tax_record_url && (
+            <a href={deal.tax_record_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+              View tax records
+            </a>
+          )}
         </div>
 
         <Separator className="bg-slate-800" />
         <EditableField label="Listing URL" value={deal.source_url || ""} onSave={(v) => updateDeal("source_url", v)} type="url" placeholder="Paste listing URL..." />
+        <EditableField label="County Tax Records URL" value={deal.tax_record_url || ""} onSave={(v) => updateDeal("tax_record_url", v)} type="url" placeholder="Paste county tax assessor link..." />
 
         {/* Notes */}
         <Separator className="bg-slate-800" />
