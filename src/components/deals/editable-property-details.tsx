@@ -83,7 +83,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="State" value={deal.state} onSave={(v) => updateDeal("state", v)} />
           <EditableField label="Zip" value={deal.zip || ""} onSave={(v) => updateDeal("zip", v)} placeholder="Enter zip" />
           <EditableField label="Source" value={deal.source} onSave={(v) => updateDeal("source", v)} />
-          <EditableField label="Year Built" value={deal.year_built?.toString() || ""} onSave={(v) => updateDeal("year_built", v)} type="number" placeholder="e.g. 1985" noCommas />
+          <EditableField label="Year Built" value={deal.year_built?.toString() || ""} onSave={(v) => updateDeal("year_built", v)} type="year" placeholder="e.g. 1985" />
           <EditableField label="Property Type" value={deal.property_type || ""} onSave={(v) => updateDeal("property_type", v)} placeholder="e.g. Multifamily" />
           <EditableField label="Square Footage" value={deal.square_footage?.toString() || ""} onSave={(v) => updateDeal("square_footage", v)} type="number" suffix=" SF" placeholder="Total SF" />
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />

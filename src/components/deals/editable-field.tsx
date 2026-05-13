@@ -7,7 +7,7 @@ interface EditableFieldProps {
     value: string;
     label: string;
     onSave: (value: string) => Promise<void>;
-    type?: "text" | "number" | "url" | "date";
+    type?: "text" | "number" | "url" | "date" | "year";
     prefix?: string;
     suffix?: string;
     placeholder?: string;
@@ -24,6 +24,11 @@ function formatDisplay(value: string, type: string, noCommas?: boolean): string 
           if (!isNaN(num)) return numberFormatter.format(num);
     }
     return value;
+}
+
+// "year" is a semantic alias: numeric input, no thousands separator on display.
+function inputTypeFor(type: string): string {
+    return type === "year" ? "number" : type;
 }
 
 export function EditableField({
@@ -83,7 +88,7 @@ export function EditableField({
                           {prefix && <span className="text-slate-400 text-sm">{prefix}</span>}
                                   <input
                                                 ref={inputRef}
-                                                type={type}
+                                                type={inputTypeFor(type)}
                                                 value={draft}
                                                 onChange={(e) => setDraft(e.target.value)}
                                                 onKeyDown={handleKeyDown}

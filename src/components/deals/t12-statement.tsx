@@ -92,12 +92,21 @@ interface LineItemRowProps {
 
 function LineItemRow({ label, value, onChange, editing, annual, units, egi, isNegative, indent, prefix = "$", suffix, readOnly }: LineItemRowProps) {
   const displayVal = isNegative && annual > 0 ? -annual : annual;
+  // When editing a percent-driven row, show the computed dollar amount inline so users see the impact as they type.
+  const showInlineDollar = editing && suffix === "%" && !readOnly && annual > 0;
   return (
     <tr className="group hover:bg-slate-800/30">
       <td className={`py-1.5 text-sm text-slate-300 ${indent ? "pl-5" : "pl-2"}`}>{label}</td>
       <td className="py-1.5 text-sm text-right pr-3 w-32">
         {editing ? (
-          <EditableCell value={value} onChange={onChange} prefix={prefix} suffix={suffix} readOnly={readOnly} />
+          <div className="flex items-center justify-end gap-2">
+            {showInlineDollar && (
+              <span className={`text-[11px] ${isNegative ? "text-red-400/80" : "text-slate-500"}`}>
+                = {isNegative ? `(${fmt(annual)})` : fmt(annual)}
+              </span>
+            )}
+            <EditableCell value={value} onChange={onChange} prefix={prefix} suffix={suffix} readOnly={readOnly} />
+          </div>
         ) : (
           <span className={isNegative ? "text-red-400" : "text-slate-200"}>
             {isNegative ? `(${fmt(annual)})` : suffix === "%" ? pct(annual) : fmt(annual)}
@@ -346,11 +355,6 @@ export function T12StatementPanel({ dealId, t12, rentRoll, units }: T12Props) {
         <div className="flex items-center gap-2">
           {editing ? (
             <>
-              {annualRentFromRoll > 0 && (
-                <button onClick={fillFromRentRoll} className="text-blue-400 hover:text-blue-300 text-[11px]">
-                  Fill GPR from rent roll
-                </button>
-              )}
               {hasData && (
                 <Button variant="outline" size="sm" onClick={() => setEditing(false)} className="h-6 text-[11px] border-slate-700 text-slate-400 hover:bg-slate-800 px-2">
                   Cancel
@@ -391,6 +395,18 @@ export function T12StatementPanel({ dealId, t12, rentRoll, units }: T12Props) {
               units={units}
               egi={egi}
             />
+            {editing && annualRentFromRoll > 0 && (
+              <tr>
+                <td colSpan={4} className="pl-2 pb-1">
+                  <button
+                    onClick={fillFromRentRoll}
+                    className="text-blue-400 hover:text-blue-300 text-[11px]"
+                  >
+                    ↳ Fill GPR from rent roll ({fmt(annualRentFromRoll)})
+                  </button>
+                </td>
+              </tr>
+            )}
             <LineItemRow
               label={`Vacancy & Credit Loss (${vacPct.toFixed(1)}%)`}
               value={form.vacancy_loss_pct}
