@@ -146,6 +146,7 @@ export interface ExpenseAssumptions {
   services_breakdown?: ServicesBreakdown;
   reserves_per_unit: number; // annual
   opex_inputs?: OpexInputs;
+  opex_rent_basis?: RentBasis;
   // T12 baseline — scenario-local operating history used to seed expense fields
   t12_baseline?: {
     gross_potential_rent?: number;
