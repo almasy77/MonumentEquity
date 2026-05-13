@@ -444,3 +444,33 @@ export const shareLinkSchema = z.object({
 });
 
 export type ShareLink = z.infer<typeof shareLinkSchema>;
+
+// ─── Pending Listing (review queue) ─────────────────────────
+// Forwarded listing email lands here for human approval before becoming a deal.
+export const pendingListingSchema = z.object({
+  id: z.string().uuid(),
+  source_email_id: z.string().uuid(), // -> inbound_email:${id}
+  from: z.string(),
+  from_name: z.string().optional(),
+  subject: z.string(),
+  received_at: z.string().datetime(),
+  extracted: z.object({
+    address: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    zip: z.string().optional(),
+    units: z.number().optional(),
+    asking_price: z.number().optional(),
+    year_built: z.number().optional(),
+    property_type: z.string().optional(),
+    square_footage: z.number().optional(),
+    market_notes: z.string().optional(),
+    photo_url: z.string().optional(),
+  }),
+  status: z.enum(["pending", "approved", "rejected"]),
+  approved_deal_id: z.string().uuid().optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export type PendingListing = z.infer<typeof pendingListingSchema>;

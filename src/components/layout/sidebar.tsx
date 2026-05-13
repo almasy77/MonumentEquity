@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -12,20 +13,48 @@ import {
   CheckSquare,
   Settings,
   Building2,
+  Inbox,
   LogOut,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
+  { href: "/leads", label: "Leads", icon: Inbox, badgeKey: "leads" as const },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/comps", label: "Comps", icon: BarChart3 },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+function useLeadsCount(pathname: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/leads/count");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setCount(data.count ?? 0);
+      } catch {
+        // ignore — badge will just stay at 0
+      }
+    }
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pathname]); // refresh on route change too
+  return count;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const leadsCount = useLeadsCount(pathname);
+  const badgeFor = (key?: "leads"): number => (key === "leads" ? leadsCount : 0);
 
   return (
     <>
@@ -45,6 +74,7 @@ export function Sidebar() {
             const isActive =
               pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
+            const badge = badgeFor(item.badgeKey);
             return (
               <Link
                 key={item.href}
@@ -57,7 +87,12 @@ export function Sidebar() {
                 )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badge > 0 && (
+                  <span className="bg-blue-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -82,17 +117,23 @@ export function Sidebar() {
             const isActive =
               pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
+            const badge = badgeFor(item.badgeKey);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors",
+                  "relative flex flex-col items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors",
                   isActive ? "text-blue-400" : "text-slate-500"
                 )}
               >
                 <item.icon className="h-5 w-5" />
                 <span>{item.label}</span>
+                {badge > 0 && (
+                  <span className="absolute top-0 right-1 bg-blue-600 text-white text-[9px] font-semibold px-1 rounded-full min-w-[1rem] text-center">
+                    {badge > 9 ? "9+" : badge}
+                  </span>
+                )}
               </Link>
             );
           })}
