@@ -16,6 +16,20 @@ function getDisplayName(c: Contact): string {
   return (c as unknown as Record<string, unknown>).name as string || "Unnamed";
 }
 
+function getPhones(c: Contact): { number: string; label?: string }[] {
+  const list: { number: string; label?: string }[] = [];
+  if (c.phones && c.phones.length > 0) {
+    for (const p of c.phones) list.push({ number: p.number, label: p.label });
+  } else if (c.phone) {
+    list.push({ number: c.phone });
+  }
+  return list;
+}
+
+function telHref(num: string): string {
+  return `tel:${num.replace(/[^0-9+]/g, "")}`;
+}
+
 interface DealContactsProps {
   dealId: string;
   contacts: Contact[];
@@ -34,6 +48,7 @@ export function DealContacts({ dealId, contacts: initial, contactIds: initialIds
   const [newFirst, setNewFirst] = useState("");
   const [newLast, setNewLast] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newPhone, setNewPhone] = useState("");
   const [newType, setNewType] = useState("broker");
   const [newCompany, setNewCompany] = useState("");
   const [saving, setSaving] = useState(false);
@@ -113,6 +128,7 @@ export function DealContacts({ dealId, contacts: initial, contactIds: initialIds
           first_name: newFirst.trim(),
           last_name: newLast.trim() || undefined,
           email: newEmail.trim() || undefined,
+          phones: newPhone.trim() ? [{ number: newPhone.trim(), label: "mobile" }] : undefined,
           type: newType,
           company: newCompany.trim() || undefined,
         }),
@@ -124,6 +140,7 @@ export function DealContacts({ dealId, contacts: initial, contactIds: initialIds
         setNewFirst("");
         setNewLast("");
         setNewEmail("");
+        setNewPhone("");
         setNewCompany("");
         setNewType("broker");
       }
@@ -155,25 +172,42 @@ export function DealContacts({ dealId, contacts: initial, contactIds: initialIds
       )}
       {contacts.length > 0 && (
         <div className="space-y-2 mb-3">
-          {contacts.map((c) => (
-            <div key={c.id} className="flex items-center justify-between group text-sm">
-              <div>
-                <p className="text-slate-200 font-medium">{getDisplayName(c)}</p>
-                <p className="text-slate-500 text-xs">
-                  {CONTACT_TYPE_LABELS[c.type]}
-                  {c.company && ` — ${c.company}`}
-                </p>
-                {c.email && <p className="text-slate-400 text-xs">{c.email}</p>}
+          {contacts.map((c) => {
+            const phones = getPhones(c);
+            return (
+              <div key={c.id} className="flex items-start justify-between group text-sm">
+                <div className="min-w-0">
+                  <p className="text-slate-200 font-medium">{getDisplayName(c)}</p>
+                  <p className="text-slate-500 text-xs">
+                    {CONTACT_TYPE_LABELS[c.type]}
+                    {c.company && ` — ${c.company}`}
+                  </p>
+                  {c.email && (
+                    <a href={`mailto:${c.email}`} className="text-slate-400 text-xs hover:text-blue-400 block">
+                      {c.email}
+                    </a>
+                  )}
+                  {phones.map((p, i) => (
+                    <a
+                      key={i}
+                      href={telHref(p.number)}
+                      className="text-slate-400 text-xs hover:text-blue-400 block"
+                    >
+                      {p.number}
+                      {p.label && <span className="text-slate-600 ml-1">({p.label})</span>}
+                    </a>
+                  ))}
+                </div>
+                <button
+                  onClick={() => unlinkContact(c.id)}
+                  className="p-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Remove from deal"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <button
-                onClick={() => unlinkContact(c.id)}
-                className="p-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Remove from deal"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -245,10 +279,17 @@ export function DealContacts({ dealId, contacts: initial, contactIds: initialIds
                   className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
                 />
                 <Input
+                  type="tel"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="Phone"
+                  className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
+                />
+                <Input
                   value={newCompany}
                   onChange={(e) => setNewCompany(e.target.value)}
                   placeholder="Company"
-                  className="bg-slate-800 border-slate-700 text-white h-7 text-xs"
+                  className="bg-slate-800 border-slate-700 text-white h-7 text-xs col-span-2"
                 />
               </div>
               <div className="flex items-center gap-2">
