@@ -520,20 +520,21 @@ function buildSensitivitySheet(
 function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenue"]["unit_mix"]) {
   const ws = wb.addWorksheet("Unit Mix");
   ws.columns = [
-    { width: 16 }, { width: 10 }, { width: 14 },
+    { width: 12 }, { width: 16 }, { width: 10 }, { width: 14 },
     { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 },
   ];
 
   const headerRow = ws.addRow([
-    "Unit Type", "Count", "Current Rent", "Market Rent",
+    "Unit #", "Unit Type", "Count", "Current Rent", "Market Rent",
     "Reno Premium", "Renovated Rent", "Annual GPR",
   ]);
-  styleHeaderRow(headerRow, 7);
+  styleHeaderRow(headerRow, 8);
 
   for (let i = 0; i < unitMix.length; i++) {
     const u = unitMix[i];
     const rowNum = i + 2;
     const row = ws.addRow([
+      u.unit_number ?? "",
       u.type,
       u.count,
       u.current_rent,
@@ -541,28 +542,30 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
       u.renovated_rent_premium,
     ]);
 
-    // Renovated Rent = Market Rent + Premium (formula)
-    row.getCell(6).value = { formula: `D${rowNum}+E${rowNum}` } as ExcelJS.CellFormulaValue;
-    // Annual GPR = Count * Current Rent * 12 (formula)
-    row.getCell(7).value = { formula: `B${rowNum}*C${rowNum}*12` } as ExcelJS.CellFormulaValue;
+    // Renovated Rent = Market Rent + Premium (col E + F)
+    row.getCell(7).value = { formula: `E${rowNum}+F${rowNum}` } as ExcelJS.CellFormulaValue;
+    // Annual GPR = Count * Current Rent * 12 (col C * D * 12)
+    row.getCell(8).value = { formula: `C${rowNum}*D${rowNum}*12` } as ExcelJS.CellFormulaValue;
 
-    for (let c = 2; c <= 7; c++) {
-      row.getCell(c).numFmt = c === 2 ? NUMBER_FMT : CURRENCY_FMT;
+    for (let c = 3; c <= 8; c++) {
+      row.getCell(c).numFmt = c === 3 ? NUMBER_FMT : CURRENCY_FMT;
       row.getCell(c).border = THIN_BORDER;
     }
-
+    // Borders for Unit # and Unit Type label cells
+    row.getCell(1).border = THIN_BORDER;
+    row.getCell(2).border = THIN_BORDER;
   }
 
   // Totals row
   const totalRowNum = unitMix.length + 2;
-  const totRow = ws.addRow(["TOTAL"]);
-  totRow.getCell(1).font = BOLD_FONT;
-  totRow.getCell(2).value = { formula: `SUM(B2:B${totalRowNum - 1})` } as ExcelJS.CellFormulaValue;
-  totRow.getCell(2).numFmt = NUMBER_FMT;
-  totRow.getCell(7).value = { formula: `SUM(G2:G${totalRowNum - 1})` } as ExcelJS.CellFormulaValue;
-  totRow.getCell(7).numFmt = CURRENCY_FMT;
+  const totRow = ws.addRow(["", "TOTAL"]);
+  totRow.getCell(2).font = BOLD_FONT;
+  totRow.getCell(3).value = { formula: `SUM(C2:C${totalRowNum - 1})` } as ExcelJS.CellFormulaValue;
+  totRow.getCell(3).numFmt = NUMBER_FMT;
+  totRow.getCell(8).value = { formula: `SUM(H2:H${totalRowNum - 1})` } as ExcelJS.CellFormulaValue;
+  totRow.getCell(8).numFmt = CURRENCY_FMT;
 
-  for (let c = 1; c <= 7; c++) {
+  for (let c = 1; c <= 8; c++) {
     totRow.getCell(c).font = BOLD_FONT;
     totRow.getCell(c).fill = LIGHT_FILL;
     totRow.getCell(c).border = THIN_BORDER;
