@@ -36,7 +36,13 @@ interface RowDef {
   bold?: boolean;
   highlight?: boolean;
   indent?: boolean; // indented sub-row
+  pct?: boolean; // render value as a percentage (e.g. cap rate, CoC)
   children?: RowDef[];
+}
+
+function fmtPct(n: number): string {
+  if (!isFinite(n)) return "—";
+  return `${(n * 100).toFixed(2)}%`;
 }
 
 // Get value from annual summary, including opex_breakdown fields
@@ -113,14 +119,17 @@ export function ProFormaTable({
         { key: "utilities", label: "Utilities", negative: true, indent: true },
         { key: "admin_legal_marketing", label: "Admin / Legal / Mktg", negative: true, indent: true },
         { key: "contract_services", label: "Contract Services", negative: true, indent: true },
-        { key: "reserves", label: "Reserves", negative: true, indent: true },
       ],
     },
     { key: "noi", label: "Net Operating Income", bold: true, highlight: true },
     { key: "debt_service", label: "Less: Debt Service", negative: true },
-    { key: "cash_flow_before_capex", label: "Cash Flow before CapEx", bold: true },
+    { key: "cash_flow_before_capex_and_reserves", label: "Cash Flow before CapEx & Reserves", bold: true },
+    { key: "reserves", label: "Less: Reserves", negative: true },
     { key: "capex", label: "Less: CapEx", negative: true },
     { key: "cash_flow", label: "Cash Flow", bold: true, highlight: true },
+    // Key per-period metrics (rendered as percentages)
+    { key: "cap_rate", label: "Cap Rate", pct: true },
+    { key: "cash_on_cash", label: "Cash-on-Cash Return", pct: true },
   ];
 
   // Flatten rows based on expanded state
@@ -280,6 +289,7 @@ export function ProFormaTable({
                   </td>
                   {annual.map((a) => {
                     const val = getAnnualValue(a, row.key);
+                    const display = row.pct ? fmtPct(val) : (row.negative ? `(${fmt(val)})` : fmt(val));
                     return (
                       <td
                         key={a.year}
@@ -291,26 +301,12 @@ export function ProFormaTable({
                           row.key === "cash_flow" && val < 0 ? "text-red-400" : ""
                         }`}
                       >
-                        {row.negative ? `(${fmt(val)})` : fmt(val)}
+                        {display}
                       </td>
                     );
                   })}
                 </tr>
               ))}
-              {/* Cash on Cash row */}
-              <tr className="border-t border-slate-700">
-                <td className="py-1.5 pr-4 text-slate-400 text-xs">
-                  Cash-on-Cash Return
-                </td>
-                {annual.map((a) => (
-                  <td
-                    key={a.year}
-                    className="text-right py-1.5 px-2 text-xs text-slate-400 tabular-nums"
-                  >
-                    {(a.cash_on_cash * 100).toFixed(1)}%
-                  </td>
-                ))}
-              </tr>
             </tbody>
           </table>
         ) : (
@@ -356,6 +352,7 @@ export function ProFormaTable({
                     const m = monthly[mIdx];
                     if (!m) return <td key={i} />;
                     const val = getMonthlyValue(m, row.key);
+                    const display = row.pct ? fmtPct(val) : (row.negative ? `(${fmtDetailed(val)})` : fmtDetailed(val));
                     return (
                       <td
                         key={i}
@@ -365,7 +362,7 @@ export function ProFormaTable({
                           row.key === "cash_flow" && val < 0 ? "text-red-400" : ""
                         }`}
                       >
-                        {row.negative ? `(${fmtDetailed(val)})` : fmtDetailed(val)}
+                        {display}
                       </td>
                     );
                   })}
