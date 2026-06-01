@@ -91,6 +91,7 @@ export async function generateExcelWorkbook(
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
   buildValidationSheet(wb, result);
+  buildReadmeSheet(wb);
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -809,3 +810,175 @@ function styleHeaderRow(row: ExcelJS.Row, colCount: number) {
   }
 }
 
+// ─── Read Me sheet ───────────────────────────────────────────
+// Underwriting cheat sheet — benchmarks and methodology notes.
+function buildReadmeSheet(wb: ExcelJS.Workbook) {
+  const ws = wb.addWorksheet("Read Me");
+  ws.getColumn(1).width = 42;
+  ws.getColumn(2).width = 28;
+  ws.getColumn(3).width = 28;
+  ws.getColumn(4).width = 32;
+
+  // Title
+  const title = ws.addRow(["Monument Equity — Underwriting Read Me"]);
+  title.getCell(1).font = { ...HEADER_FONT, size: 14 };
+  title.getCell(1).fill = HEADER_FILL;
+  ws.mergeCells(`A${title.number}:D${title.number}`);
+  ws.addRow([]);
+
+  const intro = ws.addRow([
+    "This sheet collects benchmarks for sanity-checking your underwriting. Numbers are ranges, not rules. Use judgment, especially for older small multifamily in tertiary markets.",
+  ]);
+  intro.getCell(1).font = { ...NORMAL_FONT, italic: true };
+  ws.mergeCells(`A${intro.number}:D${intro.number}`);
+  intro.getCell(1).alignment = { wrapText: true };
+  intro.height = 30;
+  ws.addRow([]);
+
+  // ─── Workbook guide ───
+  addSectionHeader(ws, "How to read this workbook", 4);
+  const sheets: [string, string][] = [
+    ["Summary", "Top-line metrics: IRR, EM, CoC, DSCR, Cap Rates. Quickest sanity check."],
+    ["Assumptions", "All inputs the engine used. Editable cells are highlighted."],
+    ["Monthly Pro Forma", "Cash flow built up monthly: GPR → EGI → OpEx → NOI → Debt → Reserves → CapEx → CF."],
+    ["Annual Pro Forma", "Same waterfall summed by year, with Cap Rate and Cash-on-Cash by year."],
+    ["Returns", "Equity waterfall, IRR/EM by hurdle, sources & uses."],
+    ["Sensitivity", "IRR / CoC under different exit cap and exit timing."],
+    ["Unit Mix", "Per-unit-type rents (current, market, premium) and totals."],
+    ["CapEx Schedule", "Per-unit renovation pacing, downtime, and project-level CapEx by month."],
+    ["Depreciation", "Cost-seg breakdown if accelerated depreciation is configured."],
+    ["Validation", "Engine self-checks: GPR + premium math, NOI = EGI - OpEx, CF = NOI - DS - Reserves - CapEx."],
+  ];
+  styleHeaderRow(ws.addRow(["Sheet", "What's on it"]), 2);
+  for (const [name, desc] of sheets) {
+    const r = ws.addRow([name, desc]);
+    r.getCell(1).font = BOLD_FONT;
+    r.getCell(2).font = NORMAL_FONT;
+    r.getCell(2).alignment = { wrapText: true };
+    r.getCell(1).border = THIN_BORDER;
+    r.getCell(2).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  // ─── Methodology notes ───
+  addSectionHeader(ws, "Methodology notes", 4);
+  const notes: string[] = [
+    "Reserves sit BELOW NOI (institutional convention). NOI = EGI − operating opex (no reserves). Reserves and CapEx are capital outflows shown below the line, before final Cash Flow.",
+    "Cap rates use NOI ÷ purchase price. Going-in = Year 1 NOI ÷ purchase price. Stabilized = end-of-hold NOI ÷ purchase price.",
+    "Operating expense ratio (OpEx ÷ EGI) excludes reserves. Add reserves back if comparing to brokers or appraisers who include them above the line.",
+    "Renovation rent ramp: unrenovated units pay the unrenovated basis (current/market). Renovated units pay the renovated basis (current/market + premium). Schedule is per-unit per CapEx assumptions.",
+    "Turnover cost rate only multiplies per-unit inputs. If you entered Turnover Cost as a total annual figure, no rate is applied — the entered value IS the annual cost.",
+  ];
+  for (const n of notes) {
+    const r = ws.addRow(["• " + n]);
+    r.getCell(1).font = NORMAL_FONT;
+    r.getCell(1).alignment = { wrapText: true };
+    ws.mergeCells(`A${r.number}:D${r.number}`);
+    r.height = 30;
+  }
+  ws.addRow([]);
+
+  // ─── NOI Margins ───
+  addSectionHeader(ws, "NOI margin (NOI ÷ EGI) — typical ranges by property class & age", 4);
+  styleHeaderRow(ws.addRow(["Class / Vintage", "Typical NOI Margin", "Notes"]), 3);
+  const noiMargins: [string, string, string][] = [
+    ["Class A — new construction (2010+)", "60% – 65%", "Lowest R&M, highest rents, on-site staff usually allocated efficiently."],
+    ["Class B — 1990s–2000s", "50% – 58%", "Mid-tier most common in value-add. Margin depends on tax/insurance burden."],
+    ["Class C — 1970s–1980s", "40% – 50%", "Older systems, higher R&M and turnover. Tax abatements (if any) widen this."],
+    ["Older small multifamily (pre-1970, <50 units)", "35% – 45%", "Typical Monument Equity target zone — expect higher R&M, payroll efficiency penalty for small size."],
+    ["Garden / suburban", "55% – 62%", "Generally healthier margin than urban high-rise of same class."],
+    ["Urban mid/high-rise", "45% – 55%", "Heavier payroll (24/7 staffing), utilities, and management overhead."],
+  ];
+  for (const [c, m, n] of noiMargins) {
+    const r = ws.addRow([c, m, n]);
+    r.getCell(1).font = NORMAL_FONT;
+    r.getCell(2).font = BOLD_FONT;
+    r.getCell(3).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(3).alignment = { wrapText: true };
+    for (let i = 1; i <= 3; i++) r.getCell(i).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  // ─── Expense ratios ───
+  addSectionHeader(ws, "Expense ratios — typical ranges by line item", 4);
+  styleHeaderRow(ws.addRow(["Line Item", "% of EGI", "$ Range", "Notes"]), 4);
+  const exp: [string, string, string, string][] = [
+    ["Real Estate Tax", "8% – 15%", "Varies widely by state", "NJ/IL/TX high; many Southern states under 5%. Re-assessment risk on sale."],
+    ["Insurance", "3% – 6%", "$250 – $500/unit/yr", "Rising fast post-2022. Hurricane states + wildfire states 2–3× this."],
+    ["Management Fee", "3% – 5%", "% of EGI", "Institutional 3–4%, smaller deals 4–5%. Watch for floor minimum."],
+    ["Repairs & Maintenance", "5% – 8%", "$400 – $700/unit/yr", "Older small MF often $600–$900. Include only routine — capital R&M goes in CapEx."],
+    ["Payroll", "6% – 10%", "$700 – $1,500/unit/yr", "Highest at small/urban properties; near zero at sub-50-unit with off-site mgmt."],
+    ["Utilities (landlord-paid)", "4% – 8%", "Varies by master-meter", "If submetered to tenants: ~0–2%. RUBS recovery typically nets 50–75%."],
+    ["Marketing / Admin", "1% – 3%", "$100 – $300/unit/yr", "Lower at stabilized; higher during lease-up or reno."],
+    ["Turnover Costs", "—", "$500 – $1,500/unit turn", "Cosmetic $200–$500; classic light reno $1,000–$1,500; full reno $5,000–$15,000."],
+    ["Reserves (below NOI)", "—", "$250 – $400/unit/yr", "Agency standard $250–$300; bridge/value-add lenders often require $400+."],
+  ];
+  for (const [l, p, d, n] of exp) {
+    const r = ws.addRow([l, p, d, n]);
+    r.getCell(1).font = BOLD_FONT;
+    r.getCell(2).font = NORMAL_FONT;
+    r.getCell(3).font = NORMAL_FONT;
+    r.getCell(4).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(4).alignment = { wrapText: true };
+    for (let i = 1; i <= 4; i++) r.getCell(i).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  // ─── DSCR benchmarks ───
+  addSectionHeader(ws, "Debt Service Coverage Ratio (DSCR) — lender benchmarks", 4);
+  styleHeaderRow(ws.addRow(["Loan Type", "Minimum DSCR", "Target DSCR", "Notes"]), 4);
+  const dscr: [string, string, string, string][] = [
+    ["Agency Permanent (Fannie/Freddie)", "1.20× – 1.25×", "1.30×+", "Tightest pricing. Year-1 actual; sometimes year-1 underwritten DSCR for new construction."],
+    ["Bank Permanent (life co, regional bank)", "1.25× – 1.35×", "1.35×+", "Recourse may be required below 1.25×. Stress-test at +100–200 bps."],
+    ["Bridge / Value-Add", "1.15× – 1.25×", "—", "Often IO during reno. Take-out DSCR (stabilized) is the binding constraint."],
+    ["Construction Takeout", "1.30× – 1.40×", "1.40×+", "Lenders model stabilized year debt service at a stressed rate."],
+    ["Owner conservative target", "1.35×+", "1.50×+", "Buffer for rate shock and lease-up risk. Critical for first-time syndicators."],
+  ];
+  for (const [l, min, tgt, n] of dscr) {
+    const r = ws.addRow([l, min, tgt, n]);
+    r.getCell(1).font = BOLD_FONT;
+    r.getCell(2).font = NORMAL_FONT;
+    r.getCell(3).font = NORMAL_FONT;
+    r.getCell(4).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(4).alignment = { wrapText: true };
+    for (let i = 1; i <= 4; i++) r.getCell(i).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  // ─── Cap rate / IRR / EM benchmarks ───
+  addSectionHeader(ws, "Return targets — by risk profile", 4);
+  styleHeaderRow(ws.addRow(["Strategy", "Going-In Cap", "Levered IRR", "Equity Multiple (5–7 yr)"]), 4);
+  const returns: [string, string, string, string][] = [
+    ["Core — Class A stabilized", "4.5% – 5.5%", "8% – 11%", "1.6× – 1.8×"],
+    ["Core-Plus — Class A/B light value-add", "5.0% – 6.0%", "11% – 14%", "1.8× – 2.0×"],
+    ["Value-Add — Class B/C with reno", "5.5% – 7.0%", "14% – 18%", "1.9× – 2.2×"],
+    ["Opportunistic — heavy lift / distressed", "6.5% – 8.0%+", "18%+", "2.0×+"],
+    ["Small MF value-add (Monument zone)", "6.5% – 8.5%", "16% – 22%", "1.8× – 2.3×"],
+  ];
+  for (const [s, c, irr, em] of returns) {
+    const r = ws.addRow([s, c, irr, em]);
+    r.getCell(1).font = BOLD_FONT;
+    for (let i = 2; i <= 4; i++) r.getCell(i).font = NORMAL_FONT;
+    for (let i = 1; i <= 4; i++) r.getCell(i).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  // Exit cap relationship
+  const exitNote = ws.addRow([
+    "Exit cap rate convention: budget 50 – 100 bps wider than going-in cap as a cushion for cap rate decompression. A flat or compressed exit cap is aggressive — flag it on review.",
+  ]);
+  exitNote.getCell(1).font = { ...NORMAL_FONT, italic: true };
+  exitNote.getCell(1).alignment = { wrapText: true };
+  ws.mergeCells(`A${exitNote.number}:D${exitNote.number}`);
+  exitNote.height = 30;
+  ws.addRow([]);
+
+  // Sources footer
+  const src = ws.addRow([
+    "Sources: CBRE Investor Intentions Survey, Marcus & Millichap Multifamily Forecast, NMHC Industry Reports, GreenStreet Cap Rate data, Fannie Mae / Freddie Mac DUS guidelines, and syndicator playbooks. Refresh annually.",
+  ]);
+  src.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: "FF6C757D" } };
+  src.getCell(1).alignment = { wrapText: true };
+  ws.mergeCells(`A${src.number}:D${src.number}`);
+  src.height = 30;
+}
