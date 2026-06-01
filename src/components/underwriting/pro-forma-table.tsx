@@ -4,13 +4,16 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { MonthlyRow, AnnualSummary, OpexBreakdown, RentBasis } from "@/lib/underwriting";
+import type { MonthlyRow, AnnualSummary, OpexBreakdown, UnrenovatedBasis, RenovatedBasis } from "@/lib/underwriting";
 
-const RENT_BASIS_LABELS: Record<RentBasis, string> = {
-  current: "Current Rents",
-  market: "Market Rents",
-  current_plus_reno: "Current + Reno Premium",
-  market_plus_reno: "Market + Reno Premium",
+const UNRENOVATED_BASIS_LABELS: Record<UnrenovatedBasis, string> = {
+  current: "Current",
+  market: "Market",
+};
+
+const RENOVATED_BASIS_LABELS: Record<RenovatedBasis, string> = {
+  current_plus_premium: "Current + Premium",
+  market_plus_premium: "Market + Premium",
 };
 
 function fmt(n: number): string {
@@ -58,13 +61,17 @@ function getMonthlyValue(m: MonthlyRow, key: string): number {
 export function ProFormaTable({
   monthly,
   annual,
-  rentBasis,
-  onRentBasisChange,
+  unrenovatedBasis,
+  renovatedBasis,
+  onUnrenovatedBasisChange,
+  onRenovatedBasisChange,
 }: {
   monthly: MonthlyRow[];
   annual: AnnualSummary[];
-  rentBasis?: RentBasis;
-  onRentBasisChange?: (basis: RentBasis) => void;
+  unrenovatedBasis?: UnrenovatedBasis;
+  renovatedBasis?: RenovatedBasis;
+  onUnrenovatedBasisChange?: (basis: UnrenovatedBasis) => void;
+  onRenovatedBasisChange?: (basis: RenovatedBasis) => void;
 }) {
   const [view, setView] = useState<ViewMode>("annual");
   const [selectedYear, setSelectedYear] = useState(1);
@@ -143,24 +150,48 @@ export function ProFormaTable({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-white text-base">Pro Forma</CardTitle>
           <div className="flex items-center gap-3">
-            {onRentBasisChange && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Rents:</span>
-                <select
-                  value={rentBasis || "current"}
-                  onChange={(ev) => onRentBasisChange(ev.target.value as RentBasis)}
-                  className="bg-slate-800 border border-slate-700 text-slate-300 text-xs h-7 rounded-md px-2 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none pr-6"
-                  style={{
-                    backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
-                    backgroundRepeat: "no-repeat",
-                    backgroundPosition: "right 6px center",
-                    backgroundSize: "10px",
-                  }}
-                >
-                  {(Object.keys(RENT_BASIS_LABELS) as RentBasis[]).map((k) => (
-                    <option key={k} value={k}>{RENT_BASIS_LABELS[k]}</option>
-                  ))}
-                </select>
+            {(onUnrenovatedBasisChange || onRenovatedBasisChange) && (
+              <div className="flex items-center gap-3">
+                {onUnrenovatedBasisChange && (
+                  <div className="flex items-center gap-1.5" title="Rent for unrenovated units">
+                    <span className="text-xs text-slate-500">Unrenovated:</span>
+                    <select
+                      value={unrenovatedBasis || "current"}
+                      onChange={(ev) => onUnrenovatedBasisChange(ev.target.value as UnrenovatedBasis)}
+                      className="bg-slate-800 border border-slate-700 text-slate-300 text-xs h-7 rounded-md px-2 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none pr-6"
+                      style={{
+                        backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "right 6px center",
+                        backgroundSize: "10px",
+                      }}
+                    >
+                      {(Object.keys(UNRENOVATED_BASIS_LABELS) as UnrenovatedBasis[]).map((k) => (
+                        <option key={k} value={k}>{UNRENOVATED_BASIS_LABELS[k]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {onRenovatedBasisChange && (
+                  <div className="flex items-center gap-1.5" title="Rent for renovated units (per the CapEx renovation schedule)">
+                    <span className="text-xs text-slate-500">Renovated:</span>
+                    <select
+                      value={renovatedBasis || "current_plus_premium"}
+                      onChange={(ev) => onRenovatedBasisChange(ev.target.value as RenovatedBasis)}
+                      className="bg-slate-800 border border-slate-700 text-slate-300 text-xs h-7 rounded-md px-2 outline-none hover:border-slate-500 focus:border-blue-500 transition-colors appearance-none pr-6"
+                      style={{
+                        backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 20 20'><path fill='%2394a3b8' d='M5 7l5 6 5-6z'/></svg>\")",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "right 6px center",
+                        backgroundSize: "10px",
+                      }}
+                    >
+                      {(Object.keys(RENOVATED_BASIS_LABELS) as RenovatedBasis[]).map((k) => (
+                        <option key={k} value={k}>{RENOVATED_BASIS_LABELS[k]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex items-center gap-1">

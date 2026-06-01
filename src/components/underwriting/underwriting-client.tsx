@@ -10,7 +10,8 @@ import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
-import type { UnderwritingResult, RentBasis } from "@/lib/underwriting";
+import { resolveProformaBases } from "@/lib/underwriting";
+import type { UnderwritingResult, RentBasis, UnrenovatedBasis, RenovatedBasis, ExitAssumptions } from "@/lib/underwriting";
 import { uploadFile } from "@/lib/upload-client";
 
 interface ScenarioWithResult {
@@ -622,18 +623,42 @@ function ScenarioAnalysis({
       />
 
       {/* Pro Forma */}
-      <ProFormaTable
-        monthly={result.monthly}
-        annual={result.annual}
-        rentBasis={
-          (scenario.exit_assumptions as { proforma_rent_basis?: RentBasis })
-            ?.proforma_rent_basis
-        }
-        onRentBasisChange={(basis: RentBasis) => {
-          const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
-          onUpdate({ exit_assumptions: { ...currentExit, proforma_rent_basis: basis } });
-        }}
-      />
+      {(() => {
+        const exit = (scenario.exit_assumptions ?? {}) as Partial<ExitAssumptions>;
+        const bases = resolveProformaBases(exit as ExitAssumptions);
+        return (
+          <ProFormaTable
+            monthly={result.monthly}
+            annual={result.annual}
+            unrenovatedBasis={bases.unrenovated}
+            renovatedBasis={bases.renovated}
+            onUnrenovatedBasisChange={(basis: UnrenovatedBasis) => {
+              const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
+              onUpdate({
+                exit_assumptions: {
+                  ...currentExit,
+                  proforma_unrenovated_basis: basis,
+                  // Preserve renovated side from the resolved bases (handles legacy migration)
+                  proforma_renovated_basis: bases.renovated,
+                  // Clear legacy combined field so the new split takes precedence
+                  proforma_rent_basis: undefined,
+                },
+              });
+            }}
+            onRenovatedBasisChange={(basis: RenovatedBasis) => {
+              const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
+              onUpdate({
+                exit_assumptions: {
+                  ...currentExit,
+                  proforma_unrenovated_basis: bases.unrenovated,
+                  proforma_renovated_basis: basis,
+                  proforma_rent_basis: undefined,
+                },
+              });
+            }}
+          />
+        );
+      })()}
 
       {/* Sensitivity */}
       <SensitivityGrid
