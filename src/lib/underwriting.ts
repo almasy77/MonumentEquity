@@ -268,6 +268,10 @@ export interface ScenarioInputs {
 
 // ─── Output Types ────────────────────────────────────────────
 
+// OpexBreakdown contains only OPERATING expenses (above NOI). Reserves are
+// treated as a capital item below NOI — see MonthlyRow.reserves / AnnualSummary.reserves.
+// This is the institutional treatment: NOI = EGI - operating opex (no reserves);
+// reserves and CapEx sit below NOI as capital outflows.
 export interface OpexBreakdown {
   management_fees: number;
   payroll: number;
@@ -278,7 +282,6 @@ export interface OpexBreakdown {
   utilities: number;
   admin_legal_marketing: number;
   contract_services: number;
-  reserves: number;
 }
 
 export interface MonthlyRow {
@@ -290,20 +293,26 @@ export interface MonthlyRow {
   concessions: number;
   other_income: number;
   egi: number; // Effective Gross Income
-  // Expenses
+  // Operating Expenses (excludes reserves)
   total_opex: number;
   opex_breakdown: OpexBreakdown;
-  // NOI
+  // NOI = EGI - operating opex
   noi: number;
   // Debt Service
   debt_service: number;
-  // Cash Flow before CapEx
-  cash_flow_before_capex: number; // NOI - debt service
-  // CapEx
+  // Cash Flow before CapEx & Reserves = NOI - debt service
+  cash_flow_before_capex_and_reserves: number;
+  // Capital items (below NOI)
+  reserves: number;
+  // Cash Flow before CapEx = NOI - debt service - reserves
+  cash_flow_before_capex: number;
   capex: number;
-  // Cash Flow
-  cash_flow: number; // NOI - debt service - capex
+  // Cash Flow = NOI - debt service - reserves - capex
+  cash_flow: number;
   cumulative_cash_flow: number;
+  // Annualized per-period metrics
+  cap_rate: number; // NOI * 12 / purchase_price
+  cash_on_cash: number; // cash_flow * 12 / total_equity
 }
 
 export interface AnnualSummary {
@@ -318,10 +327,13 @@ export interface AnnualSummary {
   opex_breakdown: OpexBreakdown;
   noi: number;
   debt_service: number;
+  cash_flow_before_capex_and_reserves: number;
+  reserves: number;
   cash_flow_before_capex: number;
   capex: number;
   cash_flow: number;
   cumulative_cash_flow: number;
+  cap_rate: number; // annual NOI / purchase_price
   cash_on_cash: number; // annual cash flow / total equity
 }
 
@@ -500,9 +512,10 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
       admin_legal_marketing: resolveOpexMonthly(oi?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", opexCtx),
       contract_services: svcSubSum !== null ? svcSubSum : resolveOpexMonthly(oi?.contract_services, expenses.contract_services, "total_annual", opexCtx),
-      reserves: resolveOpexMonthly(oi?.reserves, expenses.reserves_per_unit, "per_unit_annual", opexCtx),
     };
+    // total_opex = operating expenses only. Reserves are tracked separately below NOI.
     const monthlyOpex = Object.values(opexBk).reduce((s, v) => s + v, 0);
+    const monthlyReserves = resolveOpexMonthly(oi?.reserves, expenses.reserves_per_unit, "per_unit_annual", opexCtx);
 
     const noi = egi - monthlyOpex;
 
@@ -512,9 +525,14 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     // CapEx for this month
     const monthCapex = calculateMonthCapex(capex, m);
 
-    const cashFlowBeforeCapex = noi - ds;
+    const cashFlowBeforeCapexAndReserves = noi - ds;
+    const cashFlowBeforeCapex = cashFlowBeforeCapexAndReserves - monthlyReserves;
     const cashFlow = cashFlowBeforeCapex - monthCapex;
     cumulativeCF += cashFlow;
+
+    // Per-period metrics (annualized for readability)
+    const periodCapRate = purchase.purchase_price > 0 ? (noi * 12) / purchase.purchase_price : 0;
+    const periodCoC = totalEquity > 0 ? (cashFlow * 12) / totalEquity : 0;
 
     monthly.push({
       month: m,
@@ -528,10 +546,14 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       opex_breakdown: opexBk,
       noi,
       debt_service: ds,
+      cash_flow_before_capex_and_reserves: cashFlowBeforeCapexAndReserves,
+      reserves: monthlyReserves,
       cash_flow_before_capex: cashFlowBeforeCapex,
       capex: monthCapex,
       cash_flow: cashFlow,
       cumulative_cash_flow: cumulativeCF,
+      cap_rate: periodCapRate,
+      cash_on_cash: periodCoC,
     });
   }
 
@@ -547,6 +569,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const annualCF = sum((r) => r.cash_flow);
     annualCumulativeCF += annualCF;
 
+    const annualNOI = sum((r) => r.noi);
     annual.push({
       year: y + 1,
       gpr: sum((r) => r.gpr),
@@ -566,14 +589,16 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
         utilities: sum((r) => r.opex_breakdown.utilities),
         admin_legal_marketing: sum((r) => r.opex_breakdown.admin_legal_marketing),
         contract_services: sum((r) => r.opex_breakdown.contract_services),
-        reserves: sum((r) => r.opex_breakdown.reserves),
       },
-      noi: sum((r) => r.noi),
+      noi: annualNOI,
       debt_service: sum((r) => r.debt_service),
+      cash_flow_before_capex_and_reserves: sum((r) => r.cash_flow_before_capex_and_reserves),
+      reserves: sum((r) => r.reserves),
       cash_flow_before_capex: sum((r) => r.cash_flow_before_capex),
       capex: sum((r) => r.capex),
       cash_flow: annualCF,
       cumulative_cash_flow: annualCumulativeCF,
+      cap_rate: purchase.purchase_price > 0 ? annualNOI / purchase.purchase_price : 0,
       cash_on_cash: totalEquity > 0 ? annualCF / totalEquity : 0,
     });
   }
@@ -1064,6 +1089,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     const sTaxCtx = { ...sCtx, escalation: taxEscalation };
     const utilSubSumS = resolveSublinesAnnual(oiS?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
     const svcSubSumS = resolveSublinesAnnual(oiS?.services_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
+    // Operating opex (excludes reserves — those are tracked separately below NOI)
     const annualOpex =
       resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
       resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
@@ -1077,8 +1103,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
       resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
-      (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx)) +
-      resolveOpexAnnual(oiS?.reserves, expenses.reserves_per_unit, "per_unit_annual", sCtx);
+      (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx));
+    const annualReserves = resolveOpexAnnual(oiS?.reserves, expenses.reserves_per_unit, "per_unit_annual", sCtx);
 
     const annualNOI = annualEGI - annualOpex;
 
@@ -1094,7 +1120,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       annualCapex += calculateMonthCapex(capex, m);
     }
 
-    annualCashFlows.push(annualNOI - annualDS - annualCapex);
+    // Cash flow subtracts reserves AND capex below NOI
+    annualCashFlows.push(annualNOI - annualDS - annualReserves - annualCapex);
   }
 
   // Exit NOI: use end-of-hold renovation count
@@ -1123,6 +1150,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const eTaxCtx = { ...eCtx, escalation: taxEsc };
   const utilSubSumE = resolveSublinesAnnual(oiE?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, eCtx);
   const svcSubSumE = resolveSublinesAnnual(oiE?.services_sublines as Record<string, OpexInput | undefined> | undefined, eCtx);
+  // Exit NOI uses operating opex only (excludes reserves) — institutional convention
   const exitOpex =
     resolveOpexAnnual(oiE?.management_fees, expenses.management_fee_rate, "pct_egi", eCtx) +
     resolveOpexAnnual(oiE?.payroll, expenses.payroll_annual, "total_annual", eCtx) +
@@ -1136,8 +1164,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
     resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
-    (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx)) +
-    resolveOpexAnnual(oiE?.reserves, expenses.reserves_per_unit, "per_unit_annual", eCtx);
+    (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx));
   const exitNOI = exitEGI - exitOpex;
 
   const loanBalance = calculateLoanBalance(
