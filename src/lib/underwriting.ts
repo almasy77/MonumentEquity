@@ -209,13 +209,51 @@ export interface DepreciationAssumptions {
 
 export type RentBasis = "current" | "market" | "current_plus_reno" | "market_plus_reno";
 
+// Pro forma rent basis is split into two independent choices so renovation
+// timing can be honored: unrenovated units pay one base, renovated units pay
+// another (typically with the renovation premium applied).
+export type UnrenovatedBasis = "current" | "market";
+export type RenovatedBasis = "current_plus_premium" | "market_plus_premium";
+
 export interface ExitAssumptions {
   hold_period_years: number;
   exit_cap_rate: number;
   selling_cost_rate: number;
   sale_price?: number; // if provided, overrides exit_cap_rate-derived value
   sensitivity_rent_basis?: RentBasis; // which rents to use in sensitivity grid
-  proforma_rent_basis?: RentBasis; // which rents to use in pro forma (default: "current")
+  /** @deprecated Use proforma_unrenovated_basis + proforma_renovated_basis. Kept for backwards compat. */
+  proforma_rent_basis?: RentBasis;
+  proforma_unrenovated_basis?: UnrenovatedBasis;
+  proforma_renovated_basis?: RenovatedBasis;
+}
+
+/**
+ * Resolve the two pro forma rent bases. If the new split fields are set, use
+ * them. Otherwise fall back to the legacy combined field with a sensible map:
+ *   current            -> unrenovated=current, renovated=current_plus_premium
+ *   market             -> unrenovated=market,  renovated=market_plus_premium
+ *   current_plus_reno  -> unrenovated=current, renovated=current_plus_premium
+ *   market_plus_reno   -> unrenovated=market,  renovated=market_plus_premium
+ * Note: the old "_plus_reno" values used to short-circuit the renovation
+ * schedule and treat all units as renovated from month 1. Under the split
+ * model, the renovation schedule is always respected.
+ */
+export function resolveProformaBases(exit: ExitAssumptions): {
+  unrenovated: UnrenovatedBasis;
+  renovated: RenovatedBasis;
+} {
+  if (exit.proforma_unrenovated_basis && exit.proforma_renovated_basis) {
+    return {
+      unrenovated: exit.proforma_unrenovated_basis,
+      renovated: exit.proforma_renovated_basis,
+    };
+  }
+  const legacy = exit.proforma_rent_basis;
+  const isMarket = legacy === "market" || legacy === "market_plus_reno";
+  return {
+    unrenovated: isMarket ? "market" : "current",
+    renovated: isMarket ? "market_plus_premium" : "current_plus_premium",
+  };
 }
 
 export interface ScenarioInputs {
@@ -392,9 +430,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
 
-  const pfRentBasis: RentBasis = exit.proforma_rent_basis || "current";
-  // When basis is "*_plus_reno", treat all units as fully renovated from month 1
-  const pfHasRenoAllUnits = pfRentBasis === "current_plus_reno" || pfRentBasis === "market_plus_reno";
+  const { unrenovated: pfUnrenBasis, renovated: pfRenoBasis } = resolveProformaBases(exit);
 
   for (let m = 1; m <= totalMonths; m++) {
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
@@ -423,20 +459,16 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       // Paying unrenovated = total - paying renovated - offline
       const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
 
-      // Base rent per the selected pro forma basis (current vs market)
-      const baseRentRaw = (pfRentBasis === "market" || pfRentBasis === "market_plus_reno")
-        ? unit.market_rent
-        : unit.current_rent;
-      const baseRent = baseRentRaw * monthlyRentGrowth;
-      const renovatedRent = (baseRentRaw + unit.renovated_rent_premium) * monthlyRentGrowth;
+      // Unrenovated units pay the unrenovated basis (current OR market).
+      // Renovated units pay the renovated basis (current OR market) + the renovation premium.
+      // The two bases are independent — e.g. unrenovated=current, renovated=market+premium
+      // models holding leases at current rents until renovation, then pushing to market+premium.
+      const unrenBase = pfUnrenBasis === "market" ? unit.market_rent : unit.current_rent;
+      const renoBase = pfRenoBasis === "market_plus_premium" ? unit.market_rent : unit.current_rent;
+      const unrenovatedRent = unrenBase * monthlyRentGrowth;
+      const renovatedRent = (renoBase + unit.renovated_rent_premium) * monthlyRentGrowth;
 
-      if (pfHasRenoAllUnits) {
-        // "*_plus_reno": assume all units already renovated — reno premium applied to every paying unit
-        const payingAll = payingUnrenovatedInType + payingRenovatedInType;
-        gpr += payingAll * renovatedRent;
-      } else {
-        gpr += payingUnrenovatedInType * baseRent + payingRenovatedInType * renovatedRent;
-      }
+      gpr += payingUnrenovatedInType * unrenovatedRent + payingRenovatedInType * renovatedRent;
     }
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
