@@ -49,6 +49,7 @@ export interface FinancingAssumptions {
 }
 
 export interface UnitMix {
+  unit_number?: string; // free-text label, e.g. "Apt 101" or "101-108". Display-only.
   type: string; // e.g. "1BR/1BA"
   count: number;
   current_rent: number;
