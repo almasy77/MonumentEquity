@@ -51,6 +51,17 @@ function addDaysDate(dateStr: string | undefined, days: number): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
+// Today's local-time date as "YYYY-MM-DD". Using local time (not UTC) so the
+// LOI shows the date the user sees on their calendar, not a date that may have
+// rolled over to tomorrow in UTC if they're generating it in the evening.
+function todayLocalISODate(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function b(text: string): TextRun {
   return new TextRun({ text, bold: true, font: B_FONT, size: SZ });
 }
@@ -82,7 +93,9 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
   const earnest = purchase.earnest_money || 0;
   const ddDays = purchase.due_diligence_days || 45;
   const closingDays = purchase.closing_days || 60;
-  const loiDate = purchase.loi_date;
+  // Default to today's date when the user hasn't explicitly set one. An explicit
+  // value is respected (e.g. backdating, regenerating an existing LOI revision).
+  const loiDate = purchase.loi_date || todayLocalISODate();
   const buyer = purchase.buyer_entity || "Monument Equity LLC";
 
   const seller = contacts.find((c) => c.type === "seller");
