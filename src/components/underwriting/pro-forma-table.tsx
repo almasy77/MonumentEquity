@@ -130,6 +130,8 @@ export function ProFormaTable({
     // Key per-period metrics (rendered as percentages)
     { key: "cap_rate", label: "Cap Rate", pct: true },
     { key: "cash_on_cash", label: "Cash-on-Cash Return", pct: true },
+    // Rent ramp visibility — shows the absorption curve. Zero when ramp is disabled.
+    { key: "pct_marked_to_market", label: "% Marked-to-Market", pct: true },
   ];
 
   // Flatten rows based on expanded state
