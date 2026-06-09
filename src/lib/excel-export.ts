@@ -211,6 +211,28 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
   addInputRow(ws, "Other Income (Monthly)", inputs.revenue.other_income_monthly, CURRENCY_FMT);
   ws.addRow([]);
 
+  // Rent Ramp (Mark-to-Market) — surfaces phase-1 inputs only when enabled.
+  const ramp = inputs.revenue.rent_ramp;
+  if (ramp && ramp.enabled) {
+    addSectionHeader(ws, "Rent Ramp (Mark-to-Market)", 5);
+    addLabelValue(ws, "Mode", ramp.mode);
+    addInputRow(ws, "Absorption Months", ramp.absorption_months, NUMBER_FMT);
+    addInputRow(ws, "Turn Downtime (mo)", ramp.turn_downtime_months, NUMBER_FMT);
+    if (ramp.max_turns_per_month !== undefined) {
+      addInputRow(ws, "Max Turns / Month", ramp.max_turns_per_month, NUMBER_FMT);
+    }
+    if (ramp.initial_belowmarket_units !== undefined) {
+      addInputRow(ws, "Below-Market Units (override)", ramp.initial_belowmarket_units, NUMBER_FMT);
+    }
+    if (ramp.initial_vacant_units !== undefined) {
+      addInputRow(ws, "Vacant @ Acquisition", ramp.initial_vacant_units, NUMBER_FMT);
+    }
+    if (ramp.vacant_leaseup_months !== undefined) {
+      addInputRow(ws, "Vacant Lease-Up (mo)", ramp.vacant_leaseup_months, NUMBER_FMT);
+    }
+    ws.addRow([]);
+  }
+
   addSectionHeader(ws, "Expense Assumptions", 5);
 
   const MODE_LABELS: Record<OpexInputMode, string> = {
@@ -329,6 +351,22 @@ function buildMonthlySheet(
       }
     }
   }
+
+  // % Marked-to-Market — appended as a separate row because it's a percentage,
+  // not a currency value like the others above.
+  {
+    const rowData: (string | number)[] = ["% Marked-to-Market"];
+    for (let m = 0; m < totalMonths; m++) {
+      rowData.push(monthly[m]?.pct_marked_to_market ?? 0);
+    }
+    const row = ws.addRow(rowData);
+    row.getCell(1).font = NORMAL_FONT;
+    for (let i = 2; i <= totalMonths + 1; i++) {
+      row.getCell(i).numFmt = PCT_FMT;
+      row.getCell(i).font = NORMAL_FONT;
+      row.getCell(i).border = THIN_BORDER;
+    }
+  }
 }
 
 function buildAnnualSheet(
@@ -374,6 +412,7 @@ function buildAnnualSheet(
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
     { label: "Cap Rate", key: "cap_rate", pct: true },
     { label: "Cash-on-Cash Return", key: "cash_on_cash", pct: true },
+    { label: "% Marked-to-Market", key: "pct_marked_to_market", pct: true },
   ];
 
   for (const item of lineItems) {

@@ -64,6 +64,35 @@ export interface RevenueAssumptions {
   bad_debt_rate: number;
   concessions_rate: number;
   rent_growth_rate: number; // annual
+  rent_ramp?: RentRampAssumptions; // optional; absent = no ramp (legacy behavior)
+}
+
+/**
+ * Models the absorption of in-place leases to market rent over time.
+ *
+ * The renovation schedule (CapEx) governs WHEN units get the premium.
+ * The rent ramp governs WHEN below-market in-place units mark to market —
+ * independent of renovation, since a routine tenant turnover lets you re-lease
+ * at market without a gut reno.
+ *
+ * When `enabled` is false (the default), the engine ignores the ramp entirely
+ * and behaves exactly as before.
+ */
+export interface RentRampAssumptions {
+  enabled: boolean;
+  mode: "linear" | "schedule"; // "linear" = even rollover over absorption_months; "schedule" = explicit per-month counts
+
+  absorption_months: number; // months to fully mark the in-place book to market (e.g. 24)
+  initial_belowmarket_units?: number; // override the auto-derived count of in-place units below market
+  turn_downtime_months: number; // vacancy per unit on a market turn (separate from reno downtime)
+  max_turns_per_month?: number; // operational cap on simultaneous turns (e.g. 2)
+
+  // Vacant-at-acquisition units. Lease up first, then count as market-paying.
+  initial_vacant_units?: number;
+  vacant_leaseup_months?: number;
+
+  // Optional explicit cumulative absorption curve (mode="schedule"); length = totalMonths.
+  absorption_by_month?: number[];
 }
 
 export interface UtilitiesBreakdown {
@@ -314,6 +343,9 @@ export interface MonthlyRow {
   // Annualized per-period metrics
   cap_rate: number; // NOI * 12 / purchase_price
   cash_on_cash: number; // cash_flow * 12 / total_equity
+  // Rent ramp visibility: share of units paying market rent OR renovated rent.
+  // 0 when ramp is disabled. 1 = fully absorbed.
+  pct_marked_to_market: number;
 }
 
 export interface AnnualSummary {
@@ -336,6 +368,7 @@ export interface AnnualSummary {
   cumulative_cash_flow: number;
   cap_rate: number; // annual NOI / purchase_price
   cash_on_cash: number; // annual cash flow / total equity
+  pct_marked_to_market: number; // year-end snapshot of mark-to-market progress
 }
 
 export interface DepreciationResult {
@@ -439,6 +472,20 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   const renovatedByMonth = buildRenovationSchedule(capex, totalMonths);
   const offlineByMonth = buildDowntimeSchedule(capex, renovatedByMonth, totalMonths);
 
+  // ── Absorption (mark-to-market) schedule ──
+  // Independent of the renovation schedule. When ramp.enabled=false, both
+  // arrays are all zeros and the GPR loop below falls through to the legacy
+  // 2-bucket logic — byte-for-byte backwards compatible with prior behavior.
+  const ramp = revenue.rent_ramp;
+  const rampEnabled = !!(ramp && ramp.enabled);
+  const { markedToMarketByMonth, turnOfflineByMonth } = buildAbsorptionSchedule(
+    ramp,
+    revenue.unit_mix,
+    totalMonths,
+  );
+  // Track % of units marked-to-market per month, for the pro forma surface.
+  const pctMarkedByMonth = new Array<number>(totalMonths).fill(0);
+
   // ── Monthly Pro Forma ──
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
@@ -449,9 +496,13 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
     const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
 
-    // GPR: sum across unit mix, accounting for renovated and offline units
+    // GPR: sum across unit mix, accounting for renovated, market-turned, and offline units
     let gpr = 0;
-    const totalOffline = offlineByMonth[m - 1];
+    const totalRenoOffline = offlineByMonth[m - 1];
+    const totalTurnOffline = turnOfflineByMonth[m - 1];
+    // Total offline = reno-offline ∪ turn-offline. Sum and cap at totalUnits to avoid
+    // overshooting in the rare case both schedules collide.
+    const totalOffline = Math.min(totalRenoOffline + totalTurnOffline, totalUnits);
     // When downtime is enabled, units completing THIS month are still offline,
     // so paying renovated = previous month's cumulative (their downtime has passed).
     // When downtime is disabled, units earn renovated rent immediately on completion.
@@ -459,29 +510,64 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       ? (m >= 2 ? renovatedByMonth[m - 2] : 0)
       : renovatedByMonth[m - 1];
 
+    // Absorption: units that have completed market turn. Renovated units always
+    // pay renovated rent regardless of absorption (a reno implies a turn).
+    const totalMarkedToMarket = markedToMarketByMonth[m - 1];
+    // Surface % of units marked-to-market (renovated implies turned-to-market).
+    pctMarkedByMonth[m - 1] = totalUnits > 0
+      ? Math.min(1, (totalMarkedToMarket + totalPayingRenovated) / totalUnits)
+      : 0;
+
     for (const unit of revenue.unit_mix) {
       const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
       const payingRenovatedInType = Math.min(
         Math.floor(totalPayingRenovated * unitShare),
         unit.count
       );
-      const offlineInType = Math.min(
-        Math.floor(totalOffline * unitShare),
-        unit.count
-      );
-      // Paying unrenovated = total - paying renovated - offline
-      const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
+      // Legacy path caps offline at unit.count (matches pre-ramp behavior exactly).
+      // 4-bucket path caps offline at unit.count - payingRenovated, since renovated and offline
+      // are disjoint by construction and the tighter cap is needed for the invariant to hold.
+      const offlineInType = rampEnabled
+        ? Math.min(Math.floor(totalOffline * unitShare), unit.count - payingRenovatedInType)
+        : Math.min(Math.floor(totalOffline * unitShare), unit.count);
 
-      // Unrenovated units pay the unrenovated basis (current OR market).
-      // Renovated units pay the renovated basis (current OR market) + the renovation premium.
-      // The two bases are independent — e.g. unrenovated=current, renovated=market+premium
-      // models holding leases at current rents until renovation, then pushing to market+premium.
-      const unrenBase = pfUnrenBasis === "market" ? unit.market_rent : unit.current_rent;
       const renoBase = pfRenoBasis === "market_plus_premium" ? unit.market_rent : unit.current_rent;
-      const unrenovatedRent = unrenBase * monthlyRentGrowth;
       const renovatedRent = (renoBase + unit.renovated_rent_premium) * monthlyRentGrowth;
 
-      gpr += payingUnrenovatedInType * unrenovatedRent + payingRenovatedInType * renovatedRent;
+      if (rampEnabled) {
+        // 4-bucket: in-place → market-turned → renovated, plus offline.
+        // Renovated units always pay renovated rent (reno implies turn).
+        // Remaining non-offline non-renovated units split between paying-market and paying-in-place.
+        const remainingNonRenoNonOffline = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
+        // Marked-to-market includes renovated implicitly, so subtract before allocating market bucket.
+        const marketCandidates = Math.max(0, totalMarkedToMarket - totalPayingRenovated);
+        const payingMarketInType = Math.min(
+          Math.floor(marketCandidates * unitShare),
+          remainingNonRenoNonOffline
+        );
+        const payingInPlaceInType = remainingNonRenoNonOffline - payingMarketInType;
+
+        // Invariant (dev only): four buckets sum to unit.count.
+        if (process.env.NODE_ENV !== "production") {
+          const sum = payingRenovatedInType + offlineInType + payingMarketInType + payingInPlaceInType;
+          if (sum !== unit.count) {
+            console.warn(`Rent ramp bucket invariant failed for ${unit.type} in month ${m}: ${sum} !== ${unit.count}`);
+          }
+        }
+
+        const inPlaceRent = unit.current_rent * monthlyRentGrowth;
+        const marketRent = unit.market_rent * monthlyRentGrowth;
+
+        gpr += payingInPlaceInType * inPlaceRent
+             + payingMarketInType * marketRent
+             + payingRenovatedInType * renovatedRent;
+      } else {
+        // Legacy 2-bucket path — preserve byte-for-byte behavior when ramp is off.
+        const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
+        const unrenBase = pfUnrenBasis === "market" ? unit.market_rent : unit.current_rent;
+        const unrenovatedRent = unrenBase * monthlyRentGrowth;
+        gpr += payingUnrenovatedInType * unrenovatedRent + payingRenovatedInType * renovatedRent;
+      }
     }
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
@@ -555,6 +641,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       cumulative_cash_flow: cumulativeCF,
       cap_rate: periodCapRate,
       cash_on_cash: periodCoC,
+      pct_marked_to_market: pctMarkedByMonth[m - 1],
     });
   }
 
@@ -601,6 +688,10 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       cumulative_cash_flow: annualCumulativeCF,
       cap_rate: purchase.purchase_price > 0 ? annualNOI / purchase.purchase_price : 0,
       cash_on_cash: totalEquity > 0 ? annualCF / totalEquity : 0,
+      // Year-end snapshot — use the last month of the year for a single value.
+      pct_marked_to_market: yearMonths.length > 0
+        ? yearMonths[yearMonths.length - 1].pct_marked_to_market
+        : 0,
     });
   }
 
@@ -852,6 +943,93 @@ function getUnitsPerMonth(capex: CapexAssumptions): number {
   return capex.units_per_month || 0;
 }
 
+/** Count of units priced below market in the rent roll (current_rent < market_rent). */
+function countBelowMarketUnits(unitMix: UnitMix[]): number {
+  return unitMix.reduce((acc, u) => acc + (u.current_rent < u.market_rent ? u.count : 0), 0);
+}
+
+/**
+ * Build the absorption (mark-to-market) schedule. Mirrors buildRenovationSchedule.
+ *
+ * Returns two parallel arrays of length totalMonths:
+ *   - markedToMarketByMonth[m] = cumulative units that have completed their market turn
+ *     and are paying market rent in month m+1 (1-indexed pro forma)
+ *   - turnOfflineByMonth[m]    = units currently in turn or lease-up downtime in that month
+ *
+ * Disabled / undefined ramp → returns all-zero arrays.
+ */
+function buildAbsorptionSchedule(
+  ramp: RentRampAssumptions | undefined,
+  unitMix: UnitMix[],
+  totalMonths: number,
+): { markedToMarketByMonth: number[]; turnOfflineByMonth: number[] } {
+  const marked = new Array<number>(totalMonths).fill(0);
+  const offline = new Array<number>(totalMonths).fill(0);
+
+  if (!ramp || !ramp.enabled) return { markedToMarketByMonth: marked, turnOfflineByMonth: offline };
+
+  const initialVacant = Math.max(0, ramp.initial_vacant_units ?? 0);
+  const vacantLeaseup = Math.max(0, ramp.vacant_leaseup_months ?? 0);
+  const belowMarket = Math.max(0, ramp.initial_belowmarket_units ?? countBelowMarketUnits(unitMix));
+
+  // Schedule mode: caller provided an explicit cumulative absorption curve.
+  if (ramp.mode === "schedule" && ramp.absorption_by_month && ramp.absorption_by_month.length > 0) {
+    const cap = belowMarket + initialVacant;
+    for (let m = 0; m < totalMonths; m++) {
+      marked[m] = Math.min(ramp.absorption_by_month[m] ?? marked[Math.max(0, m - 1)] ?? 0, cap);
+    }
+    // Vacant lease-up still adds offline months at the start.
+    for (let m = 0; m < Math.min(vacantLeaseup, totalMonths); m++) {
+      offline[m] += initialVacant;
+    }
+    return { markedToMarketByMonth: marked, turnOfflineByMonth: offline };
+  }
+
+  // Linear mode: spread `belowMarket` turns evenly over absorption_months, capped at max_turns_per_month.
+  const absorptionMonths = Math.max(1, ramp.absorption_months);
+  const turnDowntime = Math.max(0, ramp.turn_downtime_months);
+  const maxPerMonth = ramp.max_turns_per_month ?? Infinity;
+  const targetPerMonth = belowMarket / absorptionMonths;
+
+  // Compute the number of turns STARTED each month (real-valued; we track fractional cumulative).
+  const startedByMonth = new Array<number>(totalMonths).fill(0);
+  let cumStarted = 0;
+  for (let m = 0; m < totalMonths; m++) {
+    const remaining = belowMarket - cumStarted;
+    if (remaining <= 0) break;
+    const desired = Math.min(targetPerMonth, remaining, maxPerMonth);
+    startedByMonth[m] = desired;
+    cumStarted += desired;
+  }
+
+  // Cumulative started by month m (inclusive).
+  const cumStartedByMonth = new Array<number>(totalMonths).fill(0);
+  let running = 0;
+  for (let m = 0; m < totalMonths; m++) {
+    running += startedByMonth[m];
+    cumStartedByMonth[m] = running;
+  }
+
+  for (let m = 0; m < totalMonths; m++) {
+    // Marked-to-market = units whose downtime ended at or before month m.
+    // A unit started in month s exits downtime at month s + turnDowntime.
+    const exitedByMonth = m - turnDowntime;
+    const cumMarkedInPlace = exitedByMonth >= 0 ? cumStartedByMonth[exitedByMonth] : 0;
+
+    // Currently-in-downtime in-place turns = started - exitedDowntime
+    const offlineInPlace = cumStartedByMonth[m] - cumMarkedInPlace;
+
+    // Vacant units: offline during lease-up, then market-paying.
+    const vacantOffline = m < vacantLeaseup ? initialVacant : 0;
+    const vacantMarket = m >= vacantLeaseup ? initialVacant : 0;
+
+    marked[m] = cumMarkedInPlace + vacantMarket;
+    offline[m] = offlineInPlace + vacantOffline;
+  }
+
+  return { markedToMarketByMonth: marked, turnOfflineByMonth: offline };
+}
+
 function buildRenovationSchedule(
   capex: CapexAssumptions,
   totalMonths: number
@@ -1040,9 +1218,16 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const monthlyIO = loanAmount * monthlyRate;
   const rentBasis: RentBasis = exit.sensitivity_rent_basis || "current";
 
-  // Build renovation schedule for renovation-aware rent calculations
+  // Build renovation + absorption schedules. Ramp absent / disabled → all-zero absorption.
   const renovatedByMonth = buildRenovationSchedule(capex, totalMonths);
   const offlineByMonth = buildDowntimeSchedule(capex, renovatedByMonth, totalMonths);
+  const ramp = revenue.rent_ramp;
+  const rampEnabled = !!(ramp && ramp.enabled);
+  const { markedToMarketByMonth, turnOfflineByMonth } = buildAbsorptionSchedule(
+    ramp,
+    revenue.unit_mix,
+    totalMonths,
+  );
 
   const annualCashFlows: number[] = [];
 
@@ -1050,13 +1235,15 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     const yearGrowth = Math.pow(1 + revenue.rent_growth_rate, y);
     let annualGPR = 0;
 
-    // Use mid-year renovation count for annual approximation
+    // Use mid-year renovation + absorption counts as the annual approximation.
     const midYearMonth = y * 12 + 6;
-    const totalRenovated = midYearMonth < totalMonths ? renovatedByMonth[midYearMonth] : renovatedByMonth[totalMonths - 1];
-    // Sum offline units across the year's months for total lost unit-months
+    const monthIdx = Math.min(midYearMonth, totalMonths - 1);
+    const totalRenovated = renovatedByMonth[monthIdx];
+    const totalMarkedMid = markedToMarketByMonth[monthIdx];
+    // Sum unit-months offline (renovation downtime + turn downtime) across the year.
     let totalOfflineUnitMonths = 0;
     for (let mo = y * 12; mo < (y + 1) * 12 && mo < totalMonths; mo++) {
-      totalOfflineUnitMonths += offlineByMonth[mo];
+      totalOfflineUnitMonths += offlineByMonth[mo] + turnOfflineByMonth[mo];
     }
 
     for (const unit of revenue.unit_mix) {
@@ -1064,20 +1251,41 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       const renovatedInType = Math.min(Math.floor(totalRenovated * unitShare), unit.count);
       const offlineUnitMonthsInType = totalOfflineUnitMonths * unitShare;
 
-      const baseRent = getUnitRent(unit, rentBasis);
-      // Renovated units get the premium on top of whichever base rent is selected
-      const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
-      if (hasRenoPremium) {
-        // All units already include reno premium via getUnitRent
-        annualGPR += unit.count * baseRent * yearGrowth * 12;
+      if (rampEnabled) {
+        // 4-bucket annual: in-place → market → renovated. Renovation premium applied on the
+        // renovated basis (current or market) matching the main pro forma logic.
+        const marketCandidates = Math.max(0, totalMarkedMid - totalRenovated);
+        const remainingAfterReno = Math.max(0, unit.count - renovatedInType);
+        const payingMarketInType = Math.min(Math.floor(marketCandidates * unitShare), remainingAfterReno);
+        const payingInPlaceInType = remainingAfterReno - payingMarketInType;
+
+        // Renovated basis: same semantics as main path. Sensitivity rentBasis here drives the
+        // renovated rent's base — "market_plus_reno" → market base; otherwise current base.
+        const renoBase = rentBasis === "market" || rentBasis === "market_plus_reno"
+          ? unit.market_rent
+          : unit.current_rent;
+        const renovatedRent = renoBase + unit.renovated_rent_premium;
+
+        annualGPR += (
+          payingInPlaceInType * unit.current_rent
+          + payingMarketInType * unit.market_rent
+          + renovatedInType * renovatedRent
+        ) * yearGrowth * 12;
+        // Offline approximation: use current_rent as the lost-rent proxy (mix of in-place
+        // turn downtime and reno downtime; conservative approximation for Phase 1).
+        annualGPR -= offlineUnitMonthsInType * unit.current_rent * yearGrowth;
       } else {
-        // Only renovated units get the premium
-        const unrenovatedInType = unit.count - renovatedInType;
-        const renovatedRent = baseRent + unit.renovated_rent_premium;
-        annualGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * yearGrowth * 12;
+        const baseRent = getUnitRent(unit, rentBasis);
+        const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
+        if (hasRenoPremium) {
+          annualGPR += unit.count * baseRent * yearGrowth * 12;
+        } else {
+          const unrenovatedInType = unit.count - renovatedInType;
+          const renovatedRent = baseRent + unit.renovated_rent_premium;
+          annualGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * yearGrowth * 12;
+        }
+        annualGPR -= offlineUnitMonthsInType * baseRent * yearGrowth;
       }
-      // Subtract revenue lost from offline units (they lose baseRent each month offline)
-      annualGPR -= offlineUnitMonthsInType * baseRent * yearGrowth;
     }
 
     const annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
@@ -1125,21 +1333,39 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     annualCashFlows.push(annualNOI - annualDS - annualReserves - annualCapex);
   }
 
-  // Exit NOI: use end-of-hold renovation count
+  // Exit NOI: use end-of-hold renovation + absorption counts
   const lastYearGrowth = Math.pow(1 + revenue.rent_growth_rate, exit.hold_period_years - 1);
   const exitRenovated = renovatedByMonth[totalMonths - 1];
+  const exitMarked = markedToMarketByMonth[totalMonths - 1];
   let exitGPR = 0;
   for (const unit of revenue.unit_mix) {
     const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
     const renovatedInType = Math.min(Math.floor(exitRenovated * unitShare), unit.count);
-    const baseRent = getUnitRent(unit, rentBasis);
-    const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
-    if (hasRenoPremium) {
-      exitGPR += unit.count * baseRent * lastYearGrowth * 12;
+
+    if (rampEnabled) {
+      const remainingAfterReno = Math.max(0, unit.count - renovatedInType);
+      const marketCandidates = Math.max(0, exitMarked - exitRenovated);
+      const payingMarketInType = Math.min(Math.floor(marketCandidates * unitShare), remainingAfterReno);
+      const payingInPlaceInType = remainingAfterReno - payingMarketInType;
+      const renoBase = rentBasis === "market" || rentBasis === "market_plus_reno"
+        ? unit.market_rent
+        : unit.current_rent;
+      const renovatedRent = renoBase + unit.renovated_rent_premium;
+      exitGPR += (
+        payingInPlaceInType * unit.current_rent
+        + payingMarketInType * unit.market_rent
+        + renovatedInType * renovatedRent
+      ) * lastYearGrowth * 12;
     } else {
-      const unrenovatedInType = unit.count - renovatedInType;
-      const renovatedRent = baseRent + unit.renovated_rent_premium;
-      exitGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * lastYearGrowth * 12;
+      const baseRent = getUnitRent(unit, rentBasis);
+      const hasRenoPremium = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
+      if (hasRenoPremium) {
+        exitGPR += unit.count * baseRent * lastYearGrowth * 12;
+      } else {
+        const unrenovatedInType = unit.count - renovatedInType;
+        const renovatedRent = baseRent + unit.renovated_rent_premium;
+        exitGPR += (unrenovatedInType * baseRent + renovatedInType * renovatedRent) * lastYearGrowth * 12;
+      }
     }
   }
   const exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)

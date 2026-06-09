@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 
 interface Props {
@@ -17,6 +17,127 @@ interface Props {
   loading: boolean;
   dealT12?: T12Statement;
   dealUnits?: number;
+}
+
+function RentRampPanel({
+  ramp,
+  proformaUnrenovatedBasis,
+  vacancyRate,
+  onChange,
+}: {
+  ramp: RentRampAssumptions | undefined;
+  proformaUnrenovatedBasis: "current" | "market" | undefined;
+  vacancyRate: number;
+  onChange: (next: RentRampAssumptions | undefined) => void;
+}) {
+  const enabled = !!ramp?.enabled;
+
+  // Default values for first-time enablement (Phase 1 — linear absorption).
+  const DEFAULTS: RentRampAssumptions = {
+    enabled: true,
+    mode: "linear",
+    absorption_months: 24,
+    turn_downtime_months: 1,
+    max_turns_per_month: 2,
+    initial_vacant_units: 0,
+    vacant_leaseup_months: 2,
+  };
+
+  function setField<K extends keyof RentRampAssumptions>(field: K, value: RentRampAssumptions[K]) {
+    const current = ramp ?? DEFAULTS;
+    onChange({ ...current, [field]: value });
+  }
+
+  function toggleEnabled(next: boolean) {
+    if (next) onChange(ramp ? { ...ramp, enabled: true } : DEFAULTS);
+    else if (ramp) onChange({ ...ramp, enabled: false });
+    else onChange(undefined);
+  }
+
+  // Warning: market basis selected for pro forma but no ramp → year-1 rents jump to market.
+  const showMarketWithoutRampWarning = proformaUnrenovatedBasis === "market" && !enabled;
+
+  // Soft tooltip: with ramp on, vacancy_rate should be set to stabilized economic vacancy
+  // (~4–5%); the turn_downtime already captures value-add turnover loss.
+  const showVacancyTip = enabled && vacancyRate > 0.055;
+
+  return (
+    <div className="border-t border-slate-700 pt-3 mt-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs text-slate-300 font-medium">Rent Ramp (Mark-to-Market)</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Below-market in-place leases roll to market over time, independent of the renovation schedule.
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => toggleEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+          />
+          {enabled ? "Enabled" : "Disabled"}
+        </label>
+      </div>
+
+      {showMarketWithoutRampWarning && (
+        <div className="bg-amber-950/30 border border-amber-800/50 rounded p-2 text-[11px] text-amber-300">
+          <span className="font-semibold">Heads up:</span>{" "}
+          Pro Forma unrenovated basis is set to <span className="font-mono">Market</span> and Rent Ramp is off.
+          All in-place units will price at market from month 1, ignoring lease-up and tenant rollover.
+          Enable Rent Ramp, or set the Pro Forma unrenovated basis to <span className="font-mono">Current</span>.
+        </div>
+      )}
+
+      {enabled && (
+        <>
+          {showVacancyTip && (
+            <div className="bg-slate-800/50 border border-slate-700 rounded p-2 text-[11px] text-slate-400">
+              With Rent Ramp on, set <span className="font-mono">Vacancy</span> to stabilized economic vacancy (~4–5%).
+              The ramp&apos;s turn downtime already captures the value-add turnover loss.
+            </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <NumField
+              label="Absorption"
+              suffix="mo"
+              value={ramp?.absorption_months ?? DEFAULTS.absorption_months}
+              onChange={(v) => setField("absorption_months", v)}
+            />
+            <NumField
+              label="Turn Downtime"
+              suffix="mo"
+              value={ramp?.turn_downtime_months ?? DEFAULTS.turn_downtime_months}
+              onChange={(v) => setField("turn_downtime_months", v)}
+            />
+            <NumField
+              label="Max Turns / Mo"
+              value={ramp?.max_turns_per_month ?? DEFAULTS.max_turns_per_month ?? 2}
+              onChange={(v) => setField("max_turns_per_month", v)}
+            />
+            <NumField
+              label="Vacant @ Close"
+              suffix="units"
+              value={ramp?.initial_vacant_units ?? 0}
+              onChange={(v) => setField("initial_vacant_units", v)}
+            />
+            <NumField
+              label="Lease-Up"
+              suffix="mo"
+              value={ramp?.vacant_leaseup_months ?? DEFAULTS.vacant_leaseup_months ?? 2}
+              onChange={(v) => setField("vacant_leaseup_months", v)}
+            />
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Linear absorption: below-market units (current_rent &lt; market_rent) mark to market evenly over the
+            absorption window. Each turn includes the turn-downtime months as vacancy. Renovated units always
+            pay renovated rent regardless of absorption (a reno implies a turn).
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Section({
@@ -995,6 +1116,14 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
               </div>
             </div>
+
+            {/* Rent Ramp panel — models in-place leases marking to market over time */}
+            <RentRampPanel
+              ramp={r.rent_ramp}
+              proformaUnrenovatedBasis={exit.proforma_unrenovated_basis}
+              vacancyRate={r.vacancy_rate}
+              onChange={(next) => { setR({ ...r, rent_ramp: next }); markDirty(); }}
+            />
           </div>
         </Section>
 
