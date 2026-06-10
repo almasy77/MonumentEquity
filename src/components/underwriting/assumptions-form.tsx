@@ -19,6 +19,37 @@ interface Props {
   dealUnits?: number;
 }
 
+function UnitClassChip({
+  value,
+  onChange,
+}: {
+  value: "residential" | "commercial" | undefined;
+  onChange: (next: "residential" | "commercial" | undefined) => void;
+}) {
+  // Click to cycle: blank → residential → commercial → blank.
+  function cycle() {
+    if (!value) onChange("residential");
+    else if (value === "residential") onChange("commercial");
+    else onChange(undefined);
+  }
+  const label = value === "residential" ? "Res" : value === "commercial" ? "Com" : "+";
+  const cls = value === "residential"
+    ? "bg-emerald-500/10 text-emerald-400 border-emerald-700/40"
+    : value === "commercial"
+    ? "bg-amber-500/10 text-amber-400 border-amber-700/40"
+    : "bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300";
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      title="Click to cycle: Residential / Commercial / None. Informational only."
+      className={`text-[10px] px-1.5 h-4 rounded border font-medium tabular-nums leading-none ${cls}`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function RentRampPanel({
   ramp,
   proformaUnrenovatedBasis,
@@ -592,9 +623,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   // Unit mix helpers
   const unitMix = r.unit_mix || [{ type: "Average", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }];
 
-  function updateUnitMix(index: number, field: string, value: number | string) {
+  function updateUnitMix(index: number, field: string, value: number | string | undefined) {
     const updated = [...unitMix];
-    updated[index] = { ...updated[index], [field]: value };
+    const row = { ...updated[index] } as Record<string, unknown>;
+    if (value === undefined || value === "") {
+      delete row[field];
+    } else {
+      row[field] = value;
+    }
+    updated[index] = row as unknown as typeof updated[number];
     setR({ ...r, unit_mix: updated });
     markDirty();
   }
@@ -1002,11 +1039,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             {unitMix.map((unit, i) => (
               <div key={i} className="grid grid-cols-3 sm:grid-cols-8 gap-2 items-end">
                 <div>
-                  <Label className="text-xs text-slate-400">Unit #</Label>
+                  <Label className="text-xs text-slate-400 flex items-center justify-between">
+                    <span>Unit</span>
+                    {/* Mixed-use chip — informational only; does NOT affect totals. */}
+                    <UnitClassChip
+                      value={unit.unit_class}
+                      onChange={(c) => updateUnitMix(i, "unit_class", c ?? "")}
+                    />
+                  </Label>
                   <Input
                     value={unit.unit_number || ""}
                     onChange={(e) => updateUnitMix(i, "unit_number", e.target.value)}
-                    placeholder="e.g. 101"
+                    placeholder="e.g. Apartments, A-3"
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
                   />
                 </div>
@@ -1068,11 +1112,22 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               <Plus className="h-3 w-3 mr-1" /> Unit Type
             </Button>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
               <CurrencyField label="Other Income" value={r.other_income_monthly} suffix="/mo" onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
-              <PctField label="Vacancy" value={r.vacancy_rate} onChange={(v) => { setR({ ...r, vacancy_rate: v }); markDirty(); }} />
+              <div>
+                <PctField label="Vacancy" value={r.vacancy_rate} onChange={(v) => { setR({ ...r, vacancy_rate: v }); markDirty(); }} />
+                {r.rent_ramp?.enabled && (
+                  <p className="text-[10px] text-slate-500 mt-0.5">stabilized — ramp models turn vacancy</p>
+                )}
+              </div>
               <PctField label="Bad Debt" value={r.bad_debt_rate} onChange={(v) => { setR({ ...r, bad_debt_rate: v }); markDirty(); }} />
-              <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => { setE({ ...e, turnover_rate: v }); markDirty(); }} />
+              <PctField label="Concessions" value={r.concessions_rate ?? 0} onChange={(v) => { setR({ ...r, concessions_rate: v }); markDirty(); }} />
+              <div>
+                <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => { setE({ ...e, turnover_rate: v }); markDirty(); }} />
+                {r.rent_ramp?.enabled && (
+                  <p className="text-[10px] text-slate-500 mt-0.5">drives turn cost; ramp turns are costed separately</p>
+                )}
+              </div>
             </div>
 
             {/* Revenue totals */}
