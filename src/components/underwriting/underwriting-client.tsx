@@ -620,6 +620,7 @@ function ScenarioAnalysis({
         loading={loading}
         dealT12={deal.t12}
         dealUnits={deal.units}
+        year1Revenue={result.annual[0] ? result.annual[0].gpr + result.annual[0].other_income : undefined}
       />
 
       {/* Pro Forma */}

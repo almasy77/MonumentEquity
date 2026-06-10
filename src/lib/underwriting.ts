@@ -58,9 +58,22 @@ export interface UnitMix {
   unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
 }
 
+// Itemized breakdown of other income ($/mo per line). UI-only detail:
+// the engine reads other_income_monthly, which the form keeps in sync with
+// the sum of these sublines. RUBS / utility reimbursements do NOT go here —
+// they are netted in the Utilities expense section (negative line).
+export interface OtherIncomeSublines {
+  laundry?: number;
+  storage?: number;
+  parking?: number;
+  pet_admin?: number;
+  other?: number;
+}
+
 export interface RevenueAssumptions {
   unit_mix: UnitMix[];
-  other_income_monthly: number; // laundry, parking, pet fees, etc.
+  other_income_monthly: number; // laundry, parking, pet fees, etc. (sum of sublines when itemized)
+  other_income_sublines?: OtherIncomeSublines; // optional itemization; engine ignores (reads the total)
   vacancy_rate: number;
   bad_debt_rate: number;
   concessions_rate: number;
