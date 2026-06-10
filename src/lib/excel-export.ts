@@ -564,7 +564,7 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
   ];
 
   const headerRow = ws.addRow([
-    "Unit #", "Unit Type", "Count", "Current Rent", "Market Rent",
+    "Unit", "Unit Type", "Count", "Current Rent", "Market Rent",
     "Reno Premium", "Renovated Rent", "Annual GPR",
   ]);
   styleHeaderRow(headerRow, 8);

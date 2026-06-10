@@ -49,12 +49,13 @@ export interface FinancingAssumptions {
 }
 
 export interface UnitMix {
-  unit_number?: string; // free-text label, e.g. "Apt 101" or "101-108". Display-only.
+  unit_number?: string; // free-text label, e.g. "Apt 101" or "Apartments". Display-only.
   type: string; // e.g. "1BR/1BA"
   count: number;
-  current_rent: number;
+  current_rent: number; // average over occupied units (vacant units tracked via ramp.initial_vacant_units)
   market_rent: number;
   renovated_rent_premium: number; // additional rent after renovation
+  unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
 }
 
 export interface RevenueAssumptions {
@@ -136,6 +137,34 @@ export function applyTurnoverRate(
   if (!input) return resolved * rate;
   const isPerUnit = input.mode === "per_unit_annual" || input.mode === "per_unit_monthly";
   return isPerUnit ? resolved * rate : resolved;
+}
+
+/**
+ * Ramp-aware monthly turnover make-ready cost (Spec REVENUE_CARD §A1).
+ *
+ * Two components:
+ *   1. Non-reno market turns this month × per-unit make-ready cost. Reno turns
+ *      are absorbed by the renovation CapEx (the reno covers the make-ready),
+ *      so only NON-reno absorption turns book this cost. Captures the spike
+ *      during the absorption ramp.
+ *   2. Stabilized units × (annual turnover_rate / 12) × per-unit cost. Captures
+ *      ongoing steady-state churn on units that have already reached market or
+ *      been renovated.
+ *
+ * Called only when ramp.enabled === true. The legacy applyTurnoverRate path
+ * is preserved for backwards compat when ramp is off.
+ */
+export function computeRampTurnoverCost(args: {
+  perUnitCost: number;                // turnover_cost_per_unit, escalated
+  marketTurnsThisMonth: number;       // delta of markedToMarketByMonth
+  renoTurnsThisMonth: number;         // delta of renovatedByMonth
+  stabilizedUnits: number;            // payingMarket + payingRenovated this month
+  turnoverRate: number;               // annual churn rate (e.g. 0.10 = 10%/yr)
+}): number {
+  const nonRenoTurns = Math.max(0, args.marketTurnsThisMonth - args.renoTurnsThisMonth);
+  const rampMakeReady = nonRenoTurns * args.perUnitCost;
+  const ongoingChurn = args.stabilizedUnits * (args.turnoverRate / 12) * args.perUnitCost;
+  return rampMakeReady + ongoingChurn;
 }
 
 export interface UtilitiesSublines {
@@ -486,6 +515,22 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   // Track % of units marked-to-market per month, for the pro forma surface.
   const pctMarkedByMonth = new Array<number>(totalMonths).fill(0);
 
+  // Pre-compute per-month TURN counts from the cumulative schedules — used by the
+  // ramp-aware turnover cost (Spec REVENUE_CARD §A1: turnover follows actual turns).
+  const marketTurnsByMonth = new Array<number>(totalMonths).fill(0);
+  const renoTurnsByMonth = new Array<number>(totalMonths).fill(0);
+  for (let i = 0; i < totalMonths; i++) {
+    marketTurnsByMonth[i] = markedToMarketByMonth[i] - (i > 0 ? markedToMarketByMonth[i - 1] : 0);
+    renoTurnsByMonth[i] = renovatedByMonth[i] - (i > 0 ? renovatedByMonth[i - 1] : 0);
+  }
+
+  // Rent-growth anchoring (Spec REVENUE_CARD §A3, also RAMP_UP §3.4):
+  // monthlyRentGrowth = (1 + g)^yearIndex applies uniformly to current_rent,
+  // market_rent, and renovated_rent. Units that turn later inherit the current
+  // year's growth factor on the market basis — no per-unit catch-up compounding.
+  // This slightly OVERSTATES late-turn rents; intentional Phase-1 simplification.
+  // Do NOT switch to months-since-turn compounding without revisiting the spec.
+
   // ── Monthly Pro Forma ──
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
@@ -517,6 +562,10 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     pctMarkedByMonth[m - 1] = totalUnits > 0
       ? Math.min(1, (totalMarkedToMarket + totalPayingRenovated) / totalUnits)
       : 0;
+
+    // Accumulate stabilized-unit count across the inner unit-mix loop so the
+    // turnover-cost calculation (post-loop) can charge ongoing churn against it.
+    let stabilizedUnitsThisMonth = 0;
 
     for (const unit of revenue.unit_mix) {
       const unitShare = totalUnits > 0 ? unit.count / totalUnits : 0;
@@ -561,6 +610,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
         gpr += payingInPlaceInType * inPlaceRent
              + payingMarketInType * marketRent
              + payingRenovatedInType * renovatedRent;
+        // Stabilized = paying market OR renovated (i.e. NOT in-place and NOT offline).
+        stabilizedUnitsThisMonth += payingMarketInType + payingRenovatedInType;
       } else {
         // Legacy 2-bucket path — preserve byte-for-byte behavior when ramp is off.
         const payingUnrenovatedInType = Math.max(0, unit.count - payingRenovatedInType - offlineInType);
@@ -589,11 +640,19 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       management_fees: resolveOpexMonthly(oi?.management_fees, expenses.management_fee_rate, "pct_egi", opexCtx),
       payroll: resolveOpexMonthly(oi?.payroll, expenses.payroll_annual, "total_annual", opexCtx),
       repairs_maintenance: resolveOpexMonthly(oi?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", opexCtx),
-      turnover: applyTurnoverRate(
-        resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx),
-        oi?.turnover,
-        expenses.turnover_rate ?? 0.50,
-      ),
+      turnover: rampEnabled
+        ? computeRampTurnoverCost({
+            perUnitCost: (expenses.turnover_cost_per_unit ?? 0) * annualExpEscalation,
+            marketTurnsThisMonth: marketTurnsByMonth[m - 1],
+            renoTurnsThisMonth: renoTurnsByMonth[m - 1],
+            stabilizedUnits: stabilizedUnitsThisMonth,
+            turnoverRate: expenses.turnover_rate ?? 0.50,
+          })
+        : applyTurnoverRate(
+            resolveOpexMonthly(oi?.turnover, expenses.turnover_cost_per_unit, "per_unit_annual", opexCtx),
+            oi?.turnover,
+            expenses.turnover_rate ?? 0.50,
+          ),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
       property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
@@ -1299,6 +1358,10 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     const utilSubSumS = resolveSublinesAnnual(oiS?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
     const svcSubSumS = resolveSublinesAnnual(oiS?.services_sublines as Record<string, OpexInput | undefined> | undefined, sCtx);
     // Operating opex (excludes reserves — those are tracked separately below NOI)
+    // Note: the simplified (sensitivity) calc uses the flat turnover formula even when
+    // ramp is on. The main pro forma uses the ramp-aware computeRampTurnoverCost (spec
+    // REVENUE_CARD §A1). Sensitivity precision on turnover during the ramp is a known
+    // approximation — tracked as a follow-up.
     const annualOpex =
       resolveOpexAnnual(oiS?.management_fees, expenses.management_fee_rate, "pct_egi", sCtx) +
       resolveOpexAnnual(oiS?.payroll, expenses.payroll_annual, "total_annual", sCtx) +
