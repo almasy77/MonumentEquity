@@ -502,6 +502,7 @@ const OTHER_INCOME_LINES: { key: keyof OtherIncomeSublines; label: string }[] = 
   { key: "storage", label: "Storage" },
   { key: "parking", label: "Parking" },
   { key: "pet_admin", label: "Pet / Admin" },
+  { key: "utility_reimbursement", label: "Utility Reimb." },
   { key: "other", label: "Other" },
 ];
 
@@ -740,12 +741,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
 
   // Itemized Other Income (spec B6)
   const [oiExpanded, setOiExpanded] = useState(false);
+  // Entry period for the itemization panel: $/mo or $/yr. Values are STORED
+  // monthly; /yr entry divides by 12 (rounded to cents) on the way in.
+  const [oiPeriod, setOiPeriod] = useState<"mo" | "yr">("mo");
+  const oiMult = oiPeriod === "yr" ? 12 : 1;
   const oiHasSublines = Object.values(r.other_income_sublines ?? {}).some((v) => (v as number) > 0);
-  function updateOtherIncomeSubline(key: keyof OtherIncomeSublines, value: number) {
-    const next: OtherIncomeSublines = { ...(r.other_income_sublines ?? {}), [key]: value };
+  function updateOtherIncomeSubline(key: keyof OtherIncomeSublines, displayValue: number) {
+    const monthly = Math.round((displayValue / oiMult) * 100) / 100;
+    const next: OtherIncomeSublines = { ...(r.other_income_sublines ?? {}), [key]: monthly };
     const sum = Object.values(next).reduce((s: number, v) => s + ((v as number) || 0), 0);
     // Keep the canonical total in sync — the engine only reads other_income_monthly.
-    setR({ ...r, other_income_sublines: next, other_income_monthly: sum });
+    setR({ ...r, other_income_sublines: next, other_income_monthly: Math.round(sum * 100) / 100 });
     markDirty();
   }
 
@@ -1317,23 +1323,44 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
 
-            {/* Itemized Other Income (B6) — same pattern as Utilities sublines */}
+            {/* Itemized Other Income (B6) — same pattern as Utilities sublines.
+                Entry by month or by year; stored monthly. */}
             {oiExpanded && (
               <div className="border border-slate-800 rounded p-3 space-y-2">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized</span>
+                  <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setOiPeriod("mo")}
+                      className={`px-2 py-0.5 ${oiPeriod === "mo" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      $/mo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOiPeriod("yr")}
+                      className={`px-2 py-0.5 ${oiPeriod === "yr" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      $/yr
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                   {OTHER_INCOME_LINES.map(({ key, label }) => (
                     <CurrencyField
                       key={key}
                       label={label}
-                      suffix="/mo"
-                      value={(r.other_income_sublines?.[key] as number) || 0}
+                      suffix={`/${oiPeriod}`}
+                      value={Math.round(((r.other_income_sublines?.[key] as number) || 0) * oiMult * 100) / 100}
                       onChange={(v) => updateOtherIncomeSubline(key, v)}
                     />
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  RUBS / utility reimbursements do <span className="font-semibold">not</span> go here — net those in the
-                  Utilities expense section (negative line) to avoid double-entry.
+                  Utility Reimbursement (RUBS) can be entered here <span className="font-semibold">or</span> netted in the
+                  Utilities expense section (negative line) — pick <span className="font-semibold">one</span> to avoid
+                  double-counting.
                 </p>
               </div>
             )}
