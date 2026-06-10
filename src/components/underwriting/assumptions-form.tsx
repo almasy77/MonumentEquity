@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 
 interface Props {
@@ -17,6 +17,7 @@ interface Props {
   loading: boolean;
   dealT12?: T12Statement;
   dealUnits?: number;
+  year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
 }
 
 function UnitClassChip({
@@ -50,15 +51,113 @@ function UnitClassChip({
   );
 }
 
+/**
+ * Revenue trajectory (spec B4) — one block replacing the old duplicated
+ * Monthly + Annual totals. Shows the path the engine actually produces:
+ * In-place → Year 1 (ramping) → Stabilized (used at exit) → Reno ceiling.
+ * Stabilized is emphasized (it drives exit value); the reno ceiling is
+ * demoted to context. Loss-to-lease makes the value-add thesis legible.
+ */
+function RevenueTrajectory({
+  inPlaceRentMonthly,
+  stabilizedRentMonthly,
+  renoCeilingRentMonthly,
+  otherIncomeMonthly,
+  year1RevenueAnnual,
+  rampEnabled,
+}: {
+  inPlaceRentMonthly: number;     // occupied units at current rent
+  stabilizedRentMonthly: number;  // all units at market rent
+  renoCeilingRentMonthly: number; // all units at renovated basis + premium
+  otherIncomeMonthly: number;
+  year1RevenueAnnual?: number;    // engine year-1 GPR + other income
+  rampEnabled: boolean;
+}) {
+  const [period, setPeriod] = useState<"mo" | "yr">("yr");
+  const mult = period === "yr" ? 12 : 1;
+  const fmt = (monthly: number) => fmtCurrency(monthly * mult);
+
+  const inPlace = inPlaceRentMonthly + otherIncomeMonthly;
+  const stabilized = stabilizedRentMonthly + otherIncomeMonthly;
+  const renoCeiling = renoCeilingRentMonthly + otherIncomeMonthly;
+  const year1Monthly = year1RevenueAnnual !== undefined ? year1RevenueAnnual / 12 : undefined;
+
+  // Loss-to-lease: gap from in-place to stabilized market, rent only.
+  const lossToLease = Math.max(0, stabilizedRentMonthly - inPlaceRentMonthly);
+  const lossToLeasePct = stabilizedRentMonthly > 0 ? lossToLease / stabilizedRentMonthly : 0;
+
+  return (
+    <div className="border-t border-slate-700 pt-3 mt-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-slate-500 font-medium">Revenue Trajectory (rent + other income)</div>
+        <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
+          <button
+            type="button"
+            onClick={() => setPeriod("mo")}
+            className={`px-2 py-0.5 ${period === "mo" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            /mo
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriod("yr")}
+            className={`px-2 py-0.5 ${period === "yr" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            /yr
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-slate-800/50 rounded p-2.5 text-center">
+          <div className="text-xs text-slate-400 mb-0.5">In-Place</div>
+          <div className="text-sm text-white font-semibold tabular-nums">{fmt(inPlace)}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">occupied, today</div>
+        </div>
+        <div className="bg-slate-800/50 rounded p-2.5 text-center">
+          <div className="text-xs text-slate-400 mb-0.5">Year 1{rampEnabled ? " (ramping)" : ""}</div>
+          <div className="text-sm text-white font-semibold tabular-nums">
+            {year1Monthly !== undefined ? fmt(year1Monthly) : "—"}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">engine pro forma</div>
+        </div>
+        <div className="bg-slate-800/60 rounded p-2.5 text-center ring-1 ring-blue-500/50">
+          <div className="text-xs text-blue-300 mb-0.5 font-medium">Stabilized</div>
+          <div className="text-sm text-white font-bold tabular-nums">{fmt(stabilized)}</div>
+          <div className="text-[10px] text-blue-400/70 mt-0.5">used at exit</div>
+        </div>
+        {/* Reno ceiling — demoted: context, not an underwriting basis */}
+        <div className="rounded p-2.5 text-center border border-dashed border-slate-700">
+          <div className="text-xs text-slate-500 mb-0.5">Reno Ceiling</div>
+          <div className="text-sm text-slate-400 font-semibold tabular-nums">{fmt(renoCeiling)}</div>
+          <div className="text-[10px] text-slate-600 mt-0.5">all units renovated at once; never reached in the hold</div>
+        </div>
+      </div>
+
+      {/* Loss-to-lease — the value-add thesis made legible */}
+      {lossToLease > 0 && (
+        <div className="text-[11px] text-slate-400">
+          Loss-to-lease:{" "}
+          <span className="text-amber-400 font-medium tabular-nums">
+            {fmtCurrency(lossToLease)}/mo ({(lossToLeasePct * 100).toFixed(1)}% below market)
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RentRampPanel({
   ramp,
   proformaUnrenovatedBasis,
   vacancyRate,
+  holdMonths,
   onChange,
 }: {
   ramp: RentRampAssumptions | undefined;
   proformaUnrenovatedBasis: "current" | "market" | undefined;
   vacancyRate: number;
+  holdMonths?: number; // hold period in months — sizes the absorption bar
   onChange: (next: RentRampAssumptions | undefined) => void;
 }) {
   const enabled = !!ramp?.enabled;
@@ -160,6 +259,31 @@ function RentRampPanel({
               onChange={(v) => setField("vacant_leaseup_months", v)}
             />
           </div>
+          {/* Thin absorption bar (B7): in-place → ramping → stabilized over the hold */}
+          {(() => {
+            const hold = Math.max(1, holdMonths ?? 120);
+            const absorb = Math.min(ramp?.absorption_months ?? DEFAULTS.absorption_months, hold);
+            const rampPct = (absorb / hold) * 100;
+            return (
+              <div>
+                <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-800">
+                  <div
+                    className="bg-gradient-to-r from-slate-500 to-blue-500"
+                    style={{ width: `${rampPct}%` }}
+                    title={`Ramping: months 1–${absorb}`}
+                  />
+                  <div
+                    className="bg-emerald-500/80 flex-1"
+                    title={`Stabilized: month ${absorb + 1} onward`}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>In-place → ramping ({absorb} mo)</span>
+                  <span className="text-emerald-500">stabilized → exit</span>
+                </div>
+              </div>
+            );
+          })()}
           <div className="text-[11px] text-slate-500">
             Linear absorption: below-market units (current_rent &lt; market_rent) mark to market evenly over the
             absorption window. Each turn includes the turn-downtime months as vacancy. Renovated units always
@@ -206,6 +330,39 @@ function formatWithCommas(n: number): string {
 }
 
 // Currency input that displays with commas and $ prefix
+// Label-less currency input — used where the caller renders its own header
+// (e.g. the Other Income cell with its "itemize" toggle).
+function BareCurrencyInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [editValue, setEditValue] = useState("");
+
+  const displayValue = value ? `$${formatWithCommas(value)}` : "";
+
+  return (
+    <Input
+      type="text"
+      value={focused ? editValue : displayValue}
+      onFocus={() => {
+        setFocused(true);
+        setEditValue(value ? String(value) : "");
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parseFloat(editValue.replace(/[^0-9.-]/g, ""));
+        onChange(isNaN(parsed) ? 0 : parsed);
+      }}
+      onChange={(e) => setEditValue(e.target.value)}
+      className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+    />
+  );
+}
+
 function CurrencyField({
   label,
   value,
@@ -217,32 +374,13 @@ function CurrencyField({
   onChange: (v: number) => void;
   suffix?: string;
 }) {
-  const [focused, setFocused] = useState(false);
-  const [editValue, setEditValue] = useState("");
-
-  const displayValue = value ? `$${formatWithCommas(value)}` : "";
-
   return (
     <div>
       <Label className="text-xs text-slate-400">
         {label}
         {suffix && <span className="text-slate-600 ml-1">{suffix}</span>}
       </Label>
-      <Input
-        type="text"
-        value={focused ? editValue : displayValue}
-        onFocus={() => {
-          setFocused(true);
-          setEditValue(value ? String(value) : "");
-        }}
-        onBlur={() => {
-          setFocused(false);
-          const parsed = parseFloat(editValue.replace(/[^0-9.-]/g, ""));
-          onChange(isNaN(parsed) ? 0 : parsed);
-        }}
-        onChange={(e) => setEditValue(e.target.value)}
-        className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
-      />
+      <BareCurrencyInput value={value} onChange={onChange} />
     </div>
   );
 }
@@ -357,6 +495,15 @@ function fmtCurrency(n: number): string {
   if (!n) return "$0";
   return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
+
+// Itemized Other Income lines (spec B6) — deliberately short; not a 12-row taxonomy.
+const OTHER_INCOME_LINES: { key: keyof OtherIncomeSublines; label: string }[] = [
+  { key: "laundry", label: "Laundry" },
+  { key: "storage", label: "Storage" },
+  { key: "parking", label: "Parking" },
+  { key: "pet_admin", label: "Pet / Admin" },
+  { key: "other", label: "Other" },
+];
 
 const OPEX_MODE_LABELS: Record<OpexInputMode, string> = {
   total_annual: "$ /yr",
@@ -571,7 +718,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12 }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, year1Revenue }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -590,6 +737,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [dep, setDep] = useState(depreciation);
   const [dirty, setDirty] = useState(false);
   const [renovatedBasis, setRenovatedBasis] = useState<"current" | "market">("market");
+
+  // Itemized Other Income (spec B6)
+  const [oiExpanded, setOiExpanded] = useState(false);
+  const oiHasSublines = Object.values(r.other_income_sublines ?? {}).some((v) => (v as number) > 0);
+  function updateOtherIncomeSubline(key: keyof OtherIncomeSublines, value: number) {
+    const next: OtherIncomeSublines = { ...(r.other_income_sublines ?? {}), [key]: value };
+    const sum = Object.values(next).reduce((s: number, v) => s + ((v as number) || 0), 0);
+    // Keep the canonical total in sync — the engine only reads other_income_monthly.
+    setR({ ...r, other_income_sublines: next, other_income_monthly: sum });
+    markDirty();
+  }
 
   useEffect(() => {
     setP(purchase);
@@ -686,6 +844,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     ? unitMix.reduce((sum, u) => sum + u.count * (u.market_rent + u.renovated_rent_premium), 0)
     : unitMix.reduce((sum, u) => sum + u.count * (u.current_rent + u.renovated_rent_premium), 0);
   const otherIncome = r.other_income_monthly || 0;
+
+  // In-place rent over OCCUPIED units only (spec A2: current_rent is the occupied
+  // average, and vacant-at-close units never pay in-place rent). Vacant count comes
+  // from the ramp config; without ramp, all units count as occupied.
+  const vacantAtClose = r.rent_ramp?.enabled ? (r.rent_ramp.initial_vacant_units ?? 0) : 0;
+  const avgCurrentRent = totalUnits > 0 ? subtotalCurrent / totalUnits : 0;
+  const inPlaceOccupiedRent = Math.max(0, subtotalCurrent - vacantAtClose * avgCurrentRent);
 
   // ── OpEx inputs — initialize from legacy fields if not already set ──
   function getOpexInputs(): OpexInputs {
@@ -1113,7 +1278,29 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             </Button>
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
-              <CurrencyField label="Other Income" value={r.other_income_monthly} suffix="/mo" onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-400">Other Income</Label>
+                  <button
+                    type="button"
+                    onClick={() => setOiExpanded(!oiExpanded)}
+                    className="text-[10px] text-blue-400 hover:text-blue-300"
+                  >
+                    {oiExpanded ? "collapse" : "itemize"}
+                  </button>
+                </div>
+                {oiHasSublines ? (
+                  <div className="bg-slate-800/40 border border-slate-800 rounded-md text-slate-400 text-sm h-8 px-3 flex items-center justify-between italic">
+                    <span className="text-[10px]">sum of sub-items</span>
+                    <span className="tabular-nums not-italic text-slate-200">{fmtCurrency(r.other_income_monthly || 0)}/mo</span>
+                  </div>
+                ) : (
+                  <BareCurrencyInput value={r.other_income_monthly} onChange={(v) => { setR({ ...r, other_income_monthly: v }); markDirty(); }} />
+                )}
+                {(r.other_income_monthly || 0) === 0 && (
+                  <p className="text-[10px] text-amber-400/80 mt-0.5">empty — check OM for laundry / storage / parking</p>
+                )}
+              </div>
               <div>
                 <PctField label="Vacancy" value={r.vacancy_rate} onChange={(v) => { setR({ ...r, vacancy_rate: v }); markDirty(); }} />
                 {r.rent_ramp?.enabled && (
@@ -1130,53 +1317,44 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
 
-            {/* Revenue totals */}
-            <div className="border-t border-slate-700 pt-3 mt-2">
-              <div className="text-xs text-slate-500 font-medium mb-2">Monthly Revenue Totals (rent + other income)</div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-800/50 rounded p-2.5 text-center">
-                  <div className="text-xs text-slate-400 mb-0.5">Current</div>
-                  <div className="text-sm text-white font-semibold tabular-nums">{fmtCurrency(subtotalCurrent + otherIncome)}</div>
+            {/* Itemized Other Income (B6) — same pattern as Utilities sublines */}
+            {oiExpanded && (
+              <div className="border border-slate-800 rounded p-3 space-y-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {OTHER_INCOME_LINES.map(({ key, label }) => (
+                    <CurrencyField
+                      key={key}
+                      label={label}
+                      suffix="/mo"
+                      value={(r.other_income_sublines?.[key] as number) || 0}
+                      onChange={(v) => updateOtherIncomeSubline(key, v)}
+                    />
+                  ))}
                 </div>
-                <div className="bg-slate-800/50 rounded p-2.5 text-center">
-                  <div className="text-xs text-slate-400 mb-0.5">Market</div>
-                  <div className="text-sm text-white font-semibold tabular-nums">{fmtCurrency(subtotalMarket + otherIncome)}</div>
-                </div>
-                <div className="bg-slate-800/50 rounded p-2.5 text-center">
-                  <div className="text-xs text-slate-400 mb-0.5">Renovated</div>
-                  <div className="text-sm text-emerald-400 font-semibold tabular-nums">{fmtCurrency(subtotalRenovated + otherIncome)}</div>
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  RUBS / utility reimbursements do <span className="font-semibold">not</span> go here — net those in the
+                  Utilities expense section (negative line) to avoid double-entry.
+                </p>
               </div>
-            </div>
+            )}
 
-            {/* Annual Revenue Totals — bottom-right summary */}
-            <div className="flex justify-end">
-              <div className="bg-slate-900 border border-slate-700 rounded-md px-4 py-2.5 min-w-[280px]">
-                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5 text-right">
-                  Annual Rent (rent + other income)
-                </div>
-                <div className="space-y-0.5 text-xs">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-slate-400">Current</span>
-                    <span className="text-white font-semibold tabular-nums">{fmtCurrency((subtotalCurrent + otherIncome) * 12)}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-slate-400">Market</span>
-                    <span className="text-white font-semibold tabular-nums">{fmtCurrency((subtotalMarket + otherIncome) * 12)}</span>
-                  </div>
-                  <div className="flex justify-between gap-4 pt-1 border-t border-slate-800">
-                    <span className="text-emerald-400">Renovated</span>
-                    <span className="text-emerald-400 font-bold tabular-nums">{fmtCurrency((subtotalRenovated + otherIncome) * 12)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Revenue trajectory (B4) — the path the engine actually produces.
+                Replaces the old duplicated Monthly + Annual totals blocks. */}
+            <RevenueTrajectory
+              inPlaceRentMonthly={inPlaceOccupiedRent}
+              stabilizedRentMonthly={subtotalMarket}
+              renoCeilingRentMonthly={subtotalRenovated}
+              otherIncomeMonthly={otherIncome}
+              year1RevenueAnnual={year1Revenue}
+              rampEnabled={!!r.rent_ramp?.enabled}
+            />
 
-            {/* Rent Ramp panel — models in-place leases marking to market over time */}
+            {/* Rent Ramp panel (B7) — co-located with the trajectory it drives */}
             <RentRampPanel
               ramp={r.rent_ramp}
               proformaUnrenovatedBasis={exit.proforma_unrenovated_basis}
               vacancyRate={r.vacancy_rate}
+              holdMonths={(exit.hold_period_years || 10) * 12}
               onChange={(next) => { setR({ ...r, rent_ramp: next }); markDirty(); }}
             />
           </div>
