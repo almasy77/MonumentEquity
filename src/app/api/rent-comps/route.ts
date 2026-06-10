@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const submarket = req.nextUrl.searchParams.get("submarket");
+    const city = req.nextUrl.searchParams.get("city");
     const redis = getRedis();
 
     let ids: string[];
@@ -28,7 +29,13 @@ export async function GET(req: NextRequest) {
       pipeline.get(`rent_comp:${id}`);
     }
     const results = await pipeline.exec<(RentComp | null)[]>();
-    return NextResponse.json(results.filter((r): r is RentComp => r !== null));
+    let comps = results.filter((r): r is RentComp => r !== null);
+    // City filter (post-fetch — no per-city index; comp volume is small)
+    if (city) {
+      const needle = city.trim().toLowerCase();
+      comps = comps.filter((c) => c.city.trim().toLowerCase() === needle);
+    }
+    return NextResponse.json(comps);
   } catch (err) {
     console.error("GET /api/rent-comps error:", err);
     return NextResponse.json({ error: "Failed to fetch rent comps" }, { status: 500 });

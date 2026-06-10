@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
-import type { Scenario, T12Statement } from "@/lib/validations";
+import type { Scenario, T12Statement, RentComp } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 
@@ -17,7 +17,43 @@ interface Props {
   loading: boolean;
   dealT12?: T12Statement;
   dealUnits?: number;
+  dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
+}
+
+// ─── Rent-comp support for the Market Rent guardrail (spec B8) ───
+
+interface CompStats {
+  count: number;
+  median: number;
+  min: number;
+  max: number;
+}
+
+function median(sorted: number[]): number {
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Comp stats for one unit-mix row. Prefer comps whose unit_type matches the
+ * row's type (normalized); fall back to all comps for the city when no type
+ * matches — a loose range beats no guardrail.
+ */
+function compStatsForType(comps: RentComp[], unitType: string): CompStats | null {
+  if (comps.length === 0) return null;
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "");
+  const typed = unitType.trim()
+    ? comps.filter((c) => c.unit_type && norm(c.unit_type) === norm(unitType))
+    : [];
+  const pool = typed.length > 0 ? typed : comps;
+  const rents = pool.map((c) => c.rent).sort((a, b) => a - b);
+  return {
+    count: pool.length,
+    median: median(rents),
+    min: rents[0],
+    max: rents[rents.length - 1],
+  };
 }
 
 function UnitClassChip({
@@ -718,7 +754,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, year1Revenue }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, year1Revenue }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -737,6 +773,19 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [dep, setDep] = useState(depreciation);
   const [dirty, setDirty] = useState(false);
   const [renovatedBasis, setRenovatedBasis] = useState<"current" | "market">("market");
+
+  // Rent comps for the market-rent guardrail (spec B8). Fetched once per deal city;
+  // failures degrade silently — no comps just means no guardrail.
+  const [rentComps, setRentComps] = useState<RentComp[]>([]);
+  useEffect(() => {
+    if (!dealCity) return;
+    let cancelled = false;
+    fetch(`/api/rent-comps?city=${encodeURIComponent(dealCity)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => { if (!cancelled && Array.isArray(data)) setRentComps(data); })
+      .catch(() => { /* silent — guardrail is best-effort */ });
+    return () => { cancelled = true; };
+  }, [dealCity]);
 
   // Itemized Other Income (spec B6)
   const [oiExpanded, setOiExpanded] = useState(false);
@@ -1230,7 +1279,38 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
                 <NumField label="Count" value={unit.count} onChange={(v) => updateUnitMix(i, "count", v)} />
                 <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
-                <CurrencyField label="Market Rent" value={unit.market_rent} onChange={(v) => updateUnitMix(i, "market_rent", v)} />
+                {(() => {
+                  // Comp support (spec B8) — the root-cause guardrail on the one
+                  // assumption everything traces back to.
+                  const stats = compStatsForType(rentComps, unit.type);
+                  const aboveComps = stats !== null && unit.market_rent > stats.max;
+                  return (
+                    <div>
+                      <CurrencyField label="Market Rent" value={unit.market_rent} onChange={(v) => updateUnitMix(i, "market_rent", v)} />
+                      {stats && (
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px]">
+                          <span className="text-slate-500 tabular-nums">
+                            {stats.count} comp{stats.count === 1 ? "" : "s"} · med {fmtCurrency(stats.median)}
+                            {stats.min !== stats.max && ` (${fmtCurrency(stats.min)}–${fmtCurrency(stats.max)})`}
+                          </span>
+                          {unit.market_rent !== Math.round(stats.median) && (
+                            <button
+                              type="button"
+                              onClick={() => updateUnitMix(i, "market_rent", Math.round(stats.median))}
+                              className="text-blue-400 hover:text-blue-300"
+                              title="Set market rent to the comp median"
+                            >
+                              use median
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {aboveComps && (
+                        <p className="text-[10px] text-amber-400 mt-0.5">above comps — verify</p>
+                      )}
+                    </div>
+                  );
+                })()}
                 <CurrencyField label="Reno Premium" value={unit.renovated_rent_premium} onChange={(v) => updateUnitMix(i, "renovated_rent_premium", v)} />
                 <div>
                   <Label className="text-xs text-slate-400">Renovated</Label>
