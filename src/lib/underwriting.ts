@@ -242,6 +242,23 @@ export const SERVICES_SUBLINE_KEYS: (keyof ServicesSublines)[] = [
   "landscaping", "snow_removal", "pest_control", "security", "cleaning", "other_services",
 ];
 
+/**
+ * Property tax reassessment (post-acquisition + exit-side).
+ * The seller's frozen bill understates the buyer's real tax burden twice:
+ *  1. Operations — the county reassesses toward the sale price (Franklin
+ *     County OH: triennial update; sale prices feed assessments).
+ *  2. Exit — YOUR buyer underwrites THEIR reassessed taxes at THEIR price,
+ *     so exit NOI capitalized at the seller-era bill overstates exit value.
+ *     Closed form resolves the circularity: exitValue = NOI_excl_tax / (cap + rate).
+ */
+export interface TaxReassessment {
+  enabled: boolean;
+  effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County
+  reassessed_value?: number; // default: purchase price
+  phase_in_year?: number; // pro forma year the reassessed bill starts (1 = immediately). Default 1.
+  apply_at_exit?: boolean; // recompute exit value with buyer's tax at exit price. Default true.
+}
+
 export interface ExpenseAssumptions {
   management_fee_rate: number; // % of EGI (legacy)
   payroll_annual: number;
@@ -251,6 +268,7 @@ export interface ExpenseAssumptions {
   insurance_per_unit: number; // annual
   property_tax_total: number; // annual
   tax_escalation_rate: number; // annual, applied to property taxes only
+  tax_reassessment?: TaxReassessment; // optional; absent = seller's bill escalated (legacy)
   expense_escalation_rate: number; // annual, applied to all non-tax expenses
   utilities_per_unit: number; // annual total (sum of breakdown if provided)
   utilities_breakdown?: UtilitiesBreakdown;
@@ -696,7 +714,14 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
             expenses.turnover_rate ?? 0.50,
           ),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
-      property_tax: resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx),
+      // Reassessment override: from the phase-in year, the bill is reassessed
+      // value x effective rate (escalated), replacing the seller's entered bill.
+      property_tax: (() => {
+        const reassessed = reassessedAnnualTax(expenses, purchase.purchase_price, yearIndex);
+        return reassessed !== null
+          ? reassessed / 12
+          : resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx);
+      })(),
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
       admin_legal_marketing: resolveOpexMonthly(oi?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", opexCtx),
       contract_services: svcSubSum !== null ? svcSubSum : resolveOpexMonthly(oi?.contract_services, expenses.contract_services, "total_annual", opexCtx),
@@ -806,9 +831,25 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
   // ── Exit ──
   const lastYearNOI = annual.length > 0 ? annual[annual.length - 1].noi : 0;
-  const exitValue = exit.sale_price && exit.sale_price > 0
-    ? exit.sale_price
-    : (exit.exit_cap_rate > 0 ? lastYearNOI / exit.exit_cap_rate : 0);
+  // Exit-side reassessment: your buyer underwrites THEIR taxes at THEIR price.
+  // Circular (value depends on NOI depends on tax depends on value) — closed
+  // form: exitValue = NOI_excluding_tax / (cap + effective_tax_rate).
+  const reassess = expenses.tax_reassessment;
+  const exitReassess = !!(reassess?.enabled && (reassess.apply_at_exit ?? true) && reassess.effective_tax_rate > 0);
+  let exitValue: number;
+  if (exit.sale_price && exit.sale_price > 0) {
+    exitValue = exit.sale_price; // explicit price — buyer's tax is their problem
+  } else if (exit.exit_cap_rate > 0) {
+    if (exitReassess && annual.length > 0) {
+      const lastYearTax = annual[annual.length - 1].opex_breakdown.property_tax;
+      const noiExTax = lastYearNOI + lastYearTax;
+      exitValue = noiExTax / (exit.exit_cap_rate + reassess!.effective_tax_rate);
+    } else {
+      exitValue = lastYearNOI / exit.exit_cap_rate;
+    }
+  } else {
+    exitValue = 0;
+  }
   const sellingCosts = exitValue * exit.selling_cost_rate;
 
   // Outstanding loan balance at exit
@@ -1064,6 +1105,24 @@ function getUnitsPerMonth(capex: CapexAssumptions): number {
     return capex.units_to_renovate / span;
   }
   return capex.units_per_month || 0;
+}
+
+/**
+ * Reassessed annual property tax for a 0-indexed pro forma year, or null when
+ * reassessment is disabled / not yet phased in (caller falls back to the
+ * entered bill). Escalation applies from the phase-in year forward.
+ */
+export function reassessedAnnualTax(
+  expenses: ExpenseAssumptions,
+  purchasePrice: number,
+  yearIndex: number,
+): number | null {
+  const r = expenses.tax_reassessment;
+  if (!r || !r.enabled || r.effective_tax_rate <= 0) return null;
+  const phaseInIndex = Math.max(0, (r.phase_in_year ?? 1) - 1);
+  if (yearIndex < phaseInIndex) return null;
+  const base = (r.reassessed_value ?? purchasePrice) * r.effective_tax_rate;
+  return base * Math.pow(1 + expenses.tax_escalation_rate, yearIndex - phaseInIndex);
 }
 
 /** Count of units priced below market in the rent roll (current_rent < market_rent). */
@@ -1365,9 +1424,21 @@ function buildSensitivityGrid(
 
       // Use simplified approach: scale base case results
       const result = calculateUnderwritingSimplified(adjustedInputs);
-      const exitVal = result.exitNOI > 0
-        ? result.exitNOI / adjustedInputs.exit.exit_cap_rate
-        : 0;
+      const sensReassess = adjustedInputs.expenses.tax_reassessment;
+      const sensExitReassess = !!(sensReassess?.enabled && (sensReassess.apply_at_exit ?? true) && sensReassess.effective_tax_rate > 0);
+      let exitVal = 0;
+      if (result.exitNOI > 0) {
+        if (sensExitReassess) {
+          const exitYearTax = reassessedAnnualTax(
+            adjustedInputs.expenses,
+            adjustedInputs.purchase.purchase_price,
+            adjustedInputs.exit.hold_period_years - 1,
+          ) ?? 0;
+          exitVal = (result.exitNOI + exitYearTax) / (adjustedInputs.exit.exit_cap_rate + sensReassess!.effective_tax_rate);
+        } else {
+          exitVal = result.exitNOI / adjustedInputs.exit.exit_cap_rate;
+        }
+      }
       const netProceeds = exitVal * (1 - adjustedInputs.exit.selling_cost_rate) -
         result.loanBalance;
 
@@ -1517,7 +1588,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
         expenses.turnover_rate ?? 0.50,
       ) +
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
-      resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx) +
+      (reassessedAnnualTax(expenses, purchase.purchase_price, y) ?? resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx)) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
       resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
       (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx));
@@ -1596,7 +1667,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       expenses.turnover_rate ?? 0.50,
     ) +
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
-    resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx) +
+    (reassessedAnnualTax(expenses, purchase.purchase_price, exit.hold_period_years - 1) ?? resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx)) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
     resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
     (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx));

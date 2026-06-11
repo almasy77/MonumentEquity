@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail, TaxReassessment } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
@@ -1842,6 +1842,70 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <OpexLineField label="Admin / Legal / Mktg" input={opexInputs.admin_legal_marketing || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("admin_legal_marketing", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Reserves" input={opexInputs.reserves || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("reserves", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
               </div>
+
+              {/* Property tax reassessment — operations + exit (seller's bill is not your bill) */}
+              {(() => {
+                const tr = e.tax_reassessment;
+                const trEnabled = !!tr?.enabled;
+                const updateTr = (patch: Partial<TaxReassessment>) => {
+                  const base: TaxReassessment = tr ?? { enabled: true, effective_tax_rate: 0.0185, phase_in_year: 1, apply_at_exit: true };
+                  setE({ ...e, tax_reassessment: { ...base, ...patch } });
+                  markDirty();
+                };
+                const estReassessed = (tr?.reassessed_value ?? p.purchase_price) * (tr?.effective_tax_rate ?? 0.0185);
+                const enteredAnnual = opexToAnnual(opexInputs.property_tax || { value: e.property_tax_total || 0, mode: "total_annual" }, totalUnits, t12EGI, t12GPR);
+                const underTaxed = !trEnabled && estReassessed > 0 && enteredAnnual < estReassessed * 0.7;
+                return (
+                  <div className="mt-2 border border-slate-800 rounded p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-slate-400">
+                        <span className="font-medium text-slate-300">Tax Reassessment</span>
+                        <span className="text-slate-500 ml-2">the seller&apos;s bill is not your bill — counties reassess toward the sale price</span>
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trEnabled}
+                          onChange={(ev) => {
+                            if (ev.target.checked) updateTr({ enabled: true });
+                            else if (tr) { setE({ ...e, tax_reassessment: { ...tr, enabled: false } }); markDirty(); }
+                          }}
+                          className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                        />
+                        {trEnabled ? "On" : "Off"}
+                      </label>
+                    </div>
+                    {underTaxed && (
+                      <p className="text-[10px] text-amber-400">
+                        Entered tax ({fmtCurrency(enteredAnnual)}/yr) is well below the reassessed estimate ({fmtCurrency(estReassessed)}/yr at purchase price). Enable reassessment or verify.
+                      </p>
+                    )}
+                    {trEnabled && tr && (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <PctField label="Effective Tax Rate" value={tr.effective_tax_rate} onChange={(v) => updateTr({ effective_tax_rate: v })} />
+                          <CurrencyField label="Reassessed Value" value={tr.reassessed_value ?? p.purchase_price} onChange={(v) => updateTr({ reassessed_value: v })} />
+                          <NumField label="Phase-In Year" value={tr.phase_in_year ?? 1} onChange={(v) => updateTr({ phase_in_year: Math.max(1, Math.round(v)) })} />
+                          <div className="flex items-end pb-1">
+                            <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={tr.apply_at_exit ?? true}
+                                onChange={(ev) => updateTr({ apply_at_exit: ev.target.checked })}
+                                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                              />
+                              Apply at exit
+                            </label>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500">
+                          Operations: from the phase-in year, property tax = reassessed value × rate ({fmtCurrency(estReassessed)}/yr), escalated. Exit: value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Utilities */}
