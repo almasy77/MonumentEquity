@@ -6,6 +6,8 @@
  */
 
 import { calculateIRR } from "./irr";
+import { computeTaxLayer } from "./tax";
+import type { TaxAssumptions, TaxResult } from "./tax";
 
 // ─── Input Types ─────────────────────────────────────────────
 
@@ -356,6 +358,7 @@ export interface ScenarioInputs {
   capex: CapexAssumptions;
   exit: ExitAssumptions;
   depreciation?: DepreciationAssumptions;
+  tax?: TaxAssumptions; // optional; absent → no tax layer computed
 }
 
 // ─── Output Types ────────────────────────────────────────────
@@ -390,8 +393,10 @@ export interface MonthlyRow {
   opex_breakdown: OpexBreakdown;
   // NOI = EGI - operating opex
   noi: number;
-  // Debt Service
+  // Debt Service (interest + principal; only interest is tax-deductible)
   debt_service: number;
+  interest_paid: number;
+  principal_paid: number;
   // Cash Flow before CapEx & Reserves = NOI - debt service
   cash_flow_before_capex_and_reserves: number;
   // Capital items (below NOI)
@@ -422,6 +427,8 @@ export interface AnnualSummary {
   opex_breakdown: OpexBreakdown;
   noi: number;
   debt_service: number;
+  interest_paid: number;
+  principal_paid: number;
   cash_flow_before_capex_and_reserves: number;
   reserves: number;
   cash_flow_before_capex: number;
@@ -483,6 +490,7 @@ export interface UnderwritingResult {
   metrics: DealMetrics;
   sensitivity: SensitivityCell[];
   warnings: string[];
+  tax?: TaxResult; // present only when inputs.tax is provided
 }
 
 // ─── Closing Cost Helpers ────────────────────────────────────
@@ -567,6 +575,7 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   // ── Monthly Pro Forma ──
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
+  let amortBalance = loanAmount; // running balance for the interest/principal split
 
   const { unrenovated: pfUnrenBasis, renovated: pfRenoBasis } = resolveProformaBases(exit);
 
@@ -698,8 +707,12 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
 
     const noi = egi - monthlyOpex;
 
-    // Debt service (IO period vs amortizing)
+    // Debt service (IO period vs amortizing), split into interest and principal.
+    // Only INTEREST is tax-deductible — the tax layer consumes this split.
     const ds = m <= financing.io_period_months ? monthlyIO : monthlyDS;
+    const interestPaid = amortBalance * monthlyRate;
+    const principalPaid = m <= financing.io_period_months ? 0 : Math.max(0, ds - interestPaid);
+    amortBalance = Math.max(0, amortBalance - principalPaid);
 
     // CapEx for this month
     const monthCapex = calculateMonthCapex(capex, m);
@@ -725,6 +738,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       opex_breakdown: opexBk,
       noi,
       debt_service: ds,
+      interest_paid: interestPaid,
+      principal_paid: principalPaid,
       cash_flow_before_capex_and_reserves: cashFlowBeforeCapexAndReserves,
       reserves: monthlyReserves,
       cash_flow_before_capex: cashFlowBeforeCapex,
@@ -772,6 +787,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       },
       noi: annualNOI,
       debt_service: sum((r) => r.debt_service),
+      interest_paid: sum((r) => r.interest_paid),
+      principal_paid: sum((r) => r.principal_paid),
       cash_flow_before_capex_and_reserves: sum((r) => r.cash_flow_before_capex_and_reserves),
       reserves: sum((r) => r.reserves),
       cash_flow_before_capex: sum((r) => r.cash_flow_before_capex),
@@ -912,7 +929,21 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   if (opexRatio < 0.35 && opexRatio > 0) warnings.push("OpEx ratio below 35% — may underestimate expenses");
   if (opexRatio > 0.60) warnings.push("OpEx ratio above 60% — verify expenses");
 
-  return { monthly, annual, metrics, sensitivity, warnings };
+  // ── Tax layer (TAX_TREATMENT_SPEC.md) — only when tax assumptions provided ──
+  // tax.ts imports only TYPES from this module, so the static import in this
+  // file's header creates no runtime cycle.
+  const taxResult = inputs.tax
+    ? computeTaxLayer(inputs, {
+        annual,
+        totalEquity,
+        netSaleProceeds,
+        exitValue,
+        sellingCosts,
+        originationFee,
+      })
+    : undefined;
+
+  return { monthly, annual, metrics, sensitivity, warnings, tax: taxResult };
 }
 
 // ─── Helper Functions ────────────────────────────────────────
