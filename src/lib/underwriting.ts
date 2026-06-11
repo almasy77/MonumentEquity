@@ -48,6 +48,18 @@ export interface FinancingAssumptions {
   origination_fee_rate: number; // % of loan
 }
 
+// Per-unit detail for a unit-mix row (spec B2 / ramp Phase 2). When present,
+// these drive a unit-level absorption schedule: each unit gets its own
+// time-to-market (vacant ~lease-up months, MTM per pacing policy, fixed
+// lease = lease end + turn downtime) instead of the linear approximation.
+export interface UnitDetail {
+  unit_id: string; // e.g. "A-3"
+  status: "occupied" | "mtm" | "vacant"; // occupied = fixed lease; mtm = month-to-month
+  current_rent: number; // $0 for vacant
+  market_rent?: number; // per-unit override; defaults to the row's market_rent
+  lease_end?: string; // ISO date — required for "occupied" to schedule its turn
+}
+
 export interface UnitMix {
   unit_number?: string; // free-text label, e.g. "Apt 101" or "Apartments". Display-only.
   type: string; // e.g. "1BR/1BA"
@@ -56,6 +68,7 @@ export interface UnitMix {
   market_rent: number;
   renovated_rent_premium: number; // additional rent after renovation
   unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
+  units?: UnitDetail[]; // optional per-unit expansion; when present, count/current_rent should mirror it
 }
 
 // Itemized breakdown of other income (stored $/mo per line; the UI offers
@@ -109,6 +122,11 @@ export interface RentRampAssumptions {
 
   // Optional explicit cumulative absorption curve (mode="schedule"); length = totalMonths.
   absorption_by_month?: number[];
+
+  // Anchor for converting per-unit lease_end dates to pro forma month indexes
+  // (month 1 = the month containing this date). Required for "occupied" units
+  // with fixed leases to schedule their turns; without it they are treated as MTM.
+  analysis_start_date?: string; // ISO date, e.g. "2026-07-01"
 }
 
 export interface UtilitiesBreakdown {
@@ -1045,6 +1063,87 @@ function buildAbsorptionSchedule(
   const initialVacant = Math.max(0, ramp.initial_vacant_units ?? 0);
   const vacantLeaseup = Math.max(0, ramp.vacant_leaseup_months ?? 0);
   const belowMarket = Math.max(0, ramp.initial_belowmarket_units ?? countBelowMarketUnits(unitMix));
+
+  // ── Per-unit schedule mode (ramp Phase 2 / spec B2) ──
+  // When per-unit details exist, each unit gets its own time-to-market:
+  //   vacant   → offline for vacant_leaseup_months, then market. Not paced.
+  //   mtm      → eligible immediately; paced by max_turns_per_month,
+  //              deepest-below-market first; turn_downtime offline per turn.
+  //   occupied → eligible the month AFTER its lease_end (anchored to
+  //              analysis_start_date); then paced like mtm. Missing lease_end
+  //              or missing anchor → treated as mtm.
+  //   at/above market → never turns (already effectively at market).
+  // Takes precedence over an explicit absorption_by_month curve.
+  const allUnits: { detail: UnitDetail; rowMarket: number }[] = [];
+  for (const row of unitMix) {
+    for (const u of row.units ?? []) allUnits.push({ detail: u, rowMarket: row.market_rent });
+  }
+  if (ramp.mode === "schedule" && allUnits.length > 0) {
+    const turnDowntime = Math.max(0, ramp.turn_downtime_months);
+    const maxPerMonth = Math.max(1, ramp.max_turns_per_month ?? Infinity);
+
+    // Month index (0-based) containing the given date, relative to the anchor.
+    const anchor = ramp.analysis_start_date ? new Date(ramp.analysis_start_date + "T00:00:00") : null;
+    const monthIndexOf = (iso: string): number | null => {
+      if (!anchor) return null;
+      const d = new Date(iso + "T00:00:00");
+      if (isNaN(d.getTime())) return null;
+      return (d.getFullYear() - anchor.getFullYear()) * 12 + (d.getMonth() - anchor.getMonth());
+    };
+
+    // Vacant units: independent lease-up path (not paced).
+    let vacantCount = 0;
+    // Turn queue: below-market occupied/mtm units awaiting their turn.
+    const queue: { eligible: number; gap: number }[] = [];
+
+    for (const { detail: u, rowMarket } of allUnits) {
+      const mkt = u.market_rent ?? rowMarket;
+      if (u.status === "vacant") {
+        vacantCount++;
+        continue;
+      }
+      if (u.current_rent >= mkt) continue; // at/above market — no turn needed
+      if (u.status === "occupied" && u.lease_end) {
+        const idx = monthIndexOf(u.lease_end);
+        // Lease ends in month idx → downtime starts the following month.
+        // Past lease-end (or no anchor) → effectively MTM, eligible now.
+        queue.push({ eligible: idx === null ? 0 : Math.max(0, idx + 1), gap: mkt - u.current_rent });
+      } else {
+        queue.push({ eligible: 0, gap: mkt - u.current_rent });
+      }
+    }
+    // Deepest-below-market first among equally-eligible units (owner economics).
+    queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
+
+    // Walk the months, starting up to maxPerMonth turns from the eligible pool.
+    const startMonthByUnit: number[] = [];
+    let qi = 0;
+    const pending: { eligible: number; gap: number }[] = [];
+    for (let m = 0; m < totalMonths && (qi < queue.length || pending.length > 0); m++) {
+      while (qi < queue.length && queue[qi].eligible <= m) pending.push(queue[qi++]);
+      pending.sort((a, b) => b.gap - a.gap);
+      let started = 0;
+      while (pending.length > 0 && started < maxPerMonth) {
+        pending.shift();
+        startMonthByUnit.push(m);
+        started++;
+      }
+    }
+
+    for (let m = 0; m < totalMonths; m++) {
+      let mk = 0;
+      let off = 0;
+      for (const s of startMonthByUnit) {
+        if (m >= s + turnDowntime) mk++;
+        else if (m >= s) off++;
+      }
+      const vacantOffline = m < vacantLeaseup ? vacantCount : 0;
+      const vacantMarket = m >= vacantLeaseup ? vacantCount : 0;
+      marked[m] = mk + vacantMarket;
+      offline[m] = off + vacantOffline;
+    }
+    return { markedToMarketByMonth: marked, turnOfflineByMonth: offline };
+  }
 
   // Schedule mode: caller provided an explicit cumulative absorption curve.
   if (ramp.mode === "schedule" && ramp.absorption_by_month && ramp.absorption_by_month.length > 0) {

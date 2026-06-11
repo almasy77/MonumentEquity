@@ -621,6 +621,7 @@ function ScenarioAnalysis({
         dealT12={deal.t12}
         dealUnits={deal.units}
         dealCity={deal.city}
+        dealRentRoll={deal.rent_roll}
         year1Revenue={result.annual[0] ? result.annual[0].gpr + result.annual[0].other_income : undefined}
       />
 
