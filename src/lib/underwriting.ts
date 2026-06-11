@@ -58,15 +58,17 @@ export interface UnitMix {
   unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
 }
 
-// Itemized breakdown of other income ($/mo per line). UI-only detail:
-// the engine reads other_income_monthly, which the form keeps in sync with
-// the sum of these sublines. RUBS / utility reimbursements do NOT go here —
-// they are netted in the Utilities expense section (negative line).
+// Itemized breakdown of other income (stored $/mo per line; the UI offers
+// $/mo or $/yr entry and converts). UI-only detail: the engine reads
+// other_income_monthly, which the form keeps in sync with the sum here.
+// Utility reimbursement (RUBS) may be entered EITHER here OR netted in the
+// Utilities expense section (negative line) — one place only, never both.
 export interface OtherIncomeSublines {
   laundry?: number;
   storage?: number;
   parking?: number;
   pet_admin?: number;
+  utility_reimbursement?: number; // RUBS — if used here, do NOT also net in Utilities
   other?: number;
 }
 
