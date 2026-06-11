@@ -116,6 +116,16 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
         <EditableField label="Listing URL" value={deal.source_url || ""} onSave={(v) => updateDeal("source_url", v)} type="url" placeholder="Paste listing URL..." />
         <EditableField label="County Tax Records URL" value={deal.tax_record_url || ""} onSave={(v) => updateDeal("tax_record_url", v)} type="url" placeholder="Paste county tax assessor link..." />
 
+        {/* Ownership — who holds title today (distinct from any "seller" contact) */}
+        <Separator className="bg-slate-800" />
+        <h4 className="text-sm font-medium text-white">Ownership</h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <EditableField label="Owner Entity" value={deal.owner_name || ""} onSave={(v) => updateDeal("owner_name", v)} placeholder="e.g. 3677 Indianola LLC" />
+          <EditableField label="Owned Since" value={deal.owner_since || ""} onSave={(v) => updateDeal("owner_since", v)} type="date" placeholder="Acquisition date" />
+          <EditableField label="Owner Mailing Address" value={deal.owner_mailing_address || ""} onSave={(v) => updateDeal("owner_mailing_address", v)} placeholder="Per county records" />
+          <EditableField label="Ownership Notes" value={deal.owner_notes || ""} onSave={(v) => updateDeal("owner_notes", v)} placeholder="e.g. out-of-state owner" />
+        </div>
+
         {/* Notes */}
         <Separator className="bg-slate-800" />
         <EditableField label="Notes" value={deal.market_notes || ""} onSave={(v) => updateDeal("market_notes", v)} placeholder="Add notes..." />

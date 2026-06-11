@@ -50,6 +50,7 @@ export const DEAL_SOURCES = [
 ] as const;
 
 export const CONTACT_TYPES = [
+  "owner", // holds title today — only becomes a "seller" once a deal forms
   "broker",
   "seller",
   "lender",
@@ -62,6 +63,7 @@ export const CONTACT_TYPES = [
 export type ContactType = (typeof CONTACT_TYPES)[number];
 
 export const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
+  owner: "Owner",
   broker: "Broker",
   seller: "Seller",
   lender: "Lender",
