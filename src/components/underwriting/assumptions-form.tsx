@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
-import type { Scenario, T12Statement, RentComp } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines } from "@/lib/underwriting";
+import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 
 interface Props {
@@ -18,7 +18,50 @@ interface Props {
   dealT12?: T12Statement;
   dealUnits?: number;
   dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
+  dealRentRoll?: RentRollUnit[]; // deal-level imported rent roll — source for per-unit rows (spec B2)
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
+}
+
+// ─── Per-unit rows (spec B2 / ramp Phase 2) ───
+
+// Map a deal rent-roll status to a per-unit ramp status. The rent roll has no
+// explicit MTM flag, so: vacant/down → vacant; notice_to_vacate → mtm (turning
+// soon); occupied with an unexpired lease_end → occupied; otherwise mtm.
+function rentRollToUnitDetail(u: RentRollUnit): UnitDetail {
+  let status: UnitDetail["status"];
+  if (u.status === "vacant" || u.status === "down") status = "vacant";
+  else if (u.status === "notice_to_vacate") status = "mtm";
+  else if (u.lease_end && new Date(u.lease_end) > new Date()) status = "occupied";
+  else status = "mtm";
+  return {
+    unit_id: u.unit_number,
+    status,
+    current_rent: status === "vacant" ? 0 : (u.current_rent ?? 0),
+    market_rent: u.market_rent,
+    lease_end: status === "occupied" ? u.lease_end : undefined,
+  };
+}
+
+// Sync a row's aggregate fields from its per-unit details:
+// count = all units; current_rent = mean over NON-vacant units (occupied-only
+// average per spec A2); market_rent = mean of per-unit overrides when every
+// unit has one, else the row's value stays authoritative.
+function syncRowFromUnits(row: UnitMix, units: UnitDetail[]): UnitMix {
+  const nonVacant = units.filter((u) => u.status !== "vacant");
+  const avgCurrent = nonVacant.length > 0
+    ? nonVacant.reduce((s, u) => s + u.current_rent, 0) / nonVacant.length
+    : 0;
+  const withOverride = units.filter((u) => u.market_rent !== undefined && u.market_rent > 0);
+  const avgMarket = units.length > 0 && withOverride.length === units.length
+    ? units.reduce((s, u) => s + (u.market_rent ?? 0), 0) / units.length
+    : row.market_rent;
+  return {
+    ...row,
+    units,
+    count: units.length,
+    current_rent: Math.round(avgCurrent * 100) / 100,
+    market_rent: Math.round(avgMarket * 100) / 100,
+  };
 }
 
 // ─── Rent-comp support for the Market Rent guardrail (spec B8) ───
@@ -188,12 +231,14 @@ function RentRampPanel({
   proformaUnrenovatedBasis,
   vacancyRate,
   holdMonths,
+  hasPerUnitData,
   onChange,
 }: {
   ramp: RentRampAssumptions | undefined;
   proformaUnrenovatedBasis: "current" | "market" | undefined;
   vacancyRate: number;
   holdMonths?: number; // hold period in months — sizes the absorption bar
+  hasPerUnitData?: boolean; // per-unit rows exist → schedule mode drives the ramp
   onChange: (next: RentRampAssumptions | undefined) => void;
 }) {
   const enabled = !!ramp?.enabled;
@@ -231,9 +276,18 @@ function RentRampPanel({
     <div className="border-t border-slate-700 pt-3 mt-2 space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xs text-slate-300 font-medium">Rent Ramp (Mark-to-Market)</div>
+          <div className="text-xs text-slate-300 font-medium flex items-center gap-2">
+            Rent Ramp (Mark-to-Market)
+            {enabled && hasPerUnitData && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-700/40 font-medium">
+                per-unit schedule
+              </span>
+            )}
+          </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            Below-market in-place leases roll to market over time, independent of the renovation schedule.
+            {enabled && hasPerUnitData
+              ? "Each unit turns on its own timeline: vacant → lease-up; MTM → paced turns; fixed lease → after lease end."
+              : "Below-market in-place leases roll to market over time, independent of the renovation schedule."}
           </div>
         </div>
         <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
@@ -265,12 +319,25 @@ function RentRampPanel({
             </div>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <NumField
-              label="Absorption"
-              suffix="mo"
-              value={ramp?.absorption_months ?? DEFAULTS.absorption_months}
-              onChange={(v) => setField("absorption_months", v)}
-            />
+            {hasPerUnitData ? (
+              <div>
+                <Label className="text-xs text-slate-400">Analysis Start</Label>
+                <Input
+                  type="date"
+                  value={ramp?.analysis_start_date || ""}
+                  onChange={(e) => setField("analysis_start_date", e.target.value || undefined)}
+                  className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                  title="Anchor for converting lease-end dates to pro forma months"
+                />
+              </div>
+            ) : (
+              <NumField
+                label="Absorption"
+                suffix="mo"
+                value={ramp?.absorption_months ?? DEFAULTS.absorption_months}
+                onChange={(v) => setField("absorption_months", v)}
+              />
+            )}
             <NumField
               label="Turn Downtime"
               suffix="mo"
@@ -282,12 +349,16 @@ function RentRampPanel({
               value={ramp?.max_turns_per_month ?? DEFAULTS.max_turns_per_month ?? 2}
               onChange={(v) => setField("max_turns_per_month", v)}
             />
-            <NumField
-              label="Vacant @ Close"
-              suffix="units"
-              value={ramp?.initial_vacant_units ?? 0}
-              onChange={(v) => setField("initial_vacant_units", v)}
-            />
+            {hasPerUnitData ? (
+              <ReadOnlyField label="Vacant @ Close" value="from unit statuses" />
+            ) : (
+              <NumField
+                label="Vacant @ Close"
+                suffix="units"
+                value={ramp?.initial_vacant_units ?? 0}
+                onChange={(v) => setField("initial_vacant_units", v)}
+              />
+            )}
             <NumField
               label="Lease-Up"
               suffix="mo"
@@ -755,7 +826,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, year1Revenue }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, year1Revenue }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -900,12 +971,114 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     : unitMix.reduce((sum, u) => sum + u.count * (u.current_rent + u.renovated_rent_premium), 0);
   const otherIncome = r.other_income_monthly || 0;
 
+  // Per-unit rows present anywhere? (spec B2 — drives schedule-mode ramp + exact in-place math)
+  const hasPerUnitData = unitMix.some((u) => (u.units?.length ?? 0) > 0);
+
   // In-place rent over OCCUPIED units only (spec A2: current_rent is the occupied
-  // average, and vacant-at-close units never pay in-place rent). Vacant count comes
-  // from the ramp config; without ramp, all units count as occupied.
+  // average, and vacant-at-close units never pay in-place rent). With per-unit
+  // data, use the exact sum over non-vacant units; otherwise approximate via the
+  // ramp's vacant count.
   const vacantAtClose = r.rent_ramp?.enabled ? (r.rent_ramp.initial_vacant_units ?? 0) : 0;
   const avgCurrentRent = totalUnits > 0 ? subtotalCurrent / totalUnits : 0;
-  const inPlaceOccupiedRent = Math.max(0, subtotalCurrent - vacantAtClose * avgCurrentRent);
+  const inPlaceOccupiedRent = hasPerUnitData
+    ? unitMix.reduce((sum, row) => {
+        if (row.units && row.units.length > 0) {
+          return sum + row.units.reduce((s, u) => s + (u.status !== "vacant" ? u.current_rent : 0), 0);
+        }
+        return sum + row.count * row.current_rent;
+      }, 0)
+    : Math.max(0, subtotalCurrent - vacantAtClose * avgCurrentRent);
+
+  // Keep the ramp in schedule mode whenever per-unit data exists (the engine's
+  // per-unit branch triggers on mode==="schedule"). Also seed the lease-date
+  // anchor so "occupied" units can schedule their turns.
+  useEffect(() => {
+    if (hasPerUnitData && r.rent_ramp?.enabled && r.rent_ramp.mode !== "schedule") {
+      setR((prev) => ({
+        ...prev,
+        rent_ramp: {
+          ...prev.rent_ramp!,
+          mode: "schedule",
+          analysis_start_date: prev.rent_ramp!.analysis_start_date || new Date().toISOString().slice(0, 10),
+        },
+      }));
+      markDirty();
+    }
+  }, [hasPerUnitData, r.rent_ramp?.enabled, r.rent_ramp?.mode]);
+
+  // ── Per-unit row editing (spec B2) ──
+  const [expandedUnitRows, setExpandedUnitRows] = useState<Set<number>>(new Set());
+
+  function toggleUnitRow(i: number) {
+    setExpandedUnitRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) { next.delete(i); return next; }
+      next.add(i);
+      return next;
+    });
+    // First expansion seeds per-unit details from the row's aggregate values.
+    const row = unitMix[i];
+    if (!row.units || row.units.length === 0) {
+      const seeded: UnitDetail[] = Array.from({ length: Math.max(1, row.count) }, (_, n) => ({
+        unit_id: `${n + 1}`,
+        status: "mtm" as const,
+        current_rent: row.current_rent,
+      }));
+      const updated = [...unitMix];
+      updated[i] = { ...row, units: seeded };
+      setR({ ...r, unit_mix: updated });
+      markDirty();
+    }
+  }
+
+  function updateUnitDetail(rowIdx: number, unitIdx: number, patch: Partial<UnitDetail>) {
+    const row = unitMix[rowIdx];
+    if (!row.units) return;
+    const units = row.units.map((u, n) => (n === unitIdx ? { ...u, ...patch } : u));
+    const updated = [...unitMix];
+    updated[rowIdx] = syncRowFromUnits(row, units);
+    setR({ ...r, unit_mix: updated });
+    markDirty();
+  }
+
+  function addUnitDetail(rowIdx: number) {
+    const row = unitMix[rowIdx];
+    const units = [...(row.units ?? []), { unit_id: `${(row.units?.length ?? 0) + 1}`, status: "mtm" as const, current_rent: row.current_rent }];
+    const updated = [...unitMix];
+    updated[rowIdx] = syncRowFromUnits(row, units);
+    setR({ ...r, unit_mix: updated });
+    markDirty();
+  }
+
+  function removeUnitDetail(rowIdx: number, unitIdx: number) {
+    const row = unitMix[rowIdx];
+    if (!row.units || row.units.length <= 1) return;
+    const units = row.units.filter((_, n) => n !== unitIdx);
+    const updated = [...unitMix];
+    updated[rowIdx] = syncRowFromUnits(row, units);
+    setR({ ...r, unit_mix: updated });
+    markDirty();
+  }
+
+  // Replace the whole roll with one per-unit row per rent-roll entry.
+  function loadUnitsFromRentRoll() {
+    if (!dealRentRoll || dealRentRoll.length === 0) return;
+    const details = dealRentRoll.map(rentRollToUnitDetail);
+    const marketAvg = details.length > 0
+      ? details.reduce((s, u) => s + (u.market_rent ?? 0), 0) / details.length
+      : 0;
+    const base: UnitMix = {
+      unit_number: "All units",
+      type: dealRentRoll[0]?.unit_type || "Average",
+      count: details.length,
+      current_rent: 0,
+      market_rent: Math.round(marketAvg * 100) / 100,
+      renovated_rent_premium: unitMix[0]?.renovated_rent_premium ?? 200,
+    };
+    setR({ ...r, unit_mix: [syncRowFromUnits(base, details)] });
+    setExpandedUnitRows(new Set([0]));
+    markDirty();
+  }
 
   // ── OpEx inputs — initialize from legacy fields if not already set ──
   function getOpexInputs(): OpexInputs {
@@ -1243,7 +1416,19 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         <Section title="Revenue & Rent Roll">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500 font-medium">Unit Mix</div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-slate-500 font-medium">Unit Mix</div>
+                {dealRentRoll && dealRentRoll.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={loadUnitsFromRentRoll}
+                    title={`Replace the roll with ${dealRentRoll.length} per-unit rows from the imported rent roll`}
+                    className="text-[11px] text-blue-400 hover:text-blue-300"
+                  >
+                    load {dealRentRoll.length} units from rent roll
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span>Renovated basis:</span>
                 <select
@@ -1257,10 +1442,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
             {unitMix.map((unit, i) => (
-              <div key={i} className="grid grid-cols-3 sm:grid-cols-8 gap-2 items-end">
+              <div key={i} className="space-y-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 items-end">
                 <div>
                   <Label className="text-xs text-slate-400 flex items-center justify-between">
-                    <span>Unit</span>
+                    <span className="flex items-center gap-0.5">
+                      {/* Expand to per-unit detail (spec B2) */}
+                      <button
+                        type="button"
+                        onClick={() => toggleUnitRow(i)}
+                        title={expandedUnitRows.has(i) ? "Collapse to average" : "Expand to per-unit detail"}
+                        className="text-slate-500 hover:text-slate-300 -ml-1"
+                      >
+                        {expandedUnitRows.has(i)
+                          ? <ChevronDown className="h-3 w-3" />
+                          : <ChevronRight className="h-3 w-3" />}
+                      </button>
+                      Unit
+                    </span>
                     {/* Mixed-use chip — informational only; does NOT affect totals. */}
                     <UnitClassChip
                       value={unit.unit_class}
@@ -1283,8 +1482,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     className="bg-slate-800 border-slate-700 text-white text-sm h-8 hover:border-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
                   />
                 </div>
-                <NumField label="Count" value={unit.count} onChange={(v) => updateUnitMix(i, "count", v)} />
-                <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
+                {(unit.units?.length ?? 0) > 0 ? (
+                  <>
+                    <ReadOnlyField label="Count" value={`${unit.count}`} />
+                    <ReadOnlyField label="Current Rent" value={`${fmtCurrency(unit.current_rent)} avg`} />
+                  </>
+                ) : (
+                  <>
+                    <NumField label="Count" value={unit.count} onChange={(v) => updateUnitMix(i, "count", v)} />
+                    <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
+                  </>
+                )}
                 {(() => {
                   // Comp support (spec B8) — the root-cause guardrail on the one
                   // assumption everything traces back to.
@@ -1339,6 +1547,85 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <X className="h-3 w-3" />
                   </Button>
                 </div>
+              </div>
+
+              {/* Expanded per-unit detail (spec B2 / ramp Phase 2). Each unit's
+                  status + lease end drive its own time-to-market in the engine. */}
+              {expandedUnitRows.has(i) && (unit.units?.length ?? 0) > 0 && (
+                <div className="ml-4 border border-slate-800 rounded p-2 space-y-1">
+                  <div className="grid grid-cols-6 gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-1">
+                    <span>Unit ID</span>
+                    <span>Status</span>
+                    <span>Current Rent</span>
+                    <span>Lease End</span>
+                    <span>Market Rent</span>
+                    <span />
+                  </div>
+                  {unit.units!.map((ud, n) => (
+                    <div key={n} className="grid grid-cols-6 gap-2 items-center">
+                      <Input
+                        value={ud.unit_id}
+                        onChange={(e) => updateUnitDetail(i, n, { unit_id: e.target.value })}
+                        placeholder="A-3"
+                        className="bg-slate-800 border-slate-700 text-white text-xs h-7"
+                      />
+                      <select
+                        value={ud.status}
+                        onChange={(e) => {
+                          const status = e.target.value as UnitDetail["status"];
+                          updateUnitDetail(i, n, {
+                            status,
+                            // Vacant pays $0; clearing back from vacant restores the row average.
+                            current_rent: status === "vacant" ? 0 : (ud.current_rent || unit.current_rent),
+                            lease_end: status === "occupied" ? ud.lease_end : undefined,
+                          });
+                        }}
+                        className="bg-slate-800 border border-slate-700 text-white text-xs h-7 rounded px-1"
+                      >
+                        <option value="occupied">Occupied (lease)</option>
+                        <option value="mtm">MTM</option>
+                        <option value="vacant">Vacant</option>
+                      </select>
+                      <BareCurrencyInput
+                        value={ud.current_rent}
+                        onChange={(v) => updateUnitDetail(i, n, { current_rent: v })}
+                      />
+                      <Input
+                        type="date"
+                        value={ud.lease_end || ""}
+                        disabled={ud.status !== "occupied"}
+                        onChange={(e) => updateUnitDetail(i, n, { lease_end: e.target.value || undefined })}
+                        className="bg-slate-800 border-slate-700 text-white text-xs h-7 disabled:opacity-40"
+                      />
+                      <BareCurrencyInput
+                        value={ud.market_rent ?? unit.market_rent}
+                        onChange={(v) => updateUnitDetail(i, n, { market_rent: v })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeUnitDetail(i, n)}
+                        disabled={(unit.units?.length ?? 0) <= 1}
+                        className="text-slate-600 hover:text-red-400 disabled:opacity-30 justify-self-start"
+                        title="Remove unit"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => addUnitDetail(i)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300"
+                    >
+                      + add unit
+                    </button>
+                    <span className="text-[10px] text-slate-500">
+                      Vacant: lease-up then market · MTM: paced turns · Occupied: turns after lease end
+                    </span>
+                  </div>
+                </div>
+              )}
               </div>
             ))}
 
@@ -1462,6 +1749,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               proformaUnrenovatedBasis={exit.proforma_unrenovated_basis}
               vacancyRate={r.vacancy_rate}
               holdMonths={(exit.hold_period_years || 10) * 12}
+              hasPerUnitData={hasPerUnitData}
               onChange={(next) => { setR({ ...r, rent_ramp: next }); markDirty(); }}
             />
           </div>
