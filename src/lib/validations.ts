@@ -156,6 +156,12 @@ export const dealSchema = z.object({
   tax_rate: z.number().optional(), // mill rate
   tax_record_url: z.string().url().optional(), // county tax assessor link
 
+  // Ownership (who holds title today — distinct from any "seller" contact on a live deal)
+  owner_name: z.string().optional(), // owner entity per county records, e.g. "3677 Indianola LLC"
+  owner_since: z.string().optional(), // acquisition date per county records (ISO date)
+  owner_mailing_address: z.string().optional(), // mailing address per county records
+  owner_notes: z.string().optional(), // e.g. "estate sale likely", "out-of-state owner"
+
   // Rent roll & T12
   rent_roll: z.array(rentRollUnitSchema).optional(),
   rent_roll_date: z.string().optional(), // date rent roll was generated
