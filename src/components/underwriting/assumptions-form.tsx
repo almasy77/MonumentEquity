@@ -9,6 +9,8 @@ import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } f
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
+import { TAX_DEFAULTS } from "@/lib/tax";
+import type { TaxAssumptions } from "@/lib/tax";
 
 interface Props {
   scenario: Scenario;
@@ -843,6 +845,8 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [c, setC] = useState(capex);
   const [ex, setEx] = useState(exit);
   const [dep, setDep] = useState(depreciation);
+  const taxInitial = ((scenario as Record<string, unknown>).tax_assumptions ?? undefined) as TaxAssumptions | undefined;
+  const [tx, setTx] = useState<TaxAssumptions | undefined>(taxInitial);
   const [dirty, setDirty] = useState(false);
   const [renovatedBasis, setRenovatedBasis] = useState<"current" | "market">("market");
 
@@ -883,6 +887,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     setC(capex);
     setEx(exit);
     setDep(depreciation);
+    setTx(taxInitial);
     setDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario.version]);
@@ -900,6 +905,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       capex_assumptions: c,
       exit_assumptions: ex,
       depreciation_assumptions: dep,
+      tax_assumptions: tx ?? null,
     });
     setDirty(false);
   }
@@ -2056,6 +2062,155 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     Straight-line: 27.5-year residential schedule. Accelerated: eligible portion taken as bonus depreciation in year 1, remainder on 27.5-year schedule.
                   </p>
                 </div>
+              </div>
+            );
+          })()}
+        </Section>
+
+        {/* Tax Treatment (TAX_TREATMENT_SPEC.md) — after-tax modeling, owner-specific */}
+        <Section title="Tax Treatment">
+          {(() => {
+            const holdYears = ex.hold_period_years || 10;
+            const enabled = !!tx;
+            const updateTx = (patch: Partial<TaxAssumptions>) => {
+              if (!tx) return;
+              setTx({ ...tx, ...patch });
+              markDirty();
+            };
+            const toggleEnabled = (on: boolean) => {
+              setTx(on ? { ...TAX_DEFAULTS, reps_status: Array(holdYears).fill(true) } : undefined);
+              markDirty();
+            };
+            const repsYears: boolean[] = Array.from({ length: holdYears }, (_, i) =>
+              tx?.reps_status?.[i] ?? tx?.reps_status?.[(tx?.reps_status?.length ?? 1) - 1] ?? true
+            );
+            const toggleRepsYear = (i: number) => {
+              if (!tx) return;
+              const next = [...repsYears];
+              next[i] = !next[i];
+              updateTx({ reps_status: next });
+            };
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-[11px] text-slate-500 italic">
+                    Estimate — not tax advice. Owner-specific conventions (MFJ NYC, OpCo/PropCo, REPS, 1031 exit) per TAX_TREATMENT_SPEC.md. Confirm with CPA.
+                  </p>
+                  <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e2) => toggleEnabled(e2.target.checked)}
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                    />
+                    {enabled ? "Enabled" : "Disabled"}
+                  </label>
+                </div>
+
+                {enabled && tx && (
+                  <>
+                    {/* REPS attestation gate (spec section 1) — per-year, heavily audited */}
+                    <div className="bg-amber-950/20 border border-amber-800/40 rounded p-3 space-y-2">
+                      <div className="text-xs text-amber-300 font-medium">
+                        REPS attestation — answer per year: is real estate &gt;50% of the principal&apos;s working time
+                        this year, AND &ge;750 hours, with material participation in the rentals?
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {repsYears.map((on, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => toggleRepsYear(i)}
+                            title={`Year ${i + 1}: REPS ${on ? "ON — loss offsets W-2" : "OFF — loss suspended (PAL); a 1031 will NOT release it"}`}
+                            className={`text-[11px] px-2 py-0.5 rounded border font-medium tabular-nums ${
+                              on
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-700/40"
+                                : "bg-slate-800 text-slate-500 border-slate-700"
+                            }`}
+                          >
+                            Y{i + 1}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-amber-400/70">
+                        OFF years suspend the loss as a PAL — and a 1031 exit does NOT release suspended PALs.
+                      </p>
+                    </div>
+
+                    {/* Rates & loss limits */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <PctField label="Federal Rate" value={tx.federal_ordinary_rate} onChange={(v) => updateTx({ federal_ordinary_rate: v })} />
+                      <PctField label="NY + NYC Rate" value={tx.state_local_ordinary_rate} onChange={(v) => updateTx({ state_local_ordinary_rate: v })} />
+                      <PctField label="NIIT" value={tx.niit_rate} onChange={(v) => updateTx({ niit_rate: v })} />
+                      <CurrencyField label="461(l) Cap (MFJ)" value={tx.ebl_cap_mfj} onChange={(v) => updateTx({ ebl_cap_mfj: v })} />
+                    </div>
+
+                    {/* Entity view */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs text-slate-400">Headline View</Label>
+                        <select
+                          value={tx.opco_view}
+                          onChange={(e2) => updateTx({ opco_view: e2.target.value as "propco" | "household" })}
+                          className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                        >
+                          <option value="household">Household (OpCo fee recycled)</option>
+                          <option value="propco">PropCo standalone</option>
+                        </select>
+                      </div>
+                      <PctField label="OpCo Fee Leakage" value={tx.opco_fee_tax_rate} onChange={(v) => updateTx({ opco_fee_tax_rate: v })} />
+                      <PctField label="Federal Bonus" value={tx.federal_bonus_pct} onChange={(v) => updateTx({ federal_bonus_pct: v })} />
+                      <div className="flex items-end pb-1">
+                        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tx.state_conforms_bonus}
+                            onChange={(e2) => updateTx({ state_conforms_bonus: e2.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                          />
+                          NY conforms to bonus
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Basis & cost-seg */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <PctField label="Land Allocation" value={tx.land_allocation_pct} onChange={(v) => updateTx({ land_allocation_pct: v })} />
+                      <PctField label="5-yr Cost-Seg" value={tx.costseg_5yr_pct} onChange={(v) => updateTx({ costseg_5yr_pct: v })} />
+                      <PctField label="15-yr Land Impr." value={tx.costseg_15yr_pct} onChange={(v) => updateTx({ costseg_15yr_pct: v })} />
+                      <PctField label="Reno 5-yr Share" value={tx.reno_5yr_pct} onChange={(v) => updateTx({ reno_5yr_pct: v })} />
+                      <PctField label="Repairs Expensed" value={tx.reno_repairs_expensed_pct} onChange={(v) => updateTx({ reno_repairs_expensed_pct: v })} />
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Land is carved out first; cost-seg percentages apply to the improvement basis. Federal takes bonus on the 5-yr and 15-yr buckets; NY adds bonus back.
+                    </p>
+
+                    {/* Exit */}
+                    <div className="flex flex-wrap items-center gap-5">
+                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={tx.exit_via_1031}
+                          onChange={(e2) => updateTx({ exit_via_1031: e2.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                        />
+                        Exit via 1031 exchange
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={tx.personal_property_worthless_at_exit}
+                          onChange={(e2) => updateTx({ personal_property_worthless_at_exit: e2.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                        />
+                        1245 personal property worthless at exit
+                      </label>
+                      <span className="text-[10px] text-slate-500 italic">
+                        Taxes are deferred, not eliminated — deferred gain carries into the replacement property.
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })()}

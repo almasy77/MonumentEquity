@@ -139,6 +139,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       expenses: updatedScenario.expense_assumptions,
       capex: updatedScenario.capex_assumptions,
       exit: updatedScenario.exit_assumptions,
+      tax: updatedScenario.tax_assumptions,
     } as unknown as ScenarioInputs;
 
     let result;

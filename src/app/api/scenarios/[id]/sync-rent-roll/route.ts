@@ -57,6 +57,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       expenses: updated.expense_assumptions,
       capex: updated.capex_assumptions,
       exit: updated.exit_assumptions,
+      tax: updated.tax_assumptions,
     } as unknown as ScenarioInputs;
 
     const result = calculateUnderwriting(inputs);

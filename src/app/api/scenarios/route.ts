@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
         expenses: source.expense_assumptions,
         capex: source.capex_assumptions,
         exit: source.exit_assumptions,
+      tax: source.tax_assumptions,
         depreciation: (source as Record<string, unknown>).depreciation_assumptions || undefined,
       } as unknown as ScenarioInputs;
 
