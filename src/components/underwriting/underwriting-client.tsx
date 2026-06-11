@@ -663,6 +663,91 @@ function ScenarioAnalysis({
         );
       })()}
 
+      {/* After-Tax (TAX_TREATMENT_SPEC) — only when the scenario has tax assumptions */}
+      {result.tax && (
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-white text-base font-semibold">After-Tax (1031 exit — taxes deferred, not eliminated)</h3>
+              <span className="text-[10px] text-slate-500 italic">estimate — not tax advice</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-800/60 rounded p-2.5 text-center ring-1 ring-blue-500/50">
+                <div className="text-xs text-blue-300 mb-0.5 font-medium">Household After-Tax IRR</div>
+                <div className="text-sm text-white font-bold tabular-nums">
+                  {result.tax.after_tax_irr_household !== null ? `${(result.tax.after_tax_irr_household * 100).toFixed(1)}%` : "—"}
+                </div>
+                <div className="text-[10px] text-blue-400/70 mt-0.5">OpCo fee recycled — decision view</div>
+              </div>
+              <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                <div className="text-xs text-slate-400 mb-0.5">PropCo After-Tax IRR</div>
+                <div className="text-sm text-white font-semibold tabular-nums">
+                  {result.tax.after_tax_irr_propco !== null ? `${(result.tax.after_tax_irr_propco * 100).toFixed(1)}%` : "—"}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">lender / valuation view</div>
+              </div>
+              <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                <div className="text-xs text-slate-400 mb-0.5">Year-1 Federal Shield</div>
+                <div className="text-sm text-emerald-400 font-semibold tabular-nums">
+                  ${Math.round(result.tax.year1_federal_shield).toLocaleString()}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">+ ${Math.round(result.tax.year1_state_shield).toLocaleString()} NY</div>
+              </div>
+              <div className="bg-slate-800/50 rounded p-2.5 text-center">
+                <div className="text-xs text-slate-400 mb-0.5">Deferred Gain (memo)</div>
+                <div className="text-sm text-amber-400 font-semibold tabular-nums">
+                  ${Math.round(result.tax.deferred_gain_memo.deferred_gain).toLocaleString()}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">carries into replacement property</div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 border-b border-slate-800">
+                    <th className="text-left py-1.5 pr-3 font-medium">Year</th>
+                    <th className="text-right py-1.5 px-2 font-medium">REPS</th>
+                    <th className="text-right py-1.5 px-2 font-medium">Fed Dep</th>
+                    <th className="text-right py-1.5 px-2 font-medium">NY Dep</th>
+                    <th className="text-right py-1.5 px-2 font-medium">Fed Taxable</th>
+                    <th className="text-right py-1.5 px-2 font-medium">Fed Tax/(Shield)</th>
+                    <th className="text-right py-1.5 px-2 font-medium">NY Tax/(Shield)</th>
+                    <th className="text-right py-1.5 px-2 font-medium">NIIT</th>
+                    <th className="text-right py-1.5 px-2 font-medium">ATCF PropCo</th>
+                    <th className="text-right py-1.5 px-2 font-medium">ATCF Household</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.tax.years.map((ty) => {
+                    const f = (n: number) => `${n < 0 ? "(" : ""}$${Math.abs(Math.round(n)).toLocaleString()}${n < 0 ? ")" : ""}`;
+                    return (
+                      <tr key={ty.year} className="border-b border-slate-800/50 tabular-nums">
+                        <td className="py-1 pr-3 text-slate-300">Y{ty.year}</td>
+                        <td className={`py-1 px-2 text-right ${ty.reps_on ? "text-emerald-400" : "text-slate-500"}`}>{ty.reps_on ? "ON" : "off"}</td>
+                        <td className="py-1 px-2 text-right text-slate-300">{f(ty.federal_depreciation)}</td>
+                        <td className="py-1 px-2 text-right text-slate-400">{f(ty.state_depreciation)}</td>
+                        <td className="py-1 px-2 text-right text-slate-300">{f(ty.federal_taxable_income)}</td>
+                        <td className={`py-1 px-2 text-right ${ty.federal_tax < 0 ? "text-emerald-400" : "text-slate-300"}`}>{f(ty.federal_tax)}</td>
+                        <td className={`py-1 px-2 text-right ${ty.state_tax < 0 ? "text-emerald-400" : "text-slate-400"}`}>{f(ty.state_tax)}</td>
+                        <td className="py-1 px-2 text-right text-slate-400">{f(ty.niit)}</td>
+                        <td className="py-1 px-2 text-right text-slate-300">{f(ty.after_tax_cash_flow_propco)}</td>
+                        <td className="py-1 px-2 text-right text-white font-medium">{f(ty.after_tax_cash_flow_household)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {result.tax.pal_carryforward_at_exit > 0 && (
+              <p className="text-[11px] text-amber-400/80">
+                Suspended PALs at exit: ${Math.round(result.tax.pal_carryforward_at_exit).toLocaleString()} — a 1031 is not a fully-taxable
+                disposition, so these stay suspended (they carry to the replacement holding period).
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Sensitivity */}
       <SensitivityGrid
         sensitivity={result.sensitivity}

@@ -50,6 +50,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     expenses: scenario.expense_assumptions,
     capex: scenario.capex_assumptions,
     exit: scenario.exit_assumptions,
+      tax: scenario.tax_assumptions,
     depreciation: (scenario as Record<string, unknown>).depreciation_assumptions || undefined,
   } as unknown as ScenarioInputs;
 

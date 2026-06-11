@@ -91,6 +91,9 @@ export async function generateExcelWorkbook(
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
   buildValidationSheet(wb, result);
+  if (result.tax && inputs.tax) {
+    buildTaxSheet(wb, result.tax, inputs.tax);
+  }
   buildReadmeSheet(wb);
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -1023,4 +1026,83 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
   src.getCell(1).alignment = { wrapText: true };
   ws.mergeCells(`A${src.number}:D${src.number}`);
   src.height = 30;
+}
+
+// ─── Tax Treatment sheet (TAX_TREATMENT_SPEC.md) ─────────────
+// Only present when the scenario has tax assumptions. Estimate — not tax advice.
+function buildTaxSheet(
+  wb: ExcelJS.Workbook,
+  tax: NonNullable<UnderwritingResult["tax"]>,
+  assumptions: NonNullable<ScenarioInputs["tax"]>,
+) {
+  const ws = wb.addWorksheet("Tax (After-Tax)");
+  ws.columns = [
+    { width: 8 }, { width: 8 }, { width: 14 }, { width: 14 }, { width: 15 },
+    { width: 16 }, { width: 16 }, { width: 12 }, { width: 15 }, { width: 16 },
+  ];
+
+  const title = ws.addRow(["After-Tax Analysis — estimate, not tax advice (1031 exit: taxes deferred, not eliminated)"]);
+  title.getCell(1).font = { ...HEADER_FONT, size: 12 };
+  title.getCell(1).fill = HEADER_FILL;
+  ws.mergeCells(`A${title.number}:J${title.number}`);
+  ws.addRow([]);
+
+  addSectionHeader(ws, "Headline", 10);
+  addMetricRow(ws, "Household After-Tax IRR (fee recycled)", tax.after_tax_irr_household, PCT_FMT);
+  addMetricRow(ws, "PropCo After-Tax IRR (standalone)", tax.after_tax_irr_propco, PCT_FMT);
+  addLabelValue(ws, "Year-1 Federal Shield", tax.year1_federal_shield, CURRENCY_FMT);
+  addLabelValue(ws, "Year-1 NY Shield", tax.year1_state_shield, CURRENCY_FMT);
+  addLabelValue(ws, "Deferred Gain at Exit (memo)", tax.deferred_gain_memo.deferred_gain, CURRENCY_FMT);
+  addLabelValue(ws, "  — Accumulated Federal Depreciation", tax.deferred_gain_memo.accumulated_federal_depreciation, CURRENCY_FMT);
+  addLabelValue(ws, "  — §1250 share (building + land impr.)", tax.deferred_gain_memo.sec1250_depreciation, CURRENCY_FMT);
+  addLabelValue(ws, "  — §1245 share (personal property)", tax.deferred_gain_memo.sec1245_depreciation, CURRENCY_FMT);
+  addLabelValue(ws, "Adjusted Basis at Exit", tax.deferred_gain_memo.adjusted_basis_at_exit, CURRENCY_FMT);
+  if (tax.pal_carryforward_at_exit > 0) {
+    addLabelValue(ws, "Suspended PALs at Exit (NOT released by 1031)", tax.pal_carryforward_at_exit, CURRENCY_FMT);
+  }
+  ws.addRow([]);
+
+  addSectionHeader(ws, "Assumptions", 10);
+  addInputRow(ws, "Federal Ordinary Rate", assumptions.federal_ordinary_rate, PCT_FMT);
+  addInputRow(ws, "NY + NYC Ordinary Rate", assumptions.state_local_ordinary_rate, PCT_FMT);
+  addInputRow(ws, "NIIT Rate", assumptions.niit_rate, PCT_FMT);
+  addInputRow(ws, "§461(l) Cap (MFJ)", assumptions.ebl_cap_mfj, CURRENCY_FMT);
+  addInputRow(ws, "Federal Bonus %", assumptions.federal_bonus_pct, PCT_FMT);
+  addLabelValue(ws, "NY Conforms to Bonus", assumptions.state_conforms_bonus ? "Yes" : "No (bonus added back)");
+  addInputRow(ws, "Land Allocation", assumptions.land_allocation_pct, PCT_FMT);
+  addInputRow(ws, "5-yr Cost-Seg", assumptions.costseg_5yr_pct, PCT_FMT);
+  addInputRow(ws, "15-yr Land Improvements", assumptions.costseg_15yr_pct, PCT_FMT);
+  addInputRow(ws, "Reno 5-yr Share", assumptions.reno_5yr_pct, PCT_FMT);
+  addInputRow(ws, "Repairs Expensed %", assumptions.reno_repairs_expensed_pct, PCT_FMT);
+  addInputRow(ws, "OpCo Fee Leakage", assumptions.opco_fee_tax_rate, PCT_FMT);
+  addLabelValue(ws, "Exit via 1031", assumptions.exit_via_1031 ? "Yes" : "No");
+  ws.addRow([]);
+
+  addSectionHeader(ws, "Per-Year Detail", 10);
+  const hdr = ws.addRow([
+    "Year", "REPS", "Fed Dep", "NY Dep", "Fed Taxable",
+    "Fed Tax/(Shield)", "NY Tax/(Shield)", "NIIT", "ATCF PropCo", "ATCF Household",
+  ]);
+  styleHeaderRow(hdr, 10);
+  for (const y of tax.years) {
+    const row = ws.addRow([
+      y.year,
+      y.reps_on ? "ON" : "off",
+      y.federal_depreciation,
+      y.state_depreciation,
+      y.federal_taxable_income,
+      y.federal_tax,
+      y.state_tax,
+      y.niit,
+      y.after_tax_cash_flow_propco,
+      y.after_tax_cash_flow_household,
+    ]);
+    for (let c = 3; c <= 10; c++) {
+      row.getCell(c).numFmt = CURRENCY_FMT;
+      row.getCell(c).font = NORMAL_FONT;
+      row.getCell(c).border = THIN_BORDER;
+    }
+    row.getCell(1).font = NORMAL_FONT;
+    row.getCell(2).font = NORMAL_FONT;
+  }
 }
