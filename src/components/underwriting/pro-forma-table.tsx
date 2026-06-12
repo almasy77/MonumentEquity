@@ -321,19 +321,21 @@ export function ProFormaTable({
                 <>
                   <tr className="border-t-2 border-slate-600">
                     <td className="py-1.5 pr-4 text-slate-300">
-                      Tax / (Shield)
+                      Tax Savings / (Tax)
                       <span className="text-slate-600 text-[10px] ml-1.5">fed + NY + NIIT · est.</span>
                     </td>
                     {annual.map((a) => {
                       const ty = taxYears[a.year - 1];
                       const net = ty ? ty.federal_tax + ty.state_tax + ty.niit : 0;
+                      // Sign convention: a net SHIELD is cash coming back to you →
+                      // positive green "+$X". Tax due is an outflow → "($X)".
                       return (
                         <td
                           key={a.year}
-                          className={`text-right py-1.5 px-2 tabular-nums ${net < 0 ? "text-emerald-400" : "text-slate-300"}`}
+                          className={`text-right py-1.5 px-2 tabular-nums ${net < 0 ? "text-emerald-400 font-medium" : "text-slate-400"}`}
                           title={ty ? `Federal: ${fmt(ty.federal_tax)} · NY: ${fmt(ty.state_tax)} · NIIT: ${fmt(ty.niit)} · REPS ${ty.reps_on ? "ON" : "off"}` : undefined}
                         >
-                          {net < 0 ? `(${fmt(-net)})` : fmt(net)}
+                          {net < 0 ? `+${fmt(-net)}` : net > 0 ? `(${fmt(net)})` : fmt(0)}
                         </td>
                       );
                     })}

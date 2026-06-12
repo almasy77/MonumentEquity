@@ -893,6 +893,7 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
     ["CapEx Schedule", "Per-unit renovation pacing, downtime, and project-level CapEx by month."],
     ["Depreciation", "Cost-seg breakdown if accelerated depreciation is configured."],
     ["Validation", "Engine self-checks: GPR + premium math, NOI = EGI - OpEx, CF = NOI - DS - Reserves - CapEx."],
+    ["Tax (After-Tax)", "Only when Tax Treatment is enabled: dual federal/NY schedules, per-year tax or shield, both after-tax IRRs, deferred-gain memo. Estimate — not tax advice."],
   ];
   styleHeaderRow(ws.addRow(["Sheet", "What's on it"]), 2);
   for (const [name, desc] of sheets) {
@@ -913,6 +914,10 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
     "Operating expense ratio (OpEx ÷ EGI) excludes reserves. Add reserves back if comparing to brokers or appraisers who include them above the line.",
     "Renovation rent ramp: unrenovated units pay the unrenovated basis (current/market). Renovated units pay the renovated basis (current/market + premium). Schedule is per-unit per CapEx assumptions.",
     "Turnover cost rate only multiplies per-unit inputs. If you entered Turnover Cost as a total annual figure, no rate is applied — the entered value IS the annual cost.",
+    "After-tax (when Tax Treatment is on): TWO depreciation schedules — federal takes bonus on the 5-yr and 15-yr cost-seg buckets; NY adds bonus back. Federal loss × federal rate, NY loss × NY rate — never blended.",
+    "ATCF PropCo = the property's after-tax cash flow with the management fee as a real expense (what a lender/buyer underwrites). ATCF Household = PropCo + the fee recycled back through OpCo minus payroll/SE leakage (what actually lands in the owner's pocket). Household drives decisions.",
+    "REPS is attested PER YEAR. ON: losses offset W-2 (capped by §461(l); excess → NOL). OFF: losses suspend as PALs — and a 1031 exit does NOT release them.",
+    "1031 exit: gain and recapture are DEFERRED, not eliminated — the deferred-gain memo carries into the replacement property as reduced basis.",
   ];
   for (const n of notes) {
     const r = ws.addRow(["• " + n]);
