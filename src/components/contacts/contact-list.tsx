@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CONTACT_TYPES, CONTACT_TYPE_LABELS, type ContactType } from "@/lib/constants";
+import { CONTACT_TYPES, CONTACT_TYPE_LABELS, CONTACT_STATUS_LABELS, type ContactType } from "@/lib/constants";
 import { getContactDisplayName, getContactSortName } from "@/lib/contact-utils";
 import { Mail, Phone, Building2, Globe, Search, ArrowUpDown, Pencil } from "lucide-react";
 import { EditContactDialog } from "./edit-contact-dialog";
@@ -164,6 +164,27 @@ export function ContactList({ contacts }: { contacts: Contact[] }) {
                     >
                       {CONTACT_TYPE_LABELS[contact.type]}
                     </Badge>
+                    {contact.priority && (
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                        contact.priority === "A"
+                          ? "bg-amber-500/20 text-amber-400"
+                          : contact.priority === "B"
+                          ? "bg-blue-600/20 text-blue-400"
+                          : "bg-slate-700/50 text-slate-400"
+                      }`}>
+                        {contact.priority}
+                      </span>
+                    )}
+                    {contact.dnc && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-600/20 text-red-400 shrink-0">
+                        DNC
+                      </span>
+                    )}
+                    {contact.status && contact.status !== "active" && (
+                      <span className="text-[10px] text-slate-500 shrink-0">
+                        {CONTACT_STATUS_LABELS[contact.status]}
+                      </span>
+                    )}
                     {(contact.tags || []).map((tag) => (
                       <span
                         key={tag}
@@ -206,6 +227,16 @@ export function ContactList({ contacts }: { contacts: Contact[] }) {
                   {contact.notes && (
                     <p className="text-xs text-slate-500 mt-2 line-clamp-1">
                       {contact.notes}
+                    </p>
+                  )}
+                  {contact.next_action && (
+                    <p className={`text-xs mt-1 ${
+                      contact.next_action_date && contact.next_action_date < new Date().toISOString().slice(0, 10)
+                        ? "text-red-400"
+                        : "text-slate-400"
+                    }`}>
+                      Next: {contact.next_action}
+                      {contact.next_action_date ? ` · ${contact.next_action_date}` : ""}
                     </p>
                   )}
                 </div>

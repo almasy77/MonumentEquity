@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Clock, Calendar, Building2 } from "lucide-react";
+import { AlertTriangle, Clock, Calendar, Building2, Users } from "lucide-react";
 
 interface AttentionItem {
-  type: "stale_deal" | "overdue_task" | "dd_expiring" | "closing_soon";
+  type: "stale_deal" | "overdue_task" | "dd_expiring" | "closing_soon" | "contact_followup";
   label: string;
   detail: string;
   href: string;
@@ -24,10 +24,12 @@ export function AttentionWidget({ items }: { items: AttentionItem[] }) {
     overdue_task: <AlertTriangle className="h-3.5 w-3.5 text-red-400" />,
     dd_expiring: <Calendar className="h-3.5 w-3.5 text-orange-400" />,
     closing_soon: <Clock className="h-3.5 w-3.5 text-blue-400" />,
+    contact_followup: <Users className="h-3.5 w-3.5 text-purple-400" />,
   };
 
   const colors = {
     stale_deal: "border-l-yellow-500",
+    contact_followup: "border-l-purple-500",
     overdue_task: "border-l-red-500",
     dd_expiring: "border-l-orange-500",
     closing_soon: "border-l-blue-500",

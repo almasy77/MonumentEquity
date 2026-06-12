@@ -301,6 +301,13 @@ export const contactSchema = z.object({
   address_city: z.string().optional(),
   address_state: z.string().optional(),
   last_contacted_at: z.string().optional(),
+  // CRM (BACKLOG spec) — all optional, backwards compatible
+  priority: z.enum(["A", "B", "C"]).optional(),
+  status: z.enum(["prospect", "active", "inactive", "closed"]).optional(),
+  connection_source: z.string().optional(), // how you know them
+  dnc: z.boolean().optional(), // do not call
+  next_action: z.string().optional(),
+  next_action_date: z.string().optional(), // ISO date — overdue surfaces on dashboard
   notes: z.string().optional(),
   deal_ids: z.array(z.string().uuid()).default([]),
   created_at: z.string().datetime(),
