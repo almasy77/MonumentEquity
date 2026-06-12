@@ -40,30 +40,20 @@ const LIGHT_FILL: ExcelJS.Fill = {
   fgColor: { argb: "FFF0F4F8" },
 };
 
-// Brand fonts (owner spec): numbers/calculations in DM Mono, row labels and
-// descriptions in DM Sans, column/section headers in DM Serif Display.
-// .xlsx cannot embed fonts — viewers without the DM family installed fall
-// back to Excel's default.
-const FONT_SERIF = "DM Serif Display";
-const FONT_SANS = "DM Sans";
-const FONT_MONO = "DM Mono";
-
 const HEADER_FONT: Partial<ExcelJS.Font> = {
   bold: true,
   color: { argb: "FFFFFFFF" },
   size: 11,
-  name: FONT_SERIF,
 };
 
 const SUBHEADER_FONT: Partial<ExcelJS.Font> = {
   bold: true,
   color: { argb: "FFFFFFFF" },
   size: 10,
-  name: FONT_SERIF,
 };
 
-const BOLD_FONT: Partial<ExcelJS.Font> = { bold: true, size: 10, name: FONT_SANS };
-const NORMAL_FONT: Partial<ExcelJS.Font> = { size: 10, name: FONT_SANS };
+const BOLD_FONT: Partial<ExcelJS.Font> = { bold: true, size: 10 };
+const NORMAL_FONT: Partial<ExcelJS.Font> = { size: 10 };
 
 const CURRENCY_FMT = '$#,##0';
 const PCT_FMT = '0.0%';
@@ -106,38 +96,8 @@ export async function generateExcelWorkbook(
   }
   buildReadmeSheet(wb);
 
-  applyBrandFonts(wb);
-
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
-}
-
-/**
- * Brand-font pass (owner spec): every cell that hasn't been explicitly
- * branded gets DM Mono if it holds a number/formula (calculations), DM Sans
- * otherwise (labels, descriptions). Headers keep DM Serif Display via their
- * explicitly-named font constants, which this pass skips.
- */
-function applyBrandFonts(wb: ExcelJS.Workbook) {
-  wb.eachSheet((ws) => {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        const existing = (cell.font ?? {}) as Partial<ExcelJS.Font>;
-        const v = cell.value;
-        const isNumeric =
-          typeof v === "number" ||
-          (v !== null && typeof v === "object" && "formula" in (v as unknown as Record<string, unknown>));
-        if (isNumeric) {
-          // Calculations always render in mono — overrides the sans constants
-          // that double as value fonts at many call sites.
-          cell.font = { ...existing, size: existing.size ?? 10, name: FONT_MONO };
-        } else if (!existing.name) {
-          // Unbranded text → sans. Serif headers / sans labels keep their name.
-          cell.font = { ...existing, size: existing.size ?? 10, name: FONT_SANS };
-        }
-      });
-    });
-  });
 }
 
 // ─── Sheet Builders ──────────────────────────────────────────
@@ -153,7 +113,7 @@ function buildSummarySheet(
 
   // Title
   const titleRow = ws.addRow(["Monument Equity — Deal Summary"]);
-  titleRow.font = { bold: true, size: 14, color: { argb: "FF1E3A5F" }, name: FONT_SERIF };
+  titleRow.font = { bold: true, size: 14, color: { argb: "FF1E3A5F" } };
   ws.mergeCells("A1:E1");
   ws.addRow([]);
 
