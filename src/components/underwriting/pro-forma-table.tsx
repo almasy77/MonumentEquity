@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { MonthlyRow, AnnualSummary, OpexBreakdown, UnrenovatedBasis, RenovatedBasis } from "@/lib/underwriting";
+import type { TaxYearRow } from "@/lib/tax";
 
 const UNRENOVATED_BASIS_LABELS: Record<UnrenovatedBasis, string> = {
   current: "Current",
@@ -69,6 +70,8 @@ export function ProFormaTable({
   annual,
   unrenovatedBasis,
   renovatedBasis,
+  taxYears,
+  taxView = "household",
   onUnrenovatedBasisChange,
   onRenovatedBasisChange,
 }: {
@@ -76,6 +79,8 @@ export function ProFormaTable({
   annual: AnnualSummary[];
   unrenovatedBasis?: UnrenovatedBasis;
   renovatedBasis?: RenovatedBasis;
+  taxYears?: TaxYearRow[]; // per-year tax detail — rows shown only when present (annual view)
+  taxView?: "propco" | "household"; // which after-tax CF is the headline
   onUnrenovatedBasisChange?: (basis: UnrenovatedBasis) => void;
   onRenovatedBasisChange?: (basis: RenovatedBasis) => void;
 }) {
@@ -309,6 +314,54 @@ export function ProFormaTable({
                   })}
                 </tr>
               ))}
+              {/* Modeled tax impact (TAX_TREATMENT_SPEC) — annual view only,
+                  rendered only when the scenario has Tax Treatment enabled.
+                  Tax/(Shield) = federal + NY + NIIT, net; green = net shield. */}
+              {taxYears && taxYears.length > 0 && (
+                <>
+                  <tr className="border-t-2 border-slate-600">
+                    <td className="py-1.5 pr-4 text-slate-300">
+                      Tax / (Shield)
+                      <span className="text-slate-600 text-[10px] ml-1.5">fed + NY + NIIT · est.</span>
+                    </td>
+                    {annual.map((a) => {
+                      const ty = taxYears[a.year - 1];
+                      const net = ty ? ty.federal_tax + ty.state_tax + ty.niit : 0;
+                      return (
+                        <td
+                          key={a.year}
+                          className={`text-right py-1.5 px-2 tabular-nums ${net < 0 ? "text-emerald-400" : "text-slate-300"}`}
+                          title={ty ? `Federal: ${fmt(ty.federal_tax)} · NY: ${fmt(ty.state_tax)} · NIIT: ${fmt(ty.niit)} · REPS ${ty.reps_on ? "ON" : "off"}` : undefined}
+                        >
+                          {net < 0 ? `(${fmt(-net)})` : fmt(net)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="bg-slate-800/30">
+                    <td className="py-1.5 pr-4 font-semibold text-white">
+                      After-Tax Cash Flow
+                      <span className="text-slate-500 text-[10px] ml-1.5 font-normal">
+                        {taxView === "household" ? "household view" : "PropCo view"}
+                      </span>
+                    </td>
+                    {annual.map((a) => {
+                      const ty = taxYears[a.year - 1];
+                      const atcf = ty
+                        ? (taxView === "household" ? ty.after_tax_cash_flow_household : ty.after_tax_cash_flow_propco)
+                        : 0;
+                      return (
+                        <td
+                          key={a.year}
+                          className={`text-right py-1.5 px-2 tabular-nums font-semibold ${atcf < 0 ? "text-red-400" : "text-white"}`}
+                        >
+                          {fmt(atcf)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </>
+              )}
             </tbody>
           </table>
         ) : (
