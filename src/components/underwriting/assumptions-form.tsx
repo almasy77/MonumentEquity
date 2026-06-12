@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail, TaxReassessment } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
@@ -1901,6 +1901,114 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         <p className="text-[10px] text-slate-500">
                           Operations: from the phase-in year, property tax = reassessed value × rate ({fmtCurrency(estReassessed)}/yr), escalated. Exit: value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
                         </p>
+
+                        {/* Property Tax v2 (fix-spec Phase 2): abatement record + scenario.
+                            Enabling creates expenses.property_tax_v2 (calendar-anchored,
+                            HB 920 shaped, three vectors) which takes precedence over the
+                            v1 phase-in above. */}
+                        {(() => {
+                          const v2 = e.property_tax_v2;
+                          const v2On = !!v2?.enabled;
+                          const updateV2 = (patch: Partial<PropertyTaxAssumptions>) => {
+                            const base: PropertyTaxAssumptions = v2 ?? {
+                              enabled: true,
+                              effective_tax_rate: tr?.effective_tax_rate ?? 0.0185,
+                              reassessed_value: tr?.reassessed_value,
+                              apply_at_exit: tr?.apply_at_exit ?? true,
+                              closing_date: new Date().toISOString().slice(0, 10),
+                            };
+                            setE({ ...e, property_tax_v2: { ...base, ...patch } });
+                            markDirty();
+                          };
+                          const ab = v2?.abatement;
+                          const updateAb = (patch: Partial<NonNullable<PropertyTaxAssumptions["abatement"]>>) => {
+                            updateV2({
+                              abatement: {
+                                abated_annual_tax: 0,
+                                unabated_annual_tax: 0,
+                                final_abated_tax_year: new Date().getFullYear() + 2,
+                                transferable: "unconfirmed",
+                                ...(ab ?? {}),
+                                ...patch,
+                              },
+                            });
+                          };
+                          return (
+                            <div className="border-t border-slate-800 pt-2 mt-2 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-slate-400 font-medium">
+                                  Abatement / Tax Scenarios (v2)
+                                  {v2On && ab && ab.transferable !== "confirmed" && (
+                                    <span className="ml-2 text-[10px] text-amber-400">defaulting to abatement-lost (transfer not confirmed)</span>
+                                  )}
+                                </span>
+                                <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={v2On}
+                                    onChange={(ev) => {
+                                      if (ev.target.checked) updateV2({ enabled: true });
+                                      else if (v2) { setE({ ...e, property_tax_v2: { ...v2, enabled: false } }); markDirty(); }
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                                  />
+                                  {v2On ? "On" : "Off"}
+                                </label>
+                              </div>
+                              {v2On && v2 && (
+                                <>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div>
+                                      <Label className="text-xs text-slate-400">Closing Date</Label>
+                                      <Input type="date" value={v2.closing_date || ""} onChange={(ev) => updateV2({ closing_date: ev.target.value || undefined })} className="bg-slate-800 border-slate-700 text-white text-sm h-8" />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs text-slate-400">Scenario In Force</Label>
+                                      <select
+                                        value={v2.scenario || "auto"}
+                                        onChange={(ev) => updateV2({ scenario: ev.target.value === "auto" ? undefined : (ev.target.value as PropertyTaxAssumptions["scenario"]) })}
+                                        className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                                      >
+                                        <option value="auto">Auto (default rule)</option>
+                                        <option value="abated_transfers">Abated, transfers</option>
+                                        <option value="abatement_lost">Abatement lost</option>
+                                        <option value="reassessed_to_price">Reassessed to price</option>
+                                      </select>
+                                    </div>
+                                    <CurrencyField label="Abated Tax /yr" value={ab?.abated_annual_tax ?? 0} onChange={(v) => updateAb({ abated_annual_tax: v })} />
+                                    <CurrencyField label="Unabated Tax /yr" value={ab?.unabated_annual_tax ?? 0} onChange={(v) => updateAb({ unabated_annual_tax: v })} />
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <NumField label="Final Abated Tax Year" value={ab?.final_abated_tax_year ?? 0} onChange={(v) => updateAb({ final_abated_tax_year: Math.round(v) })} />
+                                    <div>
+                                      <Label className="text-xs text-slate-400">Transferable</Label>
+                                      <select
+                                        value={ab?.transferable ?? "unconfirmed"}
+                                        onChange={(ev) => updateAb({ transferable: ev.target.value as "confirmed" | "unconfirmed" | "none" })}
+                                        className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                                      >
+                                        <option value="confirmed">Confirmed</option>
+                                        <option value="unconfirmed">Unconfirmed</option>
+                                        <option value="none">None</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs text-slate-400">Program</Label>
+                                      <Input value={ab?.program || ""} onChange={(ev) => updateAb({ program: ev.target.value })} placeholder="e.g. CRA 100%" className="bg-slate-800 border-slate-700 text-white text-sm h-8" />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs text-slate-400">Parcel ID</Label>
+                                      <Input value={v2.parcel?.parcel_id || ""} onChange={(ev) => updateV2({ parcel: { ...(v2.parcel ?? {}), parcel_id: ev.target.value } })} placeholder="010-123456" className="bg-slate-800 border-slate-700 text-white text-sm h-8" />
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500">
+                                    Bills are calendar-anchored to the closing date (Ohio: tax year = calendar year, billed in arrears) and shaped per HB 920 — only ~12.5% of the bill floats with valuation; the voted remainder is dollar-flat plus levy drift. All three scenario vectors export to the workbook.
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
                   </div>
