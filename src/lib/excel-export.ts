@@ -225,6 +225,30 @@ function buildSummarySheet(
     addLabelValue(ws, "% Land", m.depreciation.land_pct, PCT_FMT);
     addLabelValue(ws, "% Improvements", m.depreciation.improvement_pct, PCT_FMT);
   }
+
+  // Key Links — clickable hyperlinks pulled from the deal page
+  {
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`.trim()
+    )}`;
+    const links: { label: string; url?: string }[] = [
+      { label: "For-Sale Listing", url: deal.source_url },
+      { label: "County Tax Records", url: deal.tax_record_url },
+      { label: "Google Maps", url: mapsUrl },
+    ];
+    const present = links.filter((l): l is { label: string; url: string } => !!l.url);
+    if (present.length > 0) {
+      ws.addRow([]);
+      addSectionHeader(ws, "Key Links", 5);
+      for (const link of present) {
+        const row = ws.addRow([link.label]);
+        row.getCell(1).font = NORMAL_FONT;
+        const cell = row.getCell(2);
+        cell.value = { text: link.url, hyperlink: link.url };
+        cell.font = { size: 10, name: FONT_SANS, color: { argb: "FF0563C1" }, underline: true };
+      }
+    }
+  }
 }
 
 function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
