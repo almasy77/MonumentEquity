@@ -90,6 +90,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       capex_assumptions: body.capex_assumptions ?? existing.capex_assumptions,
       exit_assumptions: body.exit_assumptions ?? existing.exit_assumptions,
       depreciation_assumptions: body.depreciation_assumptions ?? (existing as Record<string, unknown>).depreciation_assumptions ?? {},
+      // tax_assumptions: explicit !== undefined check (not ??) because the form
+      // sends null to DISABLE the tax layer — ?? would resurrect the old value.
+      tax_assumptions: body.tax_assumptions !== undefined
+        ? body.tax_assumptions
+        : (existing as Record<string, unknown>).tax_assumptions,
       version: existing.version + 1,
       updated_at: now,
     };
