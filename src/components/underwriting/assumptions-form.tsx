@@ -1322,6 +1322,25 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <PctField label="Origination Fee Rate" value={f.origination_fee_rate} onChange={(v) => { setF({ ...f, origination_fee_rate: v }); markDirty(); }} />
                   <ReadOnlyField label="Origination Fee" value={fmtCurrency(originationFee)} />
                 </div>
+                {/* DSCR-aware sizing (fix-spec Phase 4.1): loan = min(LTV, DSCR proceeds) */}
+                <div className="flex items-end gap-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => { setF({ ...f, size_to_dscr: f.size_to_dscr === false ? true : false }); markDirty(); }}
+                    className={`px-2 py-1.5 rounded text-xs border ${f.size_to_dscr !== false ? "bg-blue-900/40 border-blue-500 text-blue-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
+                  >
+                    Size loan to DSCR: {f.size_to_dscr !== false ? "ON" : "OFF"}
+                  </button>
+                  {f.size_to_dscr !== false && (
+                    <div className="w-28">
+                      <NumField label="DSCR Floor" value={f.dscr_floor ?? 1.25} suffix="x" onChange={(v) => { setF({ ...f, dscr_floor: v }); markDirty(); }} />
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-500 flex-1 min-w-[220px]">
+                    Lender convention: proceeds = min(LTV loan, loan whose amortizing payment year-1 NOI covers at the floor).
+                    When DSCR binds, the engine resizes the loan and notes the extra equity required.
+                  </p>
+                </div>
               </div>
             );
           })()}
@@ -1735,6 +1754,44 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   Utilities expense section (negative line) — pick <span className="font-semibold">one</span> to avoid
                   double-counting.
                 </p>
+                {/* Structured RUBS (fix-spec Phase 4.2): derive the reimbursement
+                    instead of hand-typing it. recovery × utilities × physical occupancy. */}
+                <div className="flex items-end gap-3 flex-wrap border-t border-slate-800 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const on = r.rubs?.mode === "structured";
+                      setR({ ...r, rubs: on ? undefined : { mode: "structured", recovery_pct: r.rubs?.recovery_pct ?? 0.80, source_note: r.rubs?.source_note } });
+                      markDirty();
+                    }}
+                    className={`px-2 py-1.5 rounded text-xs border ${r.rubs?.mode === "structured" ? "bg-blue-900/40 border-blue-500 text-blue-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
+                  >
+                    Structured RUBS: {r.rubs?.mode === "structured" ? "ON" : "OFF"}
+                  </button>
+                  {r.rubs?.mode === "structured" && (
+                    <>
+                      <div className="w-28">
+                        <PctField label="Recovery %" value={r.rubs.recovery_pct ?? 0.80} onChange={(v) => { setR({ ...r, rubs: { ...r.rubs!, recovery_pct: v } }); markDirty(); }} />
+                      </div>
+                      <div className="flex-1 min-w-[220px]">
+                        <label className="text-[11px] text-slate-400 block mb-1">Source note {(r.rubs.recovery_pct ?? 0.80) > 0.85 && <span className="text-amber-400">(required above 85%)</span>}</label>
+                        <input
+                          type="text"
+                          value={r.rubs.source_note ?? ""}
+                          placeholder="e.g. Lease audit 2026-05: 100% billback in place"
+                          onChange={(e) => { setR({ ...r, rubs: { ...r.rubs!, source_note: e.target.value } }); markDirty(); }}
+                          className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-600"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+                {r.rubs?.mode === "structured" && (
+                  <p className="text-[11px] text-slate-500">
+                    Derived RUBS = recovery × utilities expense × physical occupancy, replacing the manual
+                    Utility Reimb. line above. Default 80%; above 85% requires collections evidence.
+                  </p>
+                )}
               </div>
             )}
 
@@ -2078,6 +2135,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
                 {/* Renovation Downtime */}
                 <div className="flex items-center gap-3 border-t border-slate-700 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setC({ ...c, pca_complete: !c.pca_complete }); markDirty(); }}
+                    className={`px-2 py-1.5 rounded text-xs border ${c.pca_complete ? "bg-green-900/40 border-green-600 text-green-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
+                  >
+                    PCA on file: {c.pca_complete ? "YES" : "NO"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => { setC({ ...c, renovation_downtime_enabled: !downtimeEnabled }); markDirty(); }}

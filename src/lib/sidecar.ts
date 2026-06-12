@@ -5,7 +5,7 @@
  */
 import type { Deal } from "./validations";
 import type { ScenarioInputs, UnderwritingResult } from "./underwriting";
-import { computeReconciliationChecks, allChecksPass, exitMethodFor } from "./checks";
+import { computeReconciliationChecks, allChecksPass, exitMethodFor, capexGuardrailWarning } from "./checks";
 
 export interface ExportSidecar {
   metadata: {
@@ -70,6 +70,6 @@ export function buildSidecar(
     },
     property_tax_vectors: result.property_tax_vectors ?? null,
     checks: { all_pass: allChecksPass(checks), items: checks },
-    warnings: result.warnings,
+    warnings: [...result.warnings, ...(capexGuardrailWarning(deal, inputs) ? [capexGuardrailWarning(deal, inputs)!] : [])],
   };
 }

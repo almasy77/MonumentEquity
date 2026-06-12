@@ -19,7 +19,7 @@ import type {
   OpexInput,
   OpexInputMode,
 } from "./underwriting";
-import { computeReconciliationChecks, allChecksPass, exitMethodFor, exitEffectiveTaxRate } from "./checks";
+import { computeReconciliationChecks, allChecksPass, exitMethodFor, exitEffectiveTaxRate, capexGuardrailWarning } from "./checks";
 import type { ReconciliationCheck } from "./checks";
 
 // ─── Styles ──────────────────────────────────────────────────
@@ -104,7 +104,7 @@ export async function generateExcelWorkbook(
   if (result.metrics.depreciation) {
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
-  buildValidationSheet(wb, result, reconChecks);
+  buildValidationSheet(wb, result, reconChecks, deal, inputs);
   if (result.tax && inputs.tax) {
     buildTaxSheet(wb, result.tax, inputs.tax);
   }
@@ -223,7 +223,15 @@ function buildSummarySheet(
   addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
   addLabelValue(ws, "CapEx Reserve", m.capex_reserve, CURRENCY_FMT);
   addLabelValue(ws, "Total Cost", m.total_cost, CURRENCY_FMT);
-  addLabelValue(ws, "Loan Amount", m.loan_amount, CURRENCY_FMT);
+  addLabelValue(
+    ws,
+    m.loan_sizing_constraint === "dscr" ? "Loan Amount (sized by DSCR floor)" : "Loan Amount (sized by LTV)",
+    m.loan_amount,
+    CURRENCY_FMT,
+  );
+  if (m.loan_sizing_constraint === "dscr") {
+    addLabelValue(ws, "LTV Proceeds (not funded)", m.ltv_loan_amount, CURRENCY_FMT);
+  }
   addLabelValue(ws, "Down Payment", m.down_payment, CURRENCY_FMT);
   addLabelValue(ws, "Total Equity", m.total_equity, CURRENCY_FMT);
   addLabelValue(ws, "Monthly Debt Service", m.monthly_debt_service, CURRENCY_FMT);
@@ -797,7 +805,7 @@ function buildCapexSheet(wb: ExcelJS.Workbook, capex: ScenarioInputs["capex"]) {
   }
 }
 
-function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, reconChecks: ReconciliationCheck[]) {
+function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, reconChecks: ReconciliationCheck[], deal: Deal, inputs: ScenarioInputs) {
   const ws = wb.addWorksheet("Validation");
   ws.columns = [{ width: 48 }, { width: 14 }, { width: 60 }];
 
@@ -815,6 +823,15 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
     summary.getCell(1).font = { bold: true, size: 11, name: FONT_SANS, color: { argb: allChecksPass(reconChecks) ? "FF28A745" : "FFDC3545" } };
   }
   ws.addRow([]);
+
+  // CapEx guardrail (Phase 4.3) — advisory, does not gate ALL CHECKS PASS
+  {
+    const guard = capexGuardrailWarning(deal, inputs);
+    if (guard) {
+      addValidationRow(ws, "CapEx guardrail (PCA / deferred maintenance)", false, guard);
+      ws.addRow([]);
+    }
+  }
 
   addSectionHeader(ws, "Range Sanity Checks", 3);
 
