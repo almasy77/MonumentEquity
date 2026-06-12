@@ -519,6 +519,14 @@ export function UnderwritingClient({
             >
               <Download className="h-3 w-3 mr-1" /> Export Excel
             </Button>
+            <a
+              href={`/api/export/${deal.id}/sidecar?scenario_id=${activeId}`}
+              download
+              className="text-[11px] text-slate-500 hover:text-blue-400 underline ml-1"
+              title="Machine-readable companion: inputs, tax vectors, key outputs, reconciliation checks"
+            >
+              JSON
+            </a>
           </>
         )}
       </div>
