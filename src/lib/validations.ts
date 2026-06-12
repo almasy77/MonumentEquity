@@ -350,6 +350,7 @@ export const scenarioSchema = z.object({
       renovation_downtime_months: z.number().optional(),
       projects: z.array(capexProjectSchema).default([]),
       reserves_per_unit: z.number().optional(),
+      pca_complete: z.boolean().optional(),
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),

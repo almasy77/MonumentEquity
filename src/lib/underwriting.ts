@@ -48,6 +48,11 @@ export interface FinancingAssumptions {
   loan_term_years: number;
   io_period_months: number; // interest-only period
   origination_fee_rate: number; // % of loan
+  // Fix-spec Phase 4.1: lenders size to min(LTV, DSCR). Defaults ON at 1.25x
+  // on year-1 NOI with the fully-amortizing payment (lender convention even
+  // during an IO period). Set size_to_dscr=false to model LTV-only proceeds.
+  size_to_dscr?: boolean; // default true
+  dscr_floor?: number; // default 1.25
 }
 
 // Per-unit detail for a unit-mix row (spec B2 / ramp Phase 2). When present,
@@ -87,10 +92,21 @@ export interface OtherIncomeSublines {
   other?: number;
 }
 
+// Fix-spec Phase 4.2: structured RUBS. Instead of a hand-typed reimbursement
+// number, derive it: recovery_pct × utilities expense × physical occupancy.
+// recovery_pct defaults to 0.80; anything above 0.85 requires a source note
+// (lease audit, current collections report) or the engine warns.
+export interface RubsAssumptions {
+  mode: "manual" | "structured";
+  recovery_pct?: number; // default 0.80
+  source_note?: string; // required (in practice) when recovery_pct > 0.85
+}
+
 export interface RevenueAssumptions {
   unit_mix: UnitMix[];
   other_income_monthly: number; // laundry, parking, pet fees, etc. (sum of sublines when itemized)
   other_income_sublines?: OtherIncomeSublines; // optional itemization; engine ignores (reads the total)
+  rubs?: RubsAssumptions; // structured mode REPLACES other_income_sublines.utility_reimbursement
   vacancy_rate: number;
   bad_debt_rate: number;
   concessions_rate: number;
@@ -468,6 +484,7 @@ export interface CapexProject {
 }
 
 export interface CapexAssumptions {
+  pca_complete?: boolean; // property condition assessment on file (Phase 4.3 guardrail)
   per_unit_cost: number;
   units_to_renovate: number;
   units_per_month?: number; // legacy — derived from start/end when not set
@@ -641,6 +658,9 @@ export interface DealMetrics {
   total_cost: number; // purchase + closing + origination + capex reserve
   loan_amount: number;
   down_payment: number; // purchase_price - loan_amount (encompasses earnest money)
+  loan_sizing_constraint: "ltv" | "dscr"; // which limb of min(LTV, DSCR) bound
+  ltv_loan_amount: number; // LTV-sized proceeds (= loan_amount when constraint is ltv)
+  dscr_loan_amount: number | null; // DSCR-sized proceeds (null when sizing disabled)
   total_equity: number;
   monthly_debt_service: number;
   // Depreciation
@@ -701,7 +721,12 @@ export function computeClosingCosts(purchase: PurchaseAssumptions): number {
 
 // ─── Calculation Engine ──────────────────────────────────────
 
-export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResult {
+export function calculateUnderwriting(
+  inputs: ScenarioInputs,
+  // Internal: second pass of DSCR sizing. NOI is loan-independent, so one
+  // re-pass with the resized loan converges exactly. Not part of the API.
+  _resize?: { loanOverride: number },
+): UnderwritingResult {
   const { purchase, financing, revenue, expenses, capex, exit } = inputs;
   const totalMonths = exit.hold_period_years * 12;
   const warnings: string[] = [];
@@ -709,7 +734,8 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   // ── Purchase & Financing ──
   const closingCosts = computeClosingCosts(purchase);
   const capexReserve = purchase.capex_reserve || 0;
-  const loanAmount = purchase.purchase_price * financing.ltv;
+  const ltvLoanAmount = purchase.purchase_price * financing.ltv;
+  const loanAmount = _resize?.loanOverride ?? ltvLoanAmount;
   const originationFee = loanAmount * financing.origination_fee_rate;
   const totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve;
   const totalEquity = totalCost - loanAmount;
@@ -764,7 +790,26 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
     const concessions = gpr * revenue.concessions_rate;
-    const otherIncome = revenue.other_income_monthly;
+    // Structured RUBS (Phase 4.2): derived reimbursement replaces the manual
+    // utility_reimbursement subline. Utilities are resolved with a pre-RUBS
+    // EGI context (only matters if utilities were entered as % of EGI), and
+    // physical occupancy comes from the unit-state schedule — offline and
+    // vacant units don't reimburse.
+    let otherIncome = revenue.other_income_monthly;
+    if (revenue.rubs?.mode === "structured") {
+      const preEgi = gpr - vacancyLoss - badDebt - concessions + otherIncome;
+      const preCtx = { totalUnits, monthlyEgi: preEgi, monthlyGpr: gpr, escalation: Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex) };
+      const preUtilSub = resolveSublinesMonthly(expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, preCtx);
+      const utilitiesPre = preUtilSub !== null ? preUtilSub : resolveOpexMonthly(expenses.opex_inputs?.utilities, expenses.utilities_per_unit, "per_unit_annual", preCtx);
+      const occupiedUnits = unitSchedule.units.reduce((c, u) => {
+        const st = u.states[m - 1];
+        return c + (st === "in_place" || st === "market" || st === "renovated" ? 1 : 0);
+      }, 0);
+      const physOcc = totalUnits > 0 ? occupiedUnits / totalUnits : 0;
+      const recovery = revenue.rubs.recovery_pct ?? 0.80;
+      const manualRubs = revenue.other_income_sublines?.utility_reimbursement ?? 0;
+      otherIncome = otherIncome - manualRubs + recovery * utilitiesPre * physOcc;
+    }
     const egi = gpr - vacancyLoss - badDebt - concessions + otherIncome;
 
     // OpEx — resolve each line from opex_inputs (if set) or legacy fields
@@ -1012,6 +1057,9 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     total_cost: totalCost,
     loan_amount: loanAmount,
     down_payment: downPayment,
+    loan_sizing_constraint: _resize ? "dscr" : "ltv",
+    ltv_loan_amount: ltvLoanAmount,
+    dscr_loan_amount: null,
     total_equity: totalEquity,
     monthly_debt_service: monthlyDS,
     depreciation,
@@ -1027,6 +1075,48 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
     net_sale_proceeds: netSaleProceeds,
     total_profit: totalProfit,
   };
+
+  // ── DSCR-aware loan sizing (fix-spec Phase 4.1) ──
+  // Lenders fund min(LTV proceeds, DSCR proceeds). DSCR proceeds = the loan
+  // whose fully-amortizing payment year-1 NOI covers at the floor. NOI does
+  // not depend on the loan, so one re-pass with the resized loan is exact.
+  if (!_resize && financing.size_to_dscr !== false) {
+    const floor = financing.dscr_floor ?? 1.25;
+    const noi1 = annual[0]?.noi ?? 0;
+    const pmtFactor = monthlyRate > 0
+      ? (monthlyRate * Math.pow(1 + monthlyRate, amortMonths)) / (Math.pow(1 + monthlyRate, amortMonths) - 1)
+      : 1 / Math.max(1, amortMonths);
+    const dscrLoan = noi1 > 0 ? noi1 / floor / 12 / pmtFactor : 0;
+    if (dscrLoan < ltvLoanAmount - 1) {
+      const resized = calculateUnderwriting(inputs, { loanOverride: dscrLoan });
+      resized.metrics.ltv_loan_amount = ltvLoanAmount;
+      resized.metrics.dscr_loan_amount = dscrLoan;
+      resized.warnings.unshift(
+        `Loan sized by DSCR ${floor.toFixed(2)}x: $${Math.round(dscrLoan).toLocaleString()} vs LTV proceeds $${Math.round(ltvLoanAmount).toLocaleString()} — requires $${Math.round(ltvLoanAmount - dscrLoan).toLocaleString()} additional equity`,
+      );
+      return resized;
+    }
+    metrics.dscr_loan_amount = dscrLoan;
+  }
+
+  // ── RUBS recovery surfacing (fix-spec Phase 4.2) ──
+  {
+    const utilitiesY1 = annual[0]?.opex_breakdown.utilities ?? 0;
+    if (revenue.rubs?.mode === "structured") {
+      const rec = revenue.rubs.recovery_pct ?? 0.80;
+      if (rec > 0.85 && !revenue.rubs.source_note?.trim()) {
+        warnings.push(`RUBS recovery ${(rec * 100).toFixed(0)}% exceeds 85% with no source note — document collections evidence or lower the assumption`);
+      }
+    } else {
+      const manualRubsAnnual = (revenue.other_income_sublines?.utility_reimbursement ?? 0) * 12;
+      if (manualRubsAnnual > 0 && utilitiesY1 > 0) {
+        const implied = manualRubsAnnual / utilitiesY1;
+        if (implied > 0.85) {
+          warnings.push(`Manual RUBS implies ${(implied * 100).toFixed(0)}% recovery of utilities — above the 85% guardrail; verify against collections or switch to structured RUBS`);
+        }
+      }
+    }
+  }
 
   // ── Sensitivity ──
   const sensitivity = buildSensitivityGrid(inputs);
@@ -1559,12 +1649,8 @@ function buildSensitivityGrid(
         },
       };
 
-      // Recalculate with adjusted inputs
-      const adjustedLoan = adjustedInputs.purchase.purchase_price * adjustedInputs.financing.ltv;
       const adjustedClosing = computeClosingCosts(adjustedInputs.purchase);
-      const adjustedOrigination = adjustedLoan * adjustedInputs.financing.origination_fee_rate;
       const adjustedCapexReserve = adjustedInputs.purchase.capex_reserve || 0;
-      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination + adjustedCapexReserve - adjustedLoan;
 
       // Skip invalid cap rates (zero or negative)
       if (adjustedInputs.exit.exit_cap_rate <= 0) {
@@ -1578,6 +1664,9 @@ function buildSensitivityGrid(
 
       // Use simplified approach: scale base case results
       const result = calculateUnderwritingSimplified(adjustedInputs);
+      // Equity off the DSCR/LTV-sized loan (Phase 4.1), not raw LTV proceeds.
+      const adjustedOrigination = result.loanAmount * adjustedInputs.financing.origination_fee_rate;
+      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination + adjustedCapexReserve - result.loanAmount;
       const sensReassess = adjustedInputs.expenses.property_tax_v2?.enabled
         ? adjustedInputs.expenses.property_tax_v2
         : adjustedInputs.expenses.tax_reassessment;
@@ -1621,19 +1710,44 @@ function buildSensitivityGrid(
 /** Get the monthly rent for a unit based on rent basis selection */
 
 /** Simplified calculation for sensitivity grid — avoids full monthly recalc */
+// Annual escalation factor for opex lines (matches the main loop's compounding).
+function expEscalationFor(expenses: ExpenseAssumptions, yearIndex: number): number {
+  return Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex);
+}
+
+// Structured-RUBS delta for the annual (sensitivity) path. Approximation
+// relative to the monthly path: physical occupancy ≈ 1 − vacancy_rate instead
+// of the unit-state schedule (the simplified path is approximate by design).
+function structuredRubsAnnualDelta(
+  revenue: RevenueAssumptions,
+  expenses: ExpenseAssumptions,
+  totalUnits: number,
+  egiWithoutRubs: number,
+  annualGpr: number,
+  escalation: number,
+): number {
+  if (revenue.rubs?.mode !== "structured") return 0;
+  const ctx = { totalUnits, annualEgi: egiWithoutRubs, annualGpr, escalation };
+  const subSum = resolveSublinesAnnual(expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, ctx);
+  const utilities = subSum !== null ? subSum : resolveOpexAnnual(expenses.opex_inputs?.utilities, expenses.utilities_per_unit, "per_unit_annual", ctx);
+  const recovery = revenue.rubs.recovery_pct ?? 0.80;
+  const physOcc = Math.max(0, 1 - revenue.vacancy_rate);
+  const manualRubs = (revenue.other_income_sublines?.utility_reimbursement ?? 0) * 12;
+  return recovery * utilities * physOcc - manualRubs;
+}
+
 function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   annualCashFlows: number[];
   exitNOI: number;
   loanBalance: number;
+  loanAmount: number;
 } {
   const { purchase, financing, revenue, expenses, capex, exit } = inputs;
   const totalMonths = exit.hold_period_years * 12;
   const totalUnits = revenue.unit_mix.reduce((s, u) => s + u.count, 0);
-  const loanAmount = purchase.purchase_price * financing.ltv;
+  const ltvLoan = purchase.purchase_price * financing.ltv;
   const monthlyRate = financing.interest_rate / 12;
   const amortMonths = financing.amortization_years * 12;
-  const monthlyDS = calculateMonthlyPayment(loanAmount, monthlyRate, amortMonths);
-  const monthlyIO = loanAmount * monthlyRate;
   const rentBasis: RentBasis = exit.sensitivity_rent_basis || "current";
 
   // ── Unit-state schedule (fix-spec Phase 1) — same machine as the monthly
@@ -1655,6 +1769,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   });
 
   const annualCashFlows: number[] = [];
+  const annualNOIs: number[] = [];
+  const annualBelowNOI: number[] = [];
 
   for (let y = 0; y < exit.hold_period_years; y++) {
     const yearGrowth = Math.pow(1 + revenue.rent_growth_rate, y);
@@ -1666,8 +1782,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     }
     annualGPR *= yearGrowth;
 
-    const annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
+    let annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
       + revenue.other_income_monthly * 12;
+    annualEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, annualEGI, annualGPR, expEscalationFor(expenses, y));
 
     const taxEscalation = Math.pow(1 + expenses.tax_escalation_rate, y);
     const expEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), y);
@@ -1701,20 +1818,37 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
 
     const annualNOI = annualEGI - annualOpex;
 
-    // Debt service for the year
-    let annualDS = 0;
-    for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
-      annualDS += m <= financing.io_period_months ? monthlyIO : monthlyDS;
-    }
-
     // Simplified CapEx (just projects + per-unit)
     let annualCapex = 0;
     for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
       annualCapex += calculateMonthCapex(capex, m);
     }
 
-    // Cash flow subtracts reserves AND capex below NOI
-    annualCashFlows.push(annualNOI - annualDS - annualReserves - annualCapex);
+    // Debt service is applied AFTER the loop — the loan can't be sized until
+    // year-1 NOI is known (Phase 4.1 DSCR sizing), and NOI is loan-independent.
+    annualNOIs.push(annualNOI);
+    annualBelowNOI.push(annualReserves + annualCapex);
+  }
+
+  // DSCR-aware sizing, mirroring the main engine so sensitivity cells use the
+  // same proceeds rule (each cell re-sizes at its own price and NOI).
+  let loanAmount = ltvLoan;
+  if (financing.size_to_dscr !== false) {
+    const floor = financing.dscr_floor ?? 1.25;
+    const pmtFactor = monthlyRate > 0
+      ? (monthlyRate * Math.pow(1 + monthlyRate, amortMonths)) / (Math.pow(1 + monthlyRate, amortMonths) - 1)
+      : 1 / Math.max(1, amortMonths);
+    const dscrLoan = annualNOIs[0] > 0 ? annualNOIs[0] / floor / 12 / pmtFactor : 0;
+    loanAmount = Math.min(ltvLoan, dscrLoan);
+  }
+  const monthlyDS = calculateMonthlyPayment(loanAmount, monthlyRate, amortMonths);
+  const monthlyIO = loanAmount * monthlyRate;
+  for (let y = 0; y < exit.hold_period_years; y++) {
+    let annualDS = 0;
+    for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
+      annualDS += m <= financing.io_period_months ? monthlyIO : monthlyDS;
+    }
+    annualCashFlows.push(annualNOIs[y] - annualDS - annualBelowNOI[y]);
   }
 
   // Exit NOI GPR: exact last-12-months sum from the SAME unit-state schedule
@@ -1726,8 +1860,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   }
   exitGPR *= lastYearGrowth;
 
-  const exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
+  let exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
     + revenue.other_income_monthly * 12;
+  exitEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, exitEGI, exitGPR, expEscalationFor(expenses, exit.hold_period_years - 1));
   const taxEsc = Math.pow(1 + expenses.tax_escalation_rate, exit.hold_period_years - 1);
   const expEsc = Math.pow(1 + (expenses.expense_escalation_rate || 0), exit.hold_period_years - 1);
   const oiE = expenses.opex_inputs;
@@ -1758,7 +1893,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     loanAmount, monthlyRate, amortMonths, totalMonths, financing.io_period_months
   );
 
-  return { annualCashFlows, exitNOI, loanBalance };
+  return { annualCashFlows, exitNOI, loanBalance, loanAmount };
 }
 
 // ─── Default Scenario Inputs ─────────────────────────────────

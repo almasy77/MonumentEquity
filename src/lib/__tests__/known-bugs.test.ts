@@ -122,9 +122,9 @@ describe("known bugs (flip it.fails → it as phases land)", () => {
     expect(r.warnings.some((w) => w.includes("Vacant @ Acquisition"))).toBe(true);
   });
 
-  it.fails("modeled loan respects min(LTV loan, DSCR-sized loan)", () => {
-    // Price high enough that the DSCR-sized loan binds below the LTV loan;
-    // the engine sizes purely on LTV today (Phase 4 fixes).
+  it("modeled loan respects min(LTV loan, DSCR-sized loan)", () => {
+    // Price high enough that the DSCR-sized loan binds below the LTV loan
+    // (Phase 4 sizing: loan = min(LTV proceeds, DSCR proceeds @ floor)).
     const inputs = perUnitInputs();
     inputs.purchase.purchase_price = 1_100_000;
     const r = calculateUnderwriting(inputs);
