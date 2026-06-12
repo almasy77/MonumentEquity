@@ -93,6 +93,7 @@ export async function generateExcelWorkbook(
   buildAssumptionsSheet(wb, inputs);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
+  buildRentMatrixSheet(wb, result, inputs);
   buildReturnsSheet(wb, result);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix);
@@ -1173,5 +1174,88 @@ function buildTaxSheet(
     }
     row.getCell(1).font = NORMAL_FONT;
     row.getCell(2).font = NORMAL_FONT;
+  }
+}
+
+// ─── Rent Matrix sheet (fix-spec Phase 1.5) ──────────────────
+// Rows = units, columns = months 1..min(36, hold). Cells show the scheduled
+// rent (state rent × that month's growth factor); a state-code block follows.
+// The GPR total row ties to the Monthly Pro Forma GPR row EXACTLY by
+// construction — both read the same unit-state schedule.
+const STATE_CODES: Record<string, string> = {
+  in_place: "I",
+  market: "M",
+  renovated: "R",
+  offline_turn: "T",
+  offline_reno: "N",
+  vacant_leaseup: "V",
+};
+
+function buildRentMatrixSheet(
+  wb: ExcelJS.Workbook,
+  result: UnderwritingResult,
+  inputs: ScenarioInputs,
+) {
+  const sched = result.unit_schedule;
+  if (!sched || sched.units.length === 0) return;
+  const totalMonths = inputs.exit.hold_period_years * 12;
+  const months = Math.min(36, totalMonths);
+  const growth = (mIdx: number) =>
+    Math.pow(1 + inputs.revenue.rent_growth_rate, Math.floor(mIdx / 12));
+
+  const ws = wb.addWorksheet("Rent Matrix");
+  ws.getColumn(1).width = 12;
+  for (let i = 2; i <= months + 1; i++) ws.getColumn(i).width = 9;
+
+  const hdr = ws.addRow(["Unit", ...Array.from({ length: months }, (_, i) => `M${i + 1}`)]);
+  styleHeaderRow(hdr, months + 1);
+
+  const rentFor = (u: (typeof sched.units)[number], mIdx: number): number => {
+    const st = u.states[mIdx];
+    const base =
+      st === "in_place" ? u.in_place_rent :
+      st === "market" ? u.market_rent :
+      st === "renovated" ? u.renovated_rent : 0;
+    return base * growth(mIdx);
+  };
+
+  for (const u of sched.units) {
+    const row = ws.addRow([u.unit_id, ...Array.from({ length: months }, (_, i) => rentFor(u, i))]);
+    row.getCell(1).font = NORMAL_FONT;
+    for (let c = 2; c <= months + 1; c++) {
+      row.getCell(c).numFmt = CURRENCY_FMT;
+      row.getCell(c).border = THIN_BORDER;
+    }
+  }
+
+  // GPR tie row — must equal the Monthly Pro Forma GPR exactly.
+  const totalRow = ws.addRow([
+    "GPR TOTAL",
+    ...Array.from({ length: months }, (_, i) => sched.gprByMonth[i] * growth(i)),
+  ]);
+  for (let c = 1; c <= months + 1; c++) {
+    totalRow.getCell(c).font = BOLD_FONT;
+    totalRow.getCell(c).fill = LIGHT_FILL;
+    totalRow.getCell(c).border = THIN_BORDER;
+    if (c > 1) totalRow.getCell(c).numFmt = CURRENCY_FMT;
+  }
+
+  ws.addRow([]);
+  const legendRow = ws.addRow([
+    "States: I = in-place · M = market · R = renovated · T = turn downtime · N = reno downtime · V = vacant lease-up",
+  ]);
+  legendRow.getCell(1).font = { ...NORMAL_FONT, italic: true };
+  ws.mergeCells(`A${legendRow.number}:${ws.getColumn(Math.min(12, months + 1)).letter}${legendRow.number}`);
+
+  const stateHdr = ws.addRow(["Unit", ...Array.from({ length: months }, (_, i) => `M${i + 1}`)]);
+  styleHeaderRow(stateHdr, months + 1);
+  for (const u of sched.units) {
+    const row = ws.addRow([u.unit_id, ...Array.from({ length: months }, (_, i) => STATE_CODES[u.states[i]] ?? "?")]);
+    row.getCell(1).font = NORMAL_FONT;
+    for (let c = 2; c <= months + 1; c++) {
+      row.getCell(c).font = NORMAL_FONT;
+      row.getCell(c).alignment = { horizontal: "center" };
+      row.getCell(c).border = THIN_BORDER;
+    }
   }
 }

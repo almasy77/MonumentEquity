@@ -77,39 +77,58 @@ function perUnitInputs(overrides?: { vacantCount?: number; atMarketCount?: numbe
 }
 
 describe("known bugs (flip it.fails → it as phases land)", () => {
-  it.fails("per-unit rows: stabilized GPR equals sum of market rents (floor-share bug, permanent mode)", () => {
+  it("per-unit rows: stabilized GPR equals sum of market rents (FIXED: Phase 1 unit-state engine)", () => {
     // One unit already at market → max(marked) = 7 < 8 → floor(7/8) = 0 forever.
     const r = calculateUnderwriting(perUnitInputs({ atMarketCount: 1 }));
     const gprM36 = r.monthly[35].gpr;
     expect(Math.abs(gprM36 - 8 * 1000)).toBeLessThanOrEqual(1);
   });
 
-  it.fails("pct_marked_to_market agrees with the rent actually billed (transient mode)", () => {
+  it("pct_marked_to_market agrees with the rent actually billed (FIXED: Phase 1)", () => {
     const r = calculateUnderwriting(perUnitInputs());
-    // Month 3 (index 2): pacing 2/mo + 1mo downtime → 4 of 8 marked. floor(4/8)=0
-    // bills pure in-place rents while pct reports 50%.
-    const m = r.monthly[2];
-    const pct = m.pct_marked_to_market;
-    expect(pct).toBeGreaterThan(0); // sanity: the ramp is running
-    const blended = 8 * 700 * (1 - pct) + 8 * 1000 * pct;
-    expect(Math.abs(m.gpr - blended)).toBeLessThanOrEqual(1000);
+    // Exact identity at every month: pct == stabilized/total, and GPR equals
+    // the sum of each unit's state rent (offline bills $0).
+    for (let mi = 0; mi < 24; mi++) {
+      const sched = r.unit_schedule;
+      let stabilized = 0;
+      let expectedGpr = 0;
+      for (const u of sched.units) {
+        const st = u.states[mi];
+        if (st === "market" || st === "renovated") stabilized++;
+        expectedGpr +=
+          st === "in_place" ? u.in_place_rent :
+          st === "market" ? u.market_rent :
+          st === "renovated" ? u.renovated_rent : 0;
+      }
+      expect(r.monthly[mi].pct_marked_to_market).toBeCloseTo(stabilized / 8, 9);
+      expect(Math.abs(r.monthly[mi].gpr - expectedGpr)).toBeLessThanOrEqual(0.01); // growth=0
+    }
+    // And the ramp actually completes: by month 12 everyone is at market.
+    expect(r.monthly[11].pct_marked_to_market).toBe(1);
   });
 
-  it.fails("vacant units (rent $0, status vacant) lease up to market even when the override is 0", () => {
+  it("vacant units (rent $0, status vacant) lease up to market even when the override is 0 (FIXED: Phase 1)", () => {
     const r = calculateUnderwriting(perUnitInputs({ vacantCount: 2 }));
-    // Vacant lease-up = 2 months → in month 3 (index 2) the two vacant units
-    // must pay market. Cumulative marked is 6 < 8 → floor zeroes it today and
-    // those units bill $0 (their in-place rent).
-    const gprM3 = r.monthly[2].gpr;
-    expect(gprM3).toBeGreaterThanOrEqual(6 * 700 + 2 * 1000 - 1);
+    // Vacant lease-up = 2 months → from month 3 (index 2) both vacant units
+    // are in the market state billing $1,000, regardless of the 0 override
+    // (a vacant-override mismatch warning is pushed instead).
+    const vacants = r.unit_schedule.units.filter((u) => u.in_place_rent === 0);
+    expect(vacants).toHaveLength(2);
+    for (const v of vacants) {
+      expect(v.states[0]).toBe("vacant_leaseup");
+      expect(v.states[1]).toBe("vacant_leaseup");
+      expect(v.states[2]).toBe("market");
+    }
+    expect(r.warnings.some((w) => w.includes("Vacant @ Acquisition"))).toBe(true);
   });
 
   it.fails("modeled loan respects min(LTV loan, DSCR-sized loan)", () => {
-    // Permanent floor mode keeps NOI at in-place levels → DSCR constraint binds
-    // below the LTV loan, and the engine ignores it today.
-    const inputs = perUnitInputs({ atMarketCount: 1 });
+    // Price high enough that the DSCR-sized loan binds below the LTV loan;
+    // the engine sizes purely on LTV today (Phase 4 fixes).
+    const inputs = perUnitInputs();
+    inputs.purchase.purchase_price = 1_100_000;
     const r = calculateUnderwriting(inputs);
-    const ltvLoan = 640000 * 0.7;
+    const ltvLoan = 1_100_000 * 0.7;
     // DSCR-sized at 1.25 from year-1 NOI and the actual payment constant.
     const monthlyRate = 0.07 / 12;
     const n = 360;
