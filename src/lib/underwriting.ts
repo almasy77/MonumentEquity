@@ -242,6 +242,171 @@ export const SERVICES_SUBLINE_KEYS: (keyof ServicesSublines)[] = [
   "landscaping", "snow_removal", "pest_control", "security", "cleaning", "other_services",
 ];
 
+
+// ─── Property Tax v2 (fix-spec Phase 2) ──────────────────────
+// Extends TaxReassessment with Ohio-realistic mechanics: abatement records,
+// calendar anchoring (Ohio: calendar tax year, lien Jan 1, billed in arrears),
+// HB 920 bill shape (small floating share rides valuation; the voted
+// remainder is dollar-flat plus levy drift), and three named scenario
+// vectors computed for every deal. Exit math is UNCHANGED — the ops basis
+// and the exit-side rate may legitimately differ.
+
+export interface PropertyTaxAbatement {
+  program?: string; // e.g. "CRA 100% residential"
+  abated_annual_tax: number; // bill while the abatement applies
+  unabated_annual_tax: number; // full bill once it ends or is lost
+  final_abated_tax_year: number; // last TAX YEAR the abatement applies, e.g. 2028
+  transferable: "confirmed" | "unconfirmed" | "none";
+  notes?: string;
+}
+
+export interface ParcelMeta {
+  parcel_id?: string;
+  taxing_district?: string;
+  property_class?: string;
+  effective_tax_rate_source?: string;
+  as_of_date?: string;
+  auditor_permalink?: string;
+}
+
+/** HB 920: only a small share of the bill floats with valuation. */
+export interface HB920Shape {
+  floating_share: number; // default 0.125
+  inflation_cap: number; // annual growth cap on the floating share, default 0.03
+  levy_drift: number; // annual drift on the voted (dollar-flat) remainder, default 0.015
+  reappraisal_years?: number[]; // e.g. [2026, 2029] (Franklin triennial/sexennial)
+  reappraisal_bump_pct?: number; // extra valuation bump to the floating share in those years, default 0.10
+}
+
+export const HB920_DEFAULTS: HB920Shape = {
+  floating_share: 0.125,
+  inflation_cap: 0.03,
+  levy_drift: 0.015,
+  reappraisal_years: [2026, 2029],
+  reappraisal_bump_pct: 0.10,
+};
+
+export type PropertyTaxScenarioName = "abated_transfers" | "abatement_lost" | "reassessed_to_price";
+
+export interface PropertyTaxAssumptions {
+  enabled: boolean;
+  closing_date?: string; // ISO — anchors tax years to pro forma months
+  proration_method?: "short" | "long"; // memo for sources & uses; not modeled yet
+  effective_tax_rate: number; // drives reassessed_to_price
+  reassessed_value?: number; // default purchase price
+  apply_at_exit?: boolean; // exit-side loaded cap (same as v1). Default true.
+  scenario?: PropertyTaxScenarioName; // in force; defaulted by rule below
+  abatement?: PropertyTaxAbatement;
+  parcel?: ParcelMeta;
+  hb920?: HB920Shape;
+}
+
+/**
+ * Scenario-in-force default (spec Phase 2.4): abatement_lost whenever an
+ * abatement exists but its transfer is not CONFIRMED; abated_transfers when
+ * confirmed; reassessed_to_price when there is no abatement record.
+ */
+export function propertyTaxScenarioInForce(pt: PropertyTaxAssumptions): PropertyTaxScenarioName {
+  if (pt.scenario) return pt.scenario;
+  if (!pt.abatement) return "reassessed_to_price";
+  return pt.abatement.transferable === "confirmed" ? "abated_transfers" : "abatement_lost";
+}
+
+/** HB 920 year-over-year growth factor, with reappraisal bumps. */
+function hb920Step(shape: HB920Shape, fromTaxYear: number): number {
+  const isReappraisal = (shape.reappraisal_years ?? []).includes(fromTaxYear + 1);
+  const floatGrowth = (1 + shape.inflation_cap) * (isReappraisal ? 1 + (shape.reappraisal_bump_pct ?? 0.10) : 1);
+  return shape.floating_share * floatGrowth + (1 - shape.floating_share) * (1 + shape.levy_drift);
+}
+
+/** Grow an anchored bill from its anchor tax year to the requested tax year. */
+function shapeBill(base: number, anchorTaxYear: number, taxYear: number, shape: HB920Shape): number {
+  let bill = base;
+  for (let ty = anchorTaxYear; ty < taxYear; ty++) bill *= hb920Step(shape, ty);
+  return bill;
+}
+
+/** Calendar tax year containing a given 0-indexed pro forma month. */
+export function taxYearOfMonth(pt: PropertyTaxAssumptions, monthIdx: number): number {
+  const closing = pt.closing_date ? new Date(pt.closing_date + "T00:00:00") : null;
+  const y0 = closing ? closing.getFullYear() : new Date().getFullYear();
+  const m0 = closing ? closing.getMonth() : 0;
+  return y0 + Math.floor((m0 + monthIdx) / 12);
+}
+
+/**
+ * Annual property tax bill for a given TAX YEAR under a named scenario.
+ * The anchor tax year is the closing year; bills are shaped forward by HB 920.
+ */
+export function propertyTaxBillForTaxYear(
+  pt: PropertyTaxAssumptions,
+  purchasePrice: number,
+  scenario: PropertyTaxScenarioName,
+  taxYear: number,
+): number {
+  const shape = { ...HB920_DEFAULTS, ...pt.hb920 };
+  const anchor = taxYearOfMonth(pt, 0);
+  const ab = pt.abatement;
+
+  switch (scenario) {
+    case "reassessed_to_price": {
+      const base = (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
+      return shapeBill(base, anchor, taxYear, shape);
+    }
+    case "abatement_lost": {
+      const base = ab ? ab.unabated_annual_tax : (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
+      return shapeBill(base, anchor, taxYear, shape);
+    }
+    case "abated_transfers": {
+      if (!ab) return shapeBill((pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate, anchor, taxYear, shape);
+      if (taxYear <= ab.final_abated_tax_year) {
+        return shapeBill(ab.abated_annual_tax, anchor, taxYear, shape);
+      }
+      // Post-abatement: the full bill, shaped from the anchor (the unabated
+      // levy kept drifting while the abatement ran).
+      return shapeBill(ab.unabated_annual_tax, anchor, taxYear, shape);
+    }
+  }
+}
+
+/** Monthly property tax under the scenario in force (1/12 of that month's tax-year bill). */
+export function propertyTaxForMonthV2(
+  pt: PropertyTaxAssumptions,
+  purchasePrice: number,
+  monthIdx: number,
+): number {
+  const scenario = propertyTaxScenarioInForce(pt);
+  const ty = taxYearOfMonth(pt, monthIdx);
+  return propertyTaxBillForTaxYear(pt, purchasePrice, scenario, ty) / 12;
+}
+
+export interface PropertyTaxVectorRow {
+  tax_year: number;
+  abated_transfers: number;
+  abatement_lost: number;
+  reassessed_to_price: number;
+}
+
+/** All three vectors by tax year across the hold — exported in full (Phase 3). */
+export function computePropertyTaxVectors(
+  pt: PropertyTaxAssumptions,
+  purchasePrice: number,
+  holdYears: number,
+): { scenario_in_force: PropertyTaxScenarioName; rows: PropertyTaxVectorRow[] } {
+  const startTy = taxYearOfMonth(pt, 0);
+  const endTy = taxYearOfMonth(pt, holdYears * 12 - 1);
+  const rows: PropertyTaxVectorRow[] = [];
+  for (let ty = startTy; ty <= endTy; ty++) {
+    rows.push({
+      tax_year: ty,
+      abated_transfers: propertyTaxBillForTaxYear(pt, purchasePrice, "abated_transfers", ty),
+      abatement_lost: propertyTaxBillForTaxYear(pt, purchasePrice, "abatement_lost", ty),
+      reassessed_to_price: propertyTaxBillForTaxYear(pt, purchasePrice, "reassessed_to_price", ty),
+    });
+  }
+  return { scenario_in_force: propertyTaxScenarioInForce(pt), rows };
+}
+
 /**
  * Property tax reassessment (post-acquisition + exit-side).
  * The seller's frozen bill understates the buyer's real tax burden twice:
@@ -269,6 +434,7 @@ export interface ExpenseAssumptions {
   property_tax_total: number; // annual
   tax_escalation_rate: number; // annual, applied to property taxes only
   tax_reassessment?: TaxReassessment; // optional; absent = seller's bill escalated (legacy)
+  property_tax_v2?: PropertyTaxAssumptions; // Phase 2 — takes precedence over tax_reassessment when enabled
   expense_escalation_rate: number; // annual, applied to all non-tax expenses
   utilities_per_unit: number; // annual total (sum of breakdown if provided)
   utilities_breakdown?: UtilitiesBreakdown;
@@ -510,6 +676,7 @@ export interface UnderwritingResult {
   warnings: string[];
   tax?: TaxResult; // present only when inputs.tax is provided
   unit_schedule: UnitStateSchedule; // per-unit monthly states — Rent Matrix + diagnostics
+  property_tax_vectors?: ReturnType<typeof computePropertyTaxVectors>; // Phase 2 — all 3 scenarios by tax year
 }
 
 // ─── Closing Cost Helpers ────────────────────────────────────
@@ -627,9 +794,11 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
             expenses.turnover_rate ?? 0.50,
           ),
       insurance: resolveOpexMonthly(oi?.insurance, expenses.insurance_per_unit, "per_unit_annual", opexCtx),
-      // Reassessment override: from the phase-in year, the bill is reassessed
-      // value x effective rate (escalated), replacing the seller's entered bill.
+      // Property tax precedence: v2 scenario vectors (calendar-anchored,
+      // HB 920 shaped) → v1 reassessment phase-in → the entered bill.
       property_tax: (() => {
+        const v2 = expenses.property_tax_v2;
+        if (v2?.enabled) return propertyTaxForMonthV2(v2, purchase.purchase_price, m - 1);
         const reassessed = reassessedAnnualTax(expenses, purchase.purchase_price, yearIndex);
         return reassessed !== null
           ? reassessed / 12
@@ -747,7 +916,9 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
   // Exit-side reassessment: your buyer underwrites THEIR taxes at THEIR price.
   // Circular (value depends on NOI depends on tax depends on value) — closed
   // form: exitValue = NOI_excluding_tax / (cap + effective_tax_rate).
-  const reassess = expenses.tax_reassessment;
+  const ptV2 = expenses.property_tax_v2;
+  const exitRateSource = ptV2?.enabled ? ptV2 : expenses.tax_reassessment;
+  const reassess = exitRateSource;
   const exitReassess = !!(reassess?.enabled && (reassess.apply_at_exit ?? true) && reassess.effective_tax_rate > 0);
   let exitValue: number;
   if (exit.sale_price && exit.sale_price > 0) {
@@ -897,7 +1068,16 @@ export function calculateUnderwriting(inputs: ScenarioInputs): UnderwritingResul
       })
     : undefined;
 
-  return { monthly, annual, metrics, sensitivity, warnings, tax: taxResult, unit_schedule: unitSchedule };
+  const propertyTaxVectors = expenses.property_tax_v2?.enabled
+    ? computePropertyTaxVectors(expenses.property_tax_v2, purchase.purchase_price, exit.hold_period_years)
+    : undefined;
+
+  return {
+    monthly, annual, metrics, sensitivity, warnings,
+    tax: taxResult,
+    unit_schedule: unitSchedule,
+    property_tax_vectors: propertyTaxVectors,
+  };
 }
 
 // ─── Helper Functions ────────────────────────────────────────
@@ -1398,7 +1578,9 @@ function buildSensitivityGrid(
 
       // Use simplified approach: scale base case results
       const result = calculateUnderwritingSimplified(adjustedInputs);
-      const sensReassess = adjustedInputs.expenses.tax_reassessment;
+      const sensReassess = adjustedInputs.expenses.property_tax_v2?.enabled
+        ? adjustedInputs.expenses.property_tax_v2
+        : adjustedInputs.expenses.tax_reassessment;
       const sensExitReassess = !!(sensReassess?.enabled && (sensReassess.apply_at_exit ?? true) && sensReassess.effective_tax_rate > 0);
       let exitVal = 0;
       if (result.exitNOI > 0) {
@@ -1509,7 +1691,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
         expenses.turnover_rate ?? 0.50,
       ) +
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
-      (reassessedAnnualTax(expenses, purchase.purchase_price, y) ?? resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx)) +
+      (expenses.property_tax_v2?.enabled
+        ? propertyTaxForMonthV2(expenses.property_tax_v2, purchase.purchase_price, y * 12 + 6) * 12
+        : (reassessedAnnualTax(expenses, purchase.purchase_price, y) ?? resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx))) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
       resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
       (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx));
@@ -1562,7 +1746,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       expenses.turnover_rate ?? 0.50,
     ) +
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
-    (reassessedAnnualTax(expenses, purchase.purchase_price, exit.hold_period_years - 1) ?? resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx)) +
+    (expenses.property_tax_v2?.enabled
+      ? propertyTaxForMonthV2(expenses.property_tax_v2, purchase.purchase_price, exit.hold_period_years * 12 - 6) * 12
+      : (reassessedAnnualTax(expenses, purchase.purchase_price, exit.hold_period_years - 1) ?? resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx))) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
     resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
     (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx));
