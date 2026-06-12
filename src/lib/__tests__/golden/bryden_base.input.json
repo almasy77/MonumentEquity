@@ -1,0 +1,103 @@
+{
+  "purchase": {
+    "purchase_price": 1200000,
+    "closing_cost_rate": 0.02,
+    "earnest_money": 10000,
+    "capex_reserve": 0
+  },
+  "financing": {
+    "ltv": 0.7,
+    "interest_rate": 0.069,
+    "amortization_years": 30,
+    "loan_term_years": 5,
+    "io_period_months": 0,
+    "origination_fee_rate": 0.01
+  },
+  "revenue": {
+    "unit_mix": [
+      { "unit_number": "1", "type": "1BR/1BA", "count": 1, "current_rent": 850, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "1", "status": "mtm", "current_rent": 850 }] },
+      { "unit_number": "2", "type": "1BR/1BA", "count": 1, "current_rent": 875, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "2", "status": "mtm", "current_rent": 875 }] },
+      { "unit_number": "3", "type": "1BR/1BA", "count": 1, "current_rent": 900, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "3", "status": "mtm", "current_rent": 900 }] },
+      { "unit_number": "4", "type": "1BR/1BA", "count": 1, "current_rent": 925, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "4", "status": "mtm", "current_rent": 925 }] },
+      { "unit_number": "5", "type": "1BR/1BA", "count": 1, "current_rent": 950, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "5", "status": "mtm", "current_rent": 950 }] },
+      { "unit_number": "6", "type": "1BR/1BA", "count": 1, "current_rent": 950, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "6", "status": "mtm", "current_rent": 950 }] },
+      { "unit_number": "7", "type": "1BR/1BA", "count": 1, "current_rent": 975, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "7", "status": "mtm", "current_rent": 975 }] },
+      { "unit_number": "8", "type": "1BR/1BA", "count": 1, "current_rent": 975, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "8", "status": "mtm", "current_rent": 975 }] },
+      { "unit_number": "9", "type": "1BR/1BA", "count": 1, "current_rent": 1000, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "9", "status": "occupied", "current_rent": 1000, "lease_end": "2027-03-31" }] },
+      { "unit_number": "10", "type": "1BR/1BA", "count": 1, "current_rent": 1000, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "10", "status": "occupied", "current_rent": 1000, "lease_end": "2027-06-30" }] },
+      { "unit_number": "11", "type": "1BR/1BA", "count": 1, "current_rent": 1025, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "11", "status": "mtm", "current_rent": 1025 }] },
+      { "unit_number": "12", "type": "1BR/1BA", "count": 1, "current_rent": 1075, "market_rent": 1075, "renovated_rent_premium": 150, "units": [{ "unit_id": "12", "status": "mtm", "current_rent": 1075 }] }
+    ],
+    "other_income_monthly": 350,
+    "vacancy_rate": 0.05,
+    "bad_debt_rate": 0.02,
+    "concessions_rate": 0,
+    "rent_growth_rate": 0.03,
+    "rent_ramp": {
+      "enabled": true,
+      "mode": "schedule",
+      "absorption_months": 24,
+      "turn_downtime_months": 1,
+      "max_turns_per_month": 2,
+      "initial_vacant_units": 0,
+      "vacant_leaseup_months": 2,
+      "analysis_start_date": "2026-06-01"
+    }
+  },
+  "expenses": {
+    "management_fee_rate": 0.08,
+    "payroll_annual": 0,
+    "repairs_maintenance_per_unit": 600,
+    "turnover_cost_per_unit": 1200,
+    "turnover_rate": 0.4,
+    "insurance_per_unit": 450,
+    "property_tax_total": 16800,
+    "tax_escalation_rate": 0.02,
+    "utilities_per_unit": 1100,
+    "admin_legal_marketing": 2400,
+    "contract_services": 3600,
+    "reserves_per_unit": 300,
+    "tax_reassessment": {
+      "enabled": true,
+      "effective_tax_rate": 0.02375,
+      "phase_in_year": 1,
+      "apply_at_exit": true
+    }
+  },
+  "capex": {
+    "per_unit_cost": 8000,
+    "units_to_renovate": 6,
+    "renovation_start_month": 3,
+    "renovation_end_month": 14,
+    "renovation_downtime_enabled": true,
+    "renovation_downtime_months": 1,
+    "projects": [],
+    "reserves_per_unit": 300
+  },
+  "exit": {
+    "hold_period_years": 5,
+    "exit_cap_rate": 0.065,
+    "selling_cost_rate": 0.02,
+    "proforma_unrenovated_basis": "current",
+    "proforma_renovated_basis": "market_plus_premium"
+  },
+  "tax": {
+    "federal_ordinary_rate": 0.37,
+    "state_local_ordinary_rate": 0.1478,
+    "niit_rate": 0.038,
+    "reps_status": [true, true, true, true, true],
+    "opco_view": "household",
+    "management_fee_pct": 0.08,
+    "opco_fee_tax_rate": 0.15,
+    "land_allocation_pct": 0.2,
+    "costseg_5yr_pct": 0.2,
+    "costseg_15yr_pct": 0.09,
+    "reno_5yr_pct": 0.58,
+    "reno_repairs_expensed_pct": 0,
+    "federal_bonus_pct": 1,
+    "state_conforms_bonus": false,
+    "ebl_cap_mfj": 512000,
+    "exit_via_1031": true,
+    "personal_property_worthless_at_exit": true
+  }
+}
