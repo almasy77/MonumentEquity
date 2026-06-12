@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { getRecentActivities } from "@/lib/activity";
+import type { Contact } from "@/lib/validations";
 import {
   DEAL_STAGES,
   STAGE_LABELS,
@@ -144,8 +145,32 @@ export default async function DashboardPage() {
     }
   }
 
+  // Overdue contact follow-ups (CRM — next_action_date in the past)
+  const contactIds = await redis.zrange("contacts:all", 0, -1);
+  if (contactIds.length > 0) {
+    const cPipeline = redis.pipeline();
+    for (const id of contactIds) {
+      cPipeline.get(`contact:${id}`);
+    }
+    const contacts = await cPipeline.exec<(Contact | null)[]>();
+    for (const c of contacts) {
+      if (!c || !c.next_action || !c.next_action_date) continue;
+      if (c.next_action_date < today) {
+        const daysOverdue = Math.floor(
+          (now - new Date(c.next_action_date).getTime()) / 86400000
+        );
+        attentionItems.push({
+          type: "contact_followup",
+          label: `${c.first_name}${c.last_name ? ` ${c.last_name}` : ""}`,
+          detail: `${c.next_action} — ${daysOverdue}d overdue`,
+          href: "/contacts",
+        });
+      }
+    }
+  }
+
   // Sort attention items: overdue tasks first, then stale, then expiring
-  const typePriority = { overdue_task: 0, dd_expiring: 1, closing_soon: 2, stale_deal: 3 };
+  const typePriority = { overdue_task: 0, contact_followup: 1, dd_expiring: 2, closing_soon: 3, stale_deal: 4 };
   attentionItems.sort((a, b) => typePriority[a.type] - typePriority[b.type]);
 
   // Fetch recent activity

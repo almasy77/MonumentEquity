@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Loader2, Trash2 } from "lucide-react";
-import { CONTACT_TYPES, CONTACT_TYPE_LABELS } from "@/lib/constants";
+import { CONTACT_TYPES, CONTACT_TYPE_LABELS, CONTACT_PRIORITIES, CONTACT_STATUSES, CONTACT_STATUS_LABELS } from "@/lib/constants";
 import type { PhoneEntry } from "@/lib/validations";
 
 const PHONE_LABELS = ["mobile", "office", "home", "fax", "other"];
@@ -41,6 +41,11 @@ export function AddContactDialog() {
   const [phones, setPhones] = useState<PhoneEntry[]>([{ number: "", label: "mobile" }]);
   const [website, setWebsite] = useState("");
   const [notes, setNotes] = useState("");
+  // CRM fields
+  const [priority, setPriority] = useState<string>("");
+  const [status, setStatus] = useState<string>("prospect");
+  const [connectionSource, setConnectionSource] = useState("");
+  const [dnc, setDnc] = useState(false);
 
   function resetForm() {
     setFirstName("");
@@ -52,6 +57,10 @@ export function AddContactDialog() {
     setPhones([{ number: "", label: "mobile" }]);
     setWebsite("");
     setNotes("");
+    setPriority("");
+    setStatus("prospect");
+    setConnectionSource("");
+    setDnc(false);
     setError("");
   }
 
@@ -88,6 +97,10 @@ export function AddContactDialog() {
           phones: phones.filter((p) => p.number.trim()),
           website: website || undefined,
           notes: notes || undefined,
+          priority: priority || undefined,
+          status: status || undefined,
+          connection_source: connectionSource || undefined,
+          dnc: dnc || undefined,
         }),
       });
 
@@ -243,6 +256,57 @@ export function AddContactDialog() {
               onChange={(e) => setWebsite(e.target.value)}
               className="bg-slate-800 border-slate-700 text-white"
               placeholder="https://example.com"
+            />
+          </div>
+
+          {/* CRM (BACKLOG spec) */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-slate-300 text-xs">Priority</Label>
+              <Select value={priority || "none"} onValueChange={(v) => setPriority(!v || v === "none" ? "" : v)}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="none" className="text-slate-400 hover:bg-slate-700">—</SelectItem>
+                  {CONTACT_PRIORITIES.map((pr) => (
+                    <SelectItem key={pr} value={pr} className="text-white hover:bg-slate-700">{pr}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">Status</Label>
+              <Select value={status || "prospect"} onValueChange={(v) => setStatus(v ?? "prospect")}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {CONTACT_STATUSES.map((st) => (
+                    <SelectItem key={st} value={st} className="text-white hover:bg-slate-700">{CONTACT_STATUS_LABELS[st]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end pb-2.5">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dnc}
+                  onChange={(e) => setDnc(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-red-500"
+                />
+                Do Not Call
+              </label>
+            </div>
+          </div>
+          <div>
+            <Label className="text-slate-300 text-xs">Connection / Source</Label>
+            <Input
+              value={connectionSource}
+              onChange={(e) => setConnectionSource(e.target.value)}
+              className="bg-slate-800 border-slate-700 text-white"
+              placeholder="e.g. SVN referral, LoopNet inquiry"
             />
           </div>
 

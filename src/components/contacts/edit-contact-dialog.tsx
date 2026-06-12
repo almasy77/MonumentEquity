@@ -21,7 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
-import { CONTACT_TYPES, CONTACT_TYPE_LABELS } from "@/lib/constants";
+import { CONTACT_TYPES, CONTACT_TYPE_LABELS, CONTACT_PRIORITIES, CONTACT_STATUSES, CONTACT_STATUS_LABELS } from "@/lib/constants";
 import type { Contact, PhoneEntry } from "@/lib/validations";
 
 const PHONE_LABELS = ["mobile", "office", "home", "fax", "other"];
@@ -56,6 +56,13 @@ export function EditContactDialog({
   const [tags, setTags] = useState<string[]>(contact.tags || []);
   const [tagInput, setTagInput] = useState("");
   const [notes, setNotes] = useState(contact.notes || "");
+  // CRM fields
+  const [priority, setPriority] = useState<string>(contact.priority || "");
+  const [status, setStatus] = useState<string>(contact.status || "");
+  const [connectionSource, setConnectionSource] = useState(contact.connection_source || "");
+  const [dnc, setDnc] = useState(!!contact.dnc);
+  const [nextAction, setNextAction] = useState(contact.next_action || "");
+  const [nextActionDate, setNextActionDate] = useState(contact.next_action_date || "");
 
   function addTag() {
     const tag = tagInput.trim().toLowerCase();
@@ -114,6 +121,12 @@ export function EditContactDialog({
           address_city: addressCity || undefined,
           address_state: addressState || undefined,
           notes: notes || undefined,
+          priority: priority || undefined,
+          status: status || undefined,
+          connection_source: connectionSource || undefined,
+          dnc: dnc || undefined,
+          next_action: nextAction || undefined,
+          next_action_date: nextActionDate || undefined,
         }),
       });
 
@@ -190,6 +203,79 @@ export function EditContactDialog({
               <Input
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+            </div>
+          </div>
+
+          {/* CRM (BACKLOG spec) */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-slate-300 text-xs">Priority</Label>
+              <Select value={priority || "none"} onValueChange={(v) => setPriority(!v || v === "none" ? "" : v)}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="none" className="text-slate-400 hover:bg-slate-700">—</SelectItem>
+                  {CONTACT_PRIORITIES.map((pr) => (
+                    <SelectItem key={pr} value={pr} className="text-white hover:bg-slate-700">{pr}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">Status</Label>
+              <Select value={status || "none"} onValueChange={(v) => setStatus(!v || v === "none" ? "" : v)}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="none" className="text-slate-400 hover:bg-slate-700">—</SelectItem>
+                  {CONTACT_STATUSES.map((st) => (
+                    <SelectItem key={st} value={st} className="text-white hover:bg-slate-700">{CONTACT_STATUS_LABELS[st]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end pb-2.5">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dnc}
+                  onChange={(e) => setDnc(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-red-500"
+                />
+                Do Not Call
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-slate-300 text-xs">Connection / Source</Label>
+              <Input
+                value={connectionSource}
+                onChange={(e) => setConnectionSource(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+                placeholder="e.g. SVN referral"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">Next Action</Label>
+              <Input
+                value={nextAction}
+                onChange={(e) => setNextAction(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+                placeholder="e.g. Call re: Indianola"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-300 text-xs">Next Action Date</Label>
+              <Input
+                type="date"
+                value={nextActionDate}
+                onChange={(e) => setNextActionDate(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white"
               />
             </div>

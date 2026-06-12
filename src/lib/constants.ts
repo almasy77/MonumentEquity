@@ -73,6 +73,20 @@ export const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
   other: "Other",
 };
 
+// CRM (BACKLOG spec)
+export const CONTACT_PRIORITIES = ["A", "B", "C"] as const;
+export type ContactPriority = (typeof CONTACT_PRIORITIES)[number];
+
+export const CONTACT_STATUSES = ["prospect", "active", "inactive", "closed"] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+
+export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
+  prospect: "Prospect",
+  active: "Active",
+  inactive: "Inactive",
+  closed: "Closed",
+};
+
 export const SCENARIO_TYPES = [
   "base",
   "upside",
