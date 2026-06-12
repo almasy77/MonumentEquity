@@ -1170,7 +1170,7 @@ function calculateMonthlyPayment(
   );
 }
 
-function calculateLoanBalance(
+export function calculateLoanBalance(
   principal: number,
   monthlyRate: number,
   amortMonths: number,

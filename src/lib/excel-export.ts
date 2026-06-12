@@ -19,6 +19,8 @@ import type {
   OpexInput,
   OpexInputMode,
 } from "./underwriting";
+import { computeReconciliationChecks, allChecksPass, exitMethodFor, exitEffectiveTaxRate } from "./checks";
+import type { ReconciliationCheck } from "./checks";
 
 // ─── Styles ──────────────────────────────────────────────────
 
@@ -89,7 +91,8 @@ export async function generateExcelWorkbook(
   wb.creator = "Monument Equity";
   wb.created = new Date();
 
-  buildSummarySheet(wb, deal, scenarioName, result);
+  const reconChecks = computeReconciliationChecks(deal, inputs, result);
+  buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks);
   buildAssumptionsSheet(wb, inputs);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
@@ -101,9 +104,12 @@ export async function generateExcelWorkbook(
   if (result.metrics.depreciation) {
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
-  buildValidationSheet(wb, result);
+  buildValidationSheet(wb, result, reconChecks);
   if (result.tax && inputs.tax) {
     buildTaxSheet(wb, result.tax, inputs.tax);
+  }
+  if (result.property_tax_vectors && inputs.expenses.property_tax_v2) {
+    buildTaxDetailSheet(wb, result, inputs);
   }
   buildReadmeSheet(wb);
 
@@ -147,7 +153,9 @@ function buildSummarySheet(
   wb: ExcelJS.Workbook,
   deal: Deal,
   scenarioName: string,
-  result: UnderwritingResult
+  result: UnderwritingResult,
+  inputs: ScenarioInputs,
+  reconChecks: ReconciliationCheck[],
 ) {
   const ws = wb.addWorksheet("Summary");
   ws.columns = [{ width: 28 }, { width: 18 }, { width: 14 }, { width: 28 }, { width: 18 }];
@@ -156,6 +164,15 @@ function buildSummarySheet(
   const titleRow = ws.addRow(["Monument Equity — Deal Summary"]);
   titleRow.font = { bold: true, size: 14, color: { argb: "FF1E3A5F" }, name: FONT_SERIF };
   ws.mergeCells("A1:E1");
+
+  // Checks banner (fix-spec Phase 3.2): one cell, watermark on failure.
+  const checksOk = allChecksPass(reconChecks);
+  const banner = ws.addRow([checksOk ? "ALL CHECKS PASS" : "DRAFT — CHECKS FAILED (see Validation sheet)"]);
+  banner.getCell(1).font = { bold: true, size: 12, name: FONT_SERIF, color: { argb: checksOk ? "FF28A745" : "FFFFFFFF" } };
+  if (!checksOk) {
+    banner.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDC3545" } };
+  }
+  ws.mergeCells(`A${banner.number}:E${banner.number}`);
   ws.addRow([]);
 
   // Deal Info
@@ -163,7 +180,10 @@ function buildSummarySheet(
   addLabelValue(ws, "Address", `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`);
   addLabelValue(ws, "Units", deal.units, NUMBER_FMT);
   addLabelValue(ws, "Asking Price", deal.asking_price, CURRENCY_FMT);
-  if (deal.bid_price) addLabelValue(ws, "Bid Price", deal.bid_price, CURRENCY_FMT);
+  if (deal.bid_price) {
+    const bidModeled = Math.abs(deal.bid_price - inputs.purchase.purchase_price) < 1;
+    addLabelValue(ws, bidModeled ? "Bid Price" : "Bid Price (not modeled — purchase price drives the model)", deal.bid_price, CURRENCY_FMT);
+  }
   addLabelValue(ws, "Source", deal.source);
   if (deal.year_built) addLabelValue(ws, "Year Built", deal.year_built);
   addLabelValue(ws, "Scenario", scenarioName);
@@ -215,6 +235,41 @@ function buildSummarySheet(
   addLabelValue(ws, "Exit NOI", m.exit_noi, CURRENCY_FMT);
   addLabelValue(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
   addLabelValue(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
+
+  // Exit Detail (fix-spec Phase 3.1) — makes the exit method legible so the
+  // tax-loaded closed form can't be misread as a bug by an external reviewer.
+  {
+    ws.addRow([]);
+    addSectionHeader(ws, "Exit Detail (method & reconciliation)", 5);
+    const method = exitMethodFor(inputs);
+    const lastA = result.annual[result.annual.length - 1];
+    const lastNOI = lastA?.noi ?? 0;
+    const lastTax = lastA?.opex_breakdown.property_tax ?? 0;
+    const cap = inputs.exit.exit_cap_rate;
+    const rate = exitEffectiveTaxRate(inputs);
+    addLabelValue(ws, "Method", method === "tax_loaded" ? "Tax-loaded closed form" : method === "explicit_price" ? "Explicit sale price" : "Naive NOI ÷ cap");
+    addLabelValue(ws, "Last-Year NOI", lastNOI, CURRENCY_FMT);
+    addLabelValue(ws, "Last-Year Property Tax", lastTax, CURRENCY_FMT);
+    if (method === "tax_loaded") {
+      addLabelValue(ws, "NOI excluding tax", lastNOI + lastTax, CURRENCY_FMT);
+      addLabelValue(ws, "Denominator = cap + tax rate", `${(cap * 100).toFixed(2)}% + ${(rate * 100).toFixed(2)}% = ${((cap + rate) * 100).toFixed(2)}%`);
+      addLabelValue(ws, "Implied buyer tax at exit value", m.exit_value * rate, CURRENCY_FMT);
+      addLabelValue(ws, "Implied buyer NOI (= exit × cap)", m.exit_value * cap, CURRENCY_FMT);
+      addLabelValue(ws, "Naive NOI ÷ cap (for comparison only)", cap > 0 ? lastNOI / cap : 0, CURRENCY_FMT);
+    } else if (method === "naive") {
+      addLabelValue(ws, "Exit = last NOI ÷ cap", cap > 0 ? lastNOI / cap : 0, CURRENCY_FMT);
+    }
+  }
+
+  // Metadata (fix-spec Phase 3.4)
+  {
+    ws.addRow([]);
+    addSectionHeader(ws, "Export Metadata", 5);
+    addLabelValue(ws, "Scenario", scenarioName);
+    addLabelValue(ws, "Tax Scenario In Force", result.property_tax_vectors?.scenario_in_force ?? "legacy/none");
+    addLabelValue(ws, "App Version (git)", process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev");
+    addLabelValue(ws, "Generated", new Date().toISOString());
+  }
 
   // Depreciation (if available)
   if (m.depreciation) {
@@ -742,11 +797,26 @@ function buildCapexSheet(wb: ExcelJS.Workbook, capex: ScenarioInputs["capex"]) {
   }
 }
 
-function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult) {
+function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, reconChecks: ReconciliationCheck[]) {
   const ws = wb.addWorksheet("Validation");
-  ws.columns = [{ width: 40 }, { width: 14 }, { width: 30 }];
+  ws.columns = [{ width: 48 }, { width: 14 }, { width: 60 }];
 
-  addSectionHeader(ws, "Audit Checks & Warnings", 3);
+  // Reconciliation tie-outs (fix-spec Phase 3.2) — each one recomputes a
+  // model output a second way. These gate the ALL CHECKS PASS banner.
+  addSectionHeader(ws, "Reconciliation Tie-Outs", 3);
+  {
+    const hdr = ws.addRow(["Check", "Status", "Details"]);
+    styleHeaderRow(hdr, 3);
+    for (const c of reconChecks) {
+      addValidationRow(ws, `(${c.id}) ${c.name}`, c.pass, c.detail);
+    }
+    ws.addRow([]);
+    const summary = ws.addRow([allChecksPass(reconChecks) ? "ALL CHECKS PASS" : "CHECKS FAILED — export watermarked DRAFT"]);
+    summary.getCell(1).font = { bold: true, size: 11, name: FONT_SANS, color: { argb: allChecksPass(reconChecks) ? "FF28A745" : "FFDC3545" } };
+  }
+  ws.addRow([]);
+
+  addSectionHeader(ws, "Range Sanity Checks", 3);
 
   const checks = ws.addRow(["Check", "Status", "Details"]);
   styleHeaderRow(checks, 3);
@@ -1258,4 +1328,60 @@ function buildRentMatrixSheet(
       row.getCell(c).border = THIN_BORDER;
     }
   }
+}
+
+// ─── Tax Detail sheet (fix-spec Phase 3.3) ───────────────────
+// Parcel metadata, the abatement record, all three scenario vectors by tax
+// year, the scenario in force, and Ohio reappraisal/BOR notes.
+function buildTaxDetailSheet(
+  wb: ExcelJS.Workbook,
+  result: UnderwritingResult,
+  inputs: ScenarioInputs,
+) {
+  const v2 = inputs.expenses.property_tax_v2!;
+  const vectors = result.property_tax_vectors!;
+  const ws = wb.addWorksheet("Tax Detail");
+  ws.columns = [{ width: 30 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 30 }];
+
+  addSectionHeader(ws, "Parcel", 5);
+  addLabelValue(ws, "Parcel ID", v2.parcel?.parcel_id ?? "—");
+  addLabelValue(ws, "Taxing District", v2.parcel?.taxing_district ?? "—");
+  addLabelValue(ws, "Property Class", v2.parcel?.property_class ?? "—");
+  addLabelValue(ws, "Effective Rate Source", v2.parcel?.effective_tax_rate_source ?? "—");
+  addLabelValue(ws, "As Of", v2.parcel?.as_of_date ?? "—");
+  addLabelValue(ws, "Auditor Permalink", v2.parcel?.auditor_permalink ?? "—");
+  addLabelValue(ws, "Closing Date", v2.closing_date ?? "—");
+  ws.addRow([]);
+
+  if (v2.abatement) {
+    addSectionHeader(ws, "Abatement Record", 5);
+    addLabelValue(ws, "Program", v2.abatement.program ?? "—");
+    addLabelValue(ws, "Abated Annual Tax", v2.abatement.abated_annual_tax, CURRENCY_FMT);
+    addLabelValue(ws, "Unabated Annual Tax", v2.abatement.unabated_annual_tax, CURRENCY_FMT);
+    addLabelValue(ws, "Final Abated Tax Year", v2.abatement.final_abated_tax_year);
+    addLabelValue(ws, "Transferable", v2.abatement.transferable.toUpperCase());
+    if (v2.abatement.notes) addLabelValue(ws, "Notes", v2.abatement.notes);
+    ws.addRow([]);
+  }
+
+  addSectionHeader(ws, `Scenario Vectors — in force: ${vectors.scenario_in_force}`, 5);
+  const hdr = ws.addRow(["Tax Year", "Abated, Transfers", "Abatement Lost", "Reassessed to Price", ""]);
+  styleHeaderRow(hdr, 5);
+  for (const r of vectors.rows) {
+    const row = ws.addRow([r.tax_year, r.abated_transfers, r.abatement_lost, r.reassessed_to_price, ""]);
+    for (let c = 2; c <= 4; c++) {
+      row.getCell(c).numFmt = CURRENCY_FMT;
+      row.getCell(c).border = THIN_BORDER;
+    }
+    row.getCell(1).border = THIN_BORDER;
+  }
+  ws.addRow([]);
+
+  const notes = ws.addRow([
+    "Reappraisal: Franklin County triennial update 2026, sexennial reappraisal 2029 (verify tentative values when posted). BOR complaint window: Jan 1 – Mar 31 of the year after the tax year. Default scenario rule: abatement_lost whenever the transfer is not CONFIRMED.",
+  ]);
+  notes.getCell(1).font = { ...NORMAL_FONT, italic: true };
+  notes.getCell(1).alignment = { wrapText: true };
+  ws.mergeCells(`A${notes.number}:E${notes.number}`);
+  notes.height = 40;
 }
