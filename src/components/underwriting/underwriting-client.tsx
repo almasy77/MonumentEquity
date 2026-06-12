@@ -635,6 +635,8 @@ function ScenarioAnalysis({
             annual={result.annual}
             unrenovatedBasis={bases.unrenovated}
             renovatedBasis={bases.renovated}
+            taxYears={result.tax?.years}
+            taxView={((scenario.tax_assumptions as Record<string, unknown> | null | undefined)?.opco_view as "propco" | "household" | undefined) ?? "household"}
             onUnrenovatedBasisChange={(basis: UnrenovatedBasis) => {
               const currentExit = (scenario.exit_assumptions ?? {}) as Record<string, unknown>;
               onUpdate({
