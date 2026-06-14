@@ -723,88 +723,135 @@ function OtherIncomeLineItems({
   const utilitiesAnnual = estimateAnnualUtilities(expenses, totalUnits, "utilities_total");
   const aggregateRatio = utilitiesAnnual > 0 ? rubsAnnual / utilitiesAnnual : null;
 
+  const inputCls = "w-full bg-slate-800 border border-slate-700 rounded text-white text-sm h-8 px-2 hover:border-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors";
+
   return (
-    <div className="space-y-2">
-      <div className="space-y-2">
-        {items.map((it, i) => {
-          const c = computed[i];
-          const ratioOver = c.ratio !== null && c.ratio > 1.0;
-          return (
-            <div key={i} className="border border-slate-800 rounded p-2 space-y-2 bg-slate-900/30">
-              <div className="flex items-center gap-2">
+    <div className="space-y-1.5">
+      {/* Column header — aligned like the rent roll above. */}
+      <div className="hidden sm:grid grid-cols-12 gap-2 px-1 text-[10px] uppercase tracking-wide text-slate-500">
+        <div className="col-span-3">Description</div>
+        <div className="col-span-2">Type</div>
+        <div className="col-span-2">Amount / Recovery</div>
+        <div className="col-span-2">Basis</div>
+        <div className="col-span-2 text-right">Annual</div>
+        <div className="col-span-1 text-center">Recur</div>
+      </div>
+
+      {items.map((it, i) => {
+        const c = computed[i];
+        const ratioOver = c.ratio !== null && c.ratio > 1.0;
+        const isRubs = it.kind === "rubs";
+        const needsSource = isRubs && ratioOver && !it.source_note?.trim();
+        return (
+          <div key={i} className="rounded bg-slate-900/30 border border-slate-800/80 px-1.5 py-1.5">
+            <div className="flex items-start gap-2">
+              <div className="grid grid-cols-12 gap-2 flex-1 items-center">
+                {/* Description */}
                 <input
                   type="text"
                   value={it.label}
-                  placeholder="Label (e.g. RUBS - Electric)"
+                  placeholder={isRubs ? "RUBS - Electric" : "Laundry"}
                   onChange={(e) => update(i, { label: e.target.value })}
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder:text-slate-600"
+                  className={`col-span-12 sm:col-span-3 ${inputCls}`}
                 />
-                <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
-                  <button type="button" onClick={() => update(i, { kind: "flat" })} className={`px-2 py-1 ${it.kind === "flat" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>Flat</button>
-                  <button type="button" onClick={() => update(i, { kind: "rubs" })} className={`px-2 py-1 ${it.kind === "rubs" ? "bg-blue-900/50 text-blue-200" : "text-slate-500 hover:text-slate-300"}`}>RUBS</button>
+                {/* Type segmented toggle */}
+                <div className="col-span-6 sm:col-span-2 flex items-center rounded-md border border-slate-700 overflow-hidden h-8 text-xs">
+                  <button type="button" onClick={() => update(i, { kind: "flat" })} className={`flex-1 h-full ${!isRubs ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}>Flat</button>
+                  <button type="button" onClick={() => update(i, { kind: "rubs", rubs_recovery_pct: it.rubs_recovery_pct ?? 0.8, rubs_basis: it.rubs_basis ?? "utilities_total" })} className={`flex-1 h-full ${isRubs ? "bg-blue-900/50 text-blue-200" : "text-slate-400 hover:text-slate-200"}`}>RUBS</button>
                 </div>
-                <button type="button" onClick={() => remove(i)} className="text-slate-500 hover:text-red-400 px-1" title="Remove">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="flex items-end gap-2 flex-wrap">
-                {it.kind === "flat" ? (
-                  <div className="w-32">
-                    <Label className="text-[10px] text-slate-400">$/mo</Label>
+                {/* Amount (flat) or Recovery % (rubs) */}
+                <div className="col-span-6 sm:col-span-2">
+                  {isRubs ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={Math.round((it.rubs_recovery_pct ?? 0) * 1000) / 10}
+                        onChange={(e) => update(i, { rubs_recovery_pct: (parseFloat(e.target.value) || 0) / 100 })}
+                        className={`${inputCls} pr-6 tabular-nums`}
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 pointer-events-none">%</span>
+                    </div>
+                  ) : (
                     <BareCurrencyInput value={it.monthly_amount ?? 0} onChange={(v) => update(i, { monthly_amount: v })} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="w-24">
-                      <PctField label="Recovery %" value={it.rubs_recovery_pct ?? 0} onChange={(v) => update(i, { rubs_recovery_pct: v })} />
-                    </div>
-                    <div className="w-40">
-                      <Label className="text-[10px] text-slate-400">Basis</Label>
-                      <select
-                        value={it.rubs_basis ?? "utilities_total"}
-                        onChange={(e) => update(i, { rubs_basis: e.target.value as RubsBasis })}
-                        className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white"
-                      >
-                        {RUBS_BASES.map((b) => <option key={b} value={b}>{RUBS_BASIS_LABELS[b]}</option>)}
-                      </select>
-                    </div>
-                    <div className="text-[11px] text-slate-400 pb-1.5">
-                      ≈ <span className="tabular-nums text-slate-200">{fmtCurrency(Math.round(c.annual))}/yr</span>
-                      {c.ratio !== null && (
-                        <span className={`ml-1 ${ratioOver ? "text-amber-400" : "text-slate-500"}`}>({(c.ratio * 100).toFixed(0)}% of basis)</span>
-                      )}
-                    </div>
-                  </>
-                )}
-                <label className="flex items-center gap-1 text-[11px] text-slate-400 pb-1.5 cursor-pointer">
-                  <input type="checkbox" checked={it.recurring !== false} onChange={(e) => update(i, { recurring: e.target.checked })} className="accent-blue-500" />
-                  recurring
-                </label>
+                  )}
+                </div>
+                {/* Basis (rubs only) */}
+                <div className="col-span-6 sm:col-span-2">
+                  {isRubs ? (
+                    <select
+                      value={it.rubs_basis ?? "utilities_total"}
+                      onChange={(e) => update(i, { rubs_basis: e.target.value as RubsBasis })}
+                      className={inputCls}
+                    >
+                      {RUBS_BASES.map((b) => <option key={b} value={b}>{RUBS_BASIS_LABELS[b]}</option>)}
+                    </select>
+                  ) : (
+                    <div className="h-8 flex items-center text-xs text-slate-600 px-2">fixed $/mo</div>
+                  )}
+                </div>
+                {/* Annual computed + ratio */}
+                <div className="col-span-4 sm:col-span-2 text-right">
+                  <div className="text-sm text-slate-200 tabular-nums">{fmtCurrency(Math.round(c.annual))}</div>
+                  {c.ratio !== null && (
+                    <div className={`text-[10px] tabular-nums ${ratioOver ? "text-amber-400" : "text-slate-500"}`}>{(c.ratio * 100).toFixed(0)}% of basis</div>
+                  )}
+                </div>
+                {/* Recurring toggle */}
+                <div className="col-span-2 sm:col-span-1 flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={it.recurring !== false}
+                    onChange={(e) => update(i, { recurring: e.target.checked })}
+                    className="h-4 w-4 accent-blue-500 cursor-pointer"
+                    title={it.recurring !== false ? "Recurring — included in stabilized NOI & exit value" : "Non-recurring — in-period only, excluded from exit value"}
+                  />
+                </div>
               </div>
+              <button type="button" onClick={() => remove(i)} className="text-slate-500 hover:text-red-400 mt-1.5" title="Remove line">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {/* Source note — shown for RUBS lines (audit) or any line already carrying one. */}
+            {(isRubs || it.source_note) && (
               <input
                 type="text"
                 value={it.source_note ?? ""}
-                placeholder={it.kind === "rubs" && ratioOver ? "Source required for gross-up (>100%) — e.g. T-12 actual" : "Source note (e.g. T-12 Jun25-May26)"}
+                placeholder={needsSource ? "Source required for gross-up (>100%) — e.g. T-12 Jun25–May26 actual" : "Source note (e.g. T-12 actual, lease audit)"}
                 onChange={(e) => update(i, { source_note: e.target.value })}
-                className={`w-full bg-slate-800 border rounded px-2 py-1 text-[11px] text-white placeholder:text-slate-600 ${it.kind === "rubs" && ratioOver && !it.source_note?.trim() ? "border-amber-600/60" : "border-slate-700"}`}
+                className={`mt-1.5 w-full bg-slate-800/60 border rounded px-2 py-1 text-[11px] text-slate-300 placeholder:text-slate-600 focus:outline-none ${needsSource ? "border-amber-600/60" : "border-slate-800"}`}
               />
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={addFlat} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus className="h-3 w-3" /> Flat line</button>
-        <button type="button" onClick={addRubs} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus className="h-3 w-3" /> RUBS line</button>
-      </div>
-      <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-[11px]">
-        <span className="text-slate-400">Total other income <span className="text-slate-200 tabular-nums font-medium">{fmtCurrency(Math.round(totalMonthly))}/mo · {fmtCurrency(Math.round(totalMonthly * 12))}/yr</span></span>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Add row + subtotal — mirrors the rent roll's "+ Unit Type" and Subtotals. */}
+      <div className="flex items-center justify-between pt-1">
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={addFlat} className="h-7 border-slate-700 text-slate-300 hover:bg-slate-800 text-xs">
+            <Plus className="h-3 w-3 mr-1" /> Income line
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={addRubs} className="h-7 border-slate-700 text-blue-300 hover:bg-slate-800 text-xs">
+            <Plus className="h-3 w-3 mr-1" /> RUBS line
+          </Button>
+        </div>
         {aggregateRatio !== null && (
-          <span className={aggregateRatio > 1.0 ? "text-amber-400" : "text-slate-500"}>
-            RUBS recovery {(aggregateRatio * 100).toFixed(0)}% of utilities{aggregateRatio > 1.0 ? " (gross-up)" : ""}
+          <span className={`text-[11px] ${aggregateRatio > 1.0 ? "text-amber-400" : "text-slate-500"}`}>
+            RUBS recovery {(aggregateRatio * 100).toFixed(0)}% of utilities{aggregateRatio > 1.0 ? " · gross-up" : ""}
           </span>
         )}
       </div>
-      <p className="text-[10px] text-slate-500">Itemized other income overrides the flat field and the single-knob RUBS toggle. RUBS = recovery × utility expense × physical occupancy. Estimates use current expense inputs; the export shows the engine&apos;s authoritative figures.</p>
+      <div className="grid grid-cols-12 gap-2 border-t border-slate-700 pt-2 px-1 items-center">
+        <span className="col-span-7 sm:col-span-9 text-xs text-slate-400 font-medium">Total Other Income</span>
+        <span className="col-span-5 sm:col-span-3 text-right text-sm text-emerald-400 tabular-nums font-medium">
+          {fmtCurrency(Math.round(totalMonthly))}/mo · {fmtCurrency(Math.round(totalMonthly * 12))}/yr
+        </span>
+      </div>
+      <p className="text-[10px] text-slate-500 px-1">
+        Itemized other income overrides the flat field. RUBS = recovery × utility expense × physical occupancy.
+        Uncheck <span className="text-slate-400">Recur</span> for one-time income (e.g. deposit forfeiture) — collected in-period but excluded from exit value.
+        Estimates use current expense inputs; the export shows the engine&apos;s authoritative figures.
+      </p>
     </div>
   );
 }
