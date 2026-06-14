@@ -85,13 +85,15 @@ export function computeReconciliationChecks(
     checks.push({ id: "c", name: "Monthly NOI sums to annual NOI", pass: worst < 1, detail: `max yearly drift ${fmt$(worst)}` });
   }
 
-  // (d) Bid price labeled when it isn't the modeled price
+  // (d) Bid price labeled when it isn't the modeled price. Read the SCENARIO
+  // bid (the one that drove this scenario's purchase price); the deal-level bid
+  // is only a fallback for legacy scenarios that never set it.
   {
-    const bid = deal.bid_price;
+    const bid = inputs.purchase.bid_price ?? deal.bid_price;
     const equal = !bid || Math.abs(bid - inputs.purchase.purchase_price) < 1;
     checks.push({
       id: "d", name: "Bid price vs modeled price", pass: true,
-      detail: equal ? "bid = purchase price (or no bid set)" : `bid ${fmt$(bid!)} ≠ modeled ${fmt$(inputs.purchase.purchase_price)} — labeled "(not modeled)" on Summary`,
+      detail: equal ? "bid = purchase price (or no bid set)" : `bid ${fmt$(bid!)} ≠ modeled ${fmt$(inputs.purchase.purchase_price)} — labeled "(not the modeled price)" on Summary`,
     });
   }
 

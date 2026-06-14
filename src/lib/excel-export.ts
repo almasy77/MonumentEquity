@@ -180,9 +180,13 @@ function buildSummarySheet(
   addLabelValue(ws, "Address", `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`);
   addLabelValue(ws, "Units", deal.units, NUMBER_FMT);
   addLabelValue(ws, "Asking Price", deal.asking_price, CURRENCY_FMT);
-  if (deal.bid_price) {
-    const bidModeled = Math.abs(deal.bid_price - inputs.purchase.purchase_price) < 1;
-    addLabelValue(ws, bidModeled ? "Bid Price" : "Bid Price (not modeled — purchase price drives the model)", deal.bid_price, CURRENCY_FMT);
+  // Bid Price — read the SCENARIO bid (the one that drove this scenario's
+  // purchase price), not the deal-level default which goes stale the moment
+  // the bid is edited in the underwriting tab. Show it only when it differs
+  // from the modeled purchase price; in the normal flow the bid IS the price.
+  const scenarioBid = inputs.purchase.bid_price ?? deal.bid_price;
+  if (scenarioBid && Math.abs(scenarioBid - inputs.purchase.purchase_price) >= 1) {
+    addLabelValue(ws, "Bid Price (not the modeled price)", scenarioBid, CURRENCY_FMT);
   }
   addLabelValue(ws, "Source", deal.source);
   if (deal.year_built) addLabelValue(ws, "Year Built", deal.year_built);
@@ -888,6 +892,24 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
   addValidationRow(ws, "IRR Calculated", m.irr !== null, m.irr !== null ? `${(m.irr * 100).toFixed(1)}%` : "Could not converge");
   addValidationRow(ws, "Equity Multiple > 1.0x", m.equity_multiple > 1.0, `${m.equity_multiple.toFixed(2)}x`);
   addValidationRow(ws, "Positive Net Sale Proceeds", m.net_sale_proceeds > 0, `$${Math.round(m.net_sale_proceeds).toLocaleString()}`);
+
+  // Bid vs Purchase consistency (FIX: bid-price desync). PASS when the scenario
+  // bid equals the modeled purchase price (the normal flow), or no bid is set.
+  // Otherwise WARN with both numbers — the model is driven by purchase price.
+  {
+    const bid = inputs.purchase.bid_price;
+    if (bid && bid > 0) {
+      const consistent = Math.abs(bid - inputs.purchase.purchase_price) < 1;
+      addValidationRow(
+        ws,
+        "Bid vs Purchase consistency",
+        consistent,
+        consistent
+          ? `bid = modeled purchase $${Math.round(inputs.purchase.purchase_price).toLocaleString()}`
+          : `bid $${Math.round(bid).toLocaleString()} ≠ modeled purchase $${Math.round(inputs.purchase.purchase_price).toLocaleString()} — model uses purchase price`,
+      );
+    }
+  }
 
   // Itemized other income tie-out (FIX: itemized-other-income): stabilized
   // other income must equal the sum of recurring line items (non-recurring
