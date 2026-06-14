@@ -1479,10 +1479,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         {/* Bid & LOI — moved to top */}
         <Section title="Bid & LOI" defaultOpen>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <CurrencyField label="Bid Price" value={p.bid_price || 0} onChange={(v) => {
-              setP({ ...p, bid_price: v, loi_amount: v, purchase_price: v || p.purchase_price });
-              markDirty();
-            }} />
+            <div>
+              <CurrencyField label="Bid Price" value={p.bid_price || 0} onChange={(v) => {
+                setP({ ...p, bid_price: v, loi_amount: v, purchase_price: v || p.purchase_price });
+                markDirty();
+              }} />
+              {!!p.bid_price && Math.abs((p.bid_price || 0) - p.purchase_price) >= 1 && (
+                <p className="text-[10px] text-amber-400/80 mt-0.5">
+                  ≠ modeled purchase {fmtCurrency(p.purchase_price)} — the model uses Purchase Price
+                </p>
+              )}
+            </div>
             <div>
               <Label className="text-xs text-slate-400">LOI Date</Label>
               <Input

@@ -4,7 +4,7 @@ import { getRedis, removeFromIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
-import type { Scenario } from "@/lib/validations";
+import type { Scenario, Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -129,6 +129,22 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     );
 
     await redis.set(`scenario:${id}`, JSON.stringify(updated));
+
+    // Persist-back (FIX: bid-price desync): keep the deal-level bid in sync
+    // with the ACTIVE scenario's bid, so the deal headline and any deal-level
+    // export default never go stale when the bid is edited in the underwriting
+    // tab. Only the active scenario drives the deal-level bid. Non-fatal.
+    try {
+      const bid = (updated.purchase_assumptions as Record<string, unknown>)?.bid_price as number | undefined;
+      if (updated.is_active !== false && typeof bid === "number" && bid > 0) {
+        const deal = await redis.get<Deal>(`deal:${existing.deal_id}`);
+        if (deal && deal.bid_price !== bid) {
+          await redis.set(`deal:${existing.deal_id}`, JSON.stringify({ ...deal, bid_price: bid, updated_at: now }));
+        }
+      }
+    } catch (e) {
+      console.error("bid persist-back failed (non-fatal):", e);
+    }
 
     await logActivity({
       deal_id: existing.deal_id,
