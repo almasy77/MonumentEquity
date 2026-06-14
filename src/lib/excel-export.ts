@@ -93,7 +93,7 @@ export async function generateExcelWorkbook(
 
   const reconChecks = computeReconciliationChecks(deal, inputs, result);
   buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks);
-  buildAssumptionsSheet(wb, inputs);
+  buildAssumptionsSheet(wb, inputs, result);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
   buildRentMatrixSheet(wb, result, inputs);
@@ -251,12 +251,18 @@ function buildSummarySheet(
     addSectionHeader(ws, "Exit Detail (method & reconciliation)", 5);
     const method = exitMethodFor(inputs);
     const lastA = result.annual[result.annual.length - 1];
-    const lastNOI = lastA?.noi ?? 0;
+    // m.exit_noi is the STABILIZED last-year NOI (non-recurring other income
+    // excluded) — the figure the closed form actually capitalizes.
+    const lastNOI = m.exit_noi;
+    const rawLastNOI = lastA?.noi ?? 0;
     const lastTax = lastA?.opex_breakdown.property_tax ?? 0;
     const cap = inputs.exit.exit_cap_rate;
     const rate = exitEffectiveTaxRate(inputs);
     addLabelValue(ws, "Method", method === "tax_loaded" ? "Tax-loaded closed form" : method === "explicit_price" ? "Explicit sale price" : "Naive NOI ÷ cap");
-    addLabelValue(ws, "Last-Year NOI", lastNOI, CURRENCY_FMT);
+    addLabelValue(ws, "Stabilized Last-Year NOI", lastNOI, CURRENCY_FMT);
+    if (Math.abs(rawLastNOI - lastNOI) >= 1) {
+      addLabelValue(ws, "  (excludes non-recurring other income)", rawLastNOI - lastNOI, CURRENCY_FMT);
+    }
     addLabelValue(ws, "Last-Year Property Tax", lastTax, CURRENCY_FMT);
     if (method === "tax_loaded") {
       addLabelValue(ws, "NOI excluding tax", lastNOI + lastTax, CURRENCY_FMT);
@@ -315,7 +321,7 @@ function buildSummarySheet(
   }
 }
 
-function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
+function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, result: UnderwritingResult) {
   const ws = wb.addWorksheet("Assumptions");
   ws.columns = [{ width: 30 }, { width: 18 }, { width: 4 }, { width: 30 }, { width: 18 }];
 
@@ -341,6 +347,41 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs) {
   addInputRow(ws, "Rent Growth Rate (Annual)", inputs.revenue.rent_growth_rate, PCT_FMT);
   addInputRow(ws, "Other Income (Monthly)", inputs.revenue.other_income_monthly, CURRENCY_FMT);
   ws.addRow([]);
+
+  // Itemized other income (FIX: itemized-other-income). Year-1 amounts and, for
+  // RUBS lines, the implied recovery ratio against the utility expense.
+  const oiDetail = result.other_income_detail;
+  if (oiDetail) {
+    addSectionHeader(ws, "Other Income — Itemized (Year 1)", 5);
+    const hdr = ws.addRow(["Line", "Type", "Annual $", "Recovery / Recurring", "Source"]);
+    styleHeaderRow(hdr, 5);
+    for (const line of oiDetail.lines) {
+      const recoveryCol = line.kind === "rubs"
+        ? `${line.implied_recovery_ratio !== undefined ? (line.implied_recovery_ratio * 100).toFixed(0) + "% of " + (line.rubs_basis ?? "utilities_total").replace("utilities_", "") : "—"}${line.recurring ? "" : " · non-recurring"}`
+        : (line.recurring ? "recurring" : "non-recurring");
+      const row = ws.addRow([line.label || "(unlabeled)", line.kind.toUpperCase(), Math.round(line.annual_amount), recoveryCol, line.source_note ?? ""]);
+      row.getCell(3).numFmt = CURRENCY_FMT;
+    }
+    const totalRow = ws.addRow(["Total Other Income", "", Math.round(oiDetail.total_annual), "", ""]);
+    totalRow.getCell(1).font = { bold: true, name: FONT_SANS };
+    totalRow.getCell(3).numFmt = CURRENCY_FMT;
+    totalRow.getCell(3).font = { bold: true, name: FONT_MONO };
+    const stabRow = ws.addRow(["Stabilized (recurring only — drives exit)", "", Math.round(oiDetail.stabilized_annual), "", ""]);
+    stabRow.getCell(3).numFmt = CURRENCY_FMT;
+    if (oiDetail.aggregate_recovery_ratio !== null) {
+      const ratioRow = ws.addRow([
+        "RUBS recovery vs utilities",
+        "",
+        "",
+        `${(oiDetail.aggregate_recovery_ratio * 100).toFixed(0)}% (${Math.round(oiDetail.rubs_total_annual).toLocaleString()} / ${Math.round(oiDetail.utilities_annual).toLocaleString()})`,
+        oiDetail.aggregate_recovery_ratio > 1.0 ? "gross-up — verify source" : "",
+      ]);
+      if (oiDetail.aggregate_recovery_ratio > 1.0) {
+        ratioRow.getCell(4).font = { name: FONT_SANS, color: { argb: "FFB8860B" } };
+      }
+    }
+    ws.addRow([]);
+  }
 
   // Rent Ramp (Mark-to-Market) — surfaces phase-1 inputs only when enabled.
   const ramp = inputs.revenue.rent_ramp;
@@ -847,6 +888,20 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
   addValidationRow(ws, "IRR Calculated", m.irr !== null, m.irr !== null ? `${(m.irr * 100).toFixed(1)}%` : "Could not converge");
   addValidationRow(ws, "Equity Multiple > 1.0x", m.equity_multiple > 1.0, `${m.equity_multiple.toFixed(2)}x`);
   addValidationRow(ws, "Positive Net Sale Proceeds", m.net_sale_proceeds > 0, `$${Math.round(m.net_sale_proceeds).toLocaleString()}`);
+
+  // Itemized other income tie-out (FIX: itemized-other-income): stabilized
+  // other income must equal the sum of recurring line items (non-recurring
+  // income is received in-period but excluded from the exit valuation).
+  const oiDetail = result.other_income_detail;
+  if (oiDetail) {
+    const recurringSum = oiDetail.lines.filter((l) => l.recurring).reduce((s, l) => s + l.annual_amount, 0);
+    const tie = Math.abs(oiDetail.stabilized_annual - recurringSum) < 1;
+    addValidationRow(ws, "Stabilized other income = Σ recurring lines", tie, `stabilized $${Math.round(oiDetail.stabilized_annual).toLocaleString()} vs Σ recurring $${Math.round(recurringSum).toLocaleString()}`);
+    const nonRecurring = oiDetail.total_annual - oiDetail.stabilized_annual;
+    if (nonRecurring > 1) {
+      addValidationRow(ws, "Non-recurring other income excluded from exit", true, `$${Math.round(nonRecurring).toLocaleString()}/yr in-period only`);
+    }
+  }
 
   ws.addRow([]);
 

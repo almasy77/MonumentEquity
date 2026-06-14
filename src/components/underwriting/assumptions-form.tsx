@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
@@ -615,6 +615,69 @@ const OTHER_INCOME_LINES: { key: keyof OtherIncomeSublines; label: string }[] = 
   { key: "other", label: "Other" },
 ];
 
+const RUBS_BASIS_LABELS: Record<RubsBasis, string> = {
+  utilities_total: "Total utilities",
+  utilities_electric: "Electric",
+  utilities_water: "Water/Sewer",
+  utilities_gas: "Gas",
+};
+const RUBS_BASES = Object.keys(RUBS_BASIS_LABELS) as RubsBasis[];
+
+// Live (client-side) estimate of annual utility expense for a RUBS basis, so the
+// form can show an implied recovery ratio while editing. Handles the common
+// dollar modes; %EGI/%GPR utilities are skipped in this estimate (the
+// authoritative figure lives in the engine result / export).
+function estimateAnnualUtilities(
+  expenses: ScenarioInputs["expenses"],
+  totalUnits: number,
+  basis: RubsBasis,
+): number {
+  const resolveOne = (oi?: OpexInput): number => {
+    if (!oi || !oi.value) return 0;
+    switch (oi.mode) {
+      case "total_annual": return oi.value;
+      case "per_unit_annual": return oi.value * totalUnits;
+      case "per_unit_monthly": return oi.value * totalUnits * 12;
+      default: return 0; // pct modes — not estimable here
+    }
+  };
+  const subs = expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined;
+  if (basis !== "utilities_total") {
+    const key = basis === "utilities_electric" ? "electric" : basis === "utilities_water" ? "water_sewer" : "gas";
+    const sub = subs?.[key];
+    if (sub && sub.value) return resolveOne(sub);
+    // fall through to total when the chosen subline isn't itemized
+  }
+  if (subs) {
+    let any = false, sum = 0;
+    for (const k of Object.keys(subs)) { const s = subs[k]; if (s && s.value) { any = true; sum += resolveOne(s); } }
+    if (any) return sum;
+  }
+  const total = resolveOne(expenses.opex_inputs?.utilities);
+  if (total > 0) return total;
+  return (expenses.utilities_per_unit || 0) * totalUnits;
+}
+
+// Total monthly other income implied by a set of line items (live estimate).
+function estimateLineItemsMonthly(
+  items: OtherIncomeLineItem[],
+  expenses: ScenarioInputs["expenses"],
+  totalUnits: number,
+  vacancyRate: number,
+): number {
+  const physOcc = Math.max(0, 1 - vacancyRate);
+  let monthly = 0;
+  for (const it of items) {
+    if (it.kind === "rubs") {
+      const basisAnnual = estimateAnnualUtilities(expenses, totalUnits, it.rubs_basis ?? "utilities_total");
+      monthly += ((it.rubs_recovery_pct ?? 0) * basisAnnual * physOcc) / 12;
+    } else {
+      monthly += it.monthly_amount ?? 0;
+    }
+  }
+  return Math.round(monthly * 100) / 100;
+}
+
 const OPEX_MODE_LABELS: Record<OpexInputMode, string> = {
   total_annual: "$ /yr",
   per_unit_annual: "$ /unit/yr",
@@ -623,6 +686,128 @@ const OPEX_MODE_LABELS: Record<OpexInputMode, string> = {
   pct_gpr: "% GPR",
 };
 const OPEX_MODES = Object.keys(OPEX_MODE_LABELS) as OpexInputMode[];
+
+// Editable itemized other-income table (FIX: itemized-other-income). When line
+// items are present they are the source of truth — they supersede the flat
+// field and the single-knob structured RUBS toggle.
+function OtherIncomeLineItems({
+  items,
+  expenses,
+  totalUnits,
+  vacancyRate,
+  onChange,
+}: {
+  items: OtherIncomeLineItem[];
+  expenses: ScenarioInputs["expenses"];
+  totalUnits: number;
+  vacancyRate: number;
+  onChange: (items: OtherIncomeLineItem[]) => void;
+}) {
+  const physOcc = Math.max(0, 1 - vacancyRate);
+  const update = (i: number, patch: Partial<OtherIncomeLineItem>) =>
+    onChange(items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
+  const remove = (i: number) => onChange(items.filter((_, n) => n !== i));
+  const addFlat = () => onChange([...items, { label: "", kind: "flat", monthly_amount: 0, recurring: true }]);
+  const addRubs = () => onChange([...items, { label: "RUBS", kind: "rubs", rubs_recovery_pct: 0.8, rubs_basis: "utilities_total", recurring: true }]);
+
+  const computed = items.map((it) => {
+    if (it.kind === "rubs") {
+      const basisAnnual = estimateAnnualUtilities(expenses, totalUnits, it.rubs_basis ?? "utilities_total");
+      const annual = (it.rubs_recovery_pct ?? 0) * basisAnnual * physOcc;
+      return { annual, ratio: basisAnnual > 0 ? annual / basisAnnual : null, isRubs: true };
+    }
+    return { annual: (it.monthly_amount ?? 0) * 12, ratio: null as number | null, isRubs: false };
+  });
+  const totalMonthly = computed.reduce((s, c) => s + c.annual / 12, 0);
+  const rubsAnnual = computed.reduce((s, c) => s + (c.isRubs ? c.annual : 0), 0);
+  const utilitiesAnnual = estimateAnnualUtilities(expenses, totalUnits, "utilities_total");
+  const aggregateRatio = utilitiesAnnual > 0 ? rubsAnnual / utilitiesAnnual : null;
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-2">
+        {items.map((it, i) => {
+          const c = computed[i];
+          const ratioOver = c.ratio !== null && c.ratio > 1.0;
+          return (
+            <div key={i} className="border border-slate-800 rounded p-2 space-y-2 bg-slate-900/30">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={it.label}
+                  placeholder="Label (e.g. RUBS - Electric)"
+                  onChange={(e) => update(i, { label: e.target.value })}
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder:text-slate-600"
+                />
+                <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
+                  <button type="button" onClick={() => update(i, { kind: "flat" })} className={`px-2 py-1 ${it.kind === "flat" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>Flat</button>
+                  <button type="button" onClick={() => update(i, { kind: "rubs" })} className={`px-2 py-1 ${it.kind === "rubs" ? "bg-blue-900/50 text-blue-200" : "text-slate-500 hover:text-slate-300"}`}>RUBS</button>
+                </div>
+                <button type="button" onClick={() => remove(i)} className="text-slate-500 hover:text-red-400 px-1" title="Remove">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex items-end gap-2 flex-wrap">
+                {it.kind === "flat" ? (
+                  <div className="w-32">
+                    <Label className="text-[10px] text-slate-400">$/mo</Label>
+                    <BareCurrencyInput value={it.monthly_amount ?? 0} onChange={(v) => update(i, { monthly_amount: v })} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-24">
+                      <PctField label="Recovery %" value={it.rubs_recovery_pct ?? 0} onChange={(v) => update(i, { rubs_recovery_pct: v })} />
+                    </div>
+                    <div className="w-40">
+                      <Label className="text-[10px] text-slate-400">Basis</Label>
+                      <select
+                        value={it.rubs_basis ?? "utilities_total"}
+                        onChange={(e) => update(i, { rubs_basis: e.target.value as RubsBasis })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white"
+                      >
+                        {RUBS_BASES.map((b) => <option key={b} value={b}>{RUBS_BASIS_LABELS[b]}</option>)}
+                      </select>
+                    </div>
+                    <div className="text-[11px] text-slate-400 pb-1.5">
+                      ≈ <span className="tabular-nums text-slate-200">{fmtCurrency(Math.round(c.annual))}/yr</span>
+                      {c.ratio !== null && (
+                        <span className={`ml-1 ${ratioOver ? "text-amber-400" : "text-slate-500"}`}>({(c.ratio * 100).toFixed(0)}% of basis)</span>
+                      )}
+                    </div>
+                  </>
+                )}
+                <label className="flex items-center gap-1 text-[11px] text-slate-400 pb-1.5 cursor-pointer">
+                  <input type="checkbox" checked={it.recurring !== false} onChange={(e) => update(i, { recurring: e.target.checked })} className="accent-blue-500" />
+                  recurring
+                </label>
+              </div>
+              <input
+                type="text"
+                value={it.source_note ?? ""}
+                placeholder={it.kind === "rubs" && ratioOver ? "Source required for gross-up (>100%) — e.g. T-12 actual" : "Source note (e.g. T-12 Jun25-May26)"}
+                onChange={(e) => update(i, { source_note: e.target.value })}
+                className={`w-full bg-slate-800 border rounded px-2 py-1 text-[11px] text-white placeholder:text-slate-600 ${it.kind === "rubs" && ratioOver && !it.source_note?.trim() ? "border-amber-600/60" : "border-slate-700"}`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={addFlat} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus className="h-3 w-3" /> Flat line</button>
+        <button type="button" onClick={addRubs} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus className="h-3 w-3" /> RUBS line</button>
+      </div>
+      <div className="flex items-center justify-between border-t border-slate-800 pt-2 text-[11px]">
+        <span className="text-slate-400">Total other income <span className="text-slate-200 tabular-nums font-medium">{fmtCurrency(Math.round(totalMonthly))}/mo · {fmtCurrency(Math.round(totalMonthly * 12))}/yr</span></span>
+        {aggregateRatio !== null && (
+          <span className={aggregateRatio > 1.0 ? "text-amber-400" : "text-slate-500"}>
+            RUBS recovery {(aggregateRatio * 100).toFixed(0)}% of utilities{aggregateRatio > 1.0 ? " (gross-up)" : ""}
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-500">Itemized other income overrides the flat field and the single-knob RUBS toggle. RUBS = recovery × utility expense × physical occupancy. Estimates use current expense inputs; the export shows the engine&apos;s authoritative figures.</p>
+    </div>
+  );
+}
 
 function opexToAnnual(input: OpexInput, units: number, egi: number, gpr: number): number {
   const v = input.value || 0;
@@ -870,6 +1055,30 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [oiPeriod, setOiPeriod] = useState<"mo" | "yr">("mo");
   const oiMult = oiPeriod === "yr" ? 12 : 1;
   const oiHasSublines = Object.values(r.other_income_sublines ?? {}).some((v) => (v as number) > 0);
+  const oiUsesLineItems = !!(r.other_income?.line_items && r.other_income.line_items.length > 0);
+  // Migrate the legacy sub-line / flat / single-knob-RUBS state into editable
+  // line items when the user switches to the advanced editor.
+  function seedLineItems(): OtherIncomeLineItem[] {
+    const out: OtherIncomeLineItem[] = [];
+    const subs = r.other_income_sublines ?? {};
+    for (const { key, label } of OTHER_INCOME_LINES) {
+      const v = (subs[key] as number) || 0;
+      if (v <= 0) continue;
+      if (key === "utility_reimbursement") {
+        out.push({ label: "RUBS", kind: "rubs", rubs_recovery_pct: r.rubs?.recovery_pct ?? 0.8, rubs_basis: "utilities_total", recurring: true, source_note: r.rubs?.source_note });
+      } else {
+        out.push({ label, kind: "flat", monthly_amount: v, recurring: true });
+      }
+    }
+    const subSum = Object.values(subs).reduce((s: number, v) => s + ((v as number) || 0), 0);
+    const remainder = (r.other_income_monthly || 0) - subSum;
+    if (remainder > 1) out.push({ label: "Other", kind: "flat", monthly_amount: Math.round(remainder * 100) / 100, recurring: true });
+    if (r.rubs?.mode === "structured" && !subs.utility_reimbursement) {
+      out.push({ label: "RUBS", kind: "rubs", rubs_recovery_pct: r.rubs.recovery_pct ?? 0.8, rubs_basis: "utilities_total", recurring: true, source_note: r.rubs.source_note });
+    }
+    if (out.length === 0) out.push({ label: "", kind: "flat", monthly_amount: 0, recurring: true });
+    return out;
+  }
   function updateOtherIncomeSubline(key: keyof OtherIncomeSublines, displayValue: number) {
     const monthly = Math.round((displayValue / oiMult) * 100) / 100;
     const next: OtherIncomeSublines = { ...(r.other_income_sublines ?? {}), [key]: monthly };
@@ -1687,9 +1896,9 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     {oiExpanded ? "collapse" : "itemize"}
                   </button>
                 </div>
-                {oiHasSublines ? (
+                {oiUsesLineItems || oiHasSublines ? (
                   <div className="bg-slate-800/40 border border-slate-800 rounded-md text-slate-400 text-sm h-8 px-3 flex items-center justify-between italic">
-                    <span className="text-[10px]">sum of sub-items</span>
+                    <span className="text-[10px]">{oiUsesLineItems ? "sum of line items" : "sum of sub-items"}</span>
                     <span className="tabular-nums not-italic text-slate-200">{fmtCurrency(r.other_income_monthly || 0)}/mo</span>
                   </div>
                 ) : (
@@ -1715,82 +1924,110 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
 
-            {/* Itemized Other Income (B6) — same pattern as Utilities sublines.
-                Entry by month or by year; stored monthly. */}
+            {/* Itemized Other Income. Two modes: the legacy fixed sub-line grid
+                (+ Phase 4 single-knob RUBS), or the advanced editable line-item
+                table which supersedes both when present. */}
             {oiExpanded && (
               <div className="border border-slate-800 rounded p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized</span>
-                  <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => setOiPeriod("mo")}
-                      className={`px-2 py-0.5 ${oiPeriod === "mo" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
-                    >
-                      $/mo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOiPeriod("yr")}
-                      className={`px-2 py-0.5 ${oiPeriod === "yr" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
-                    >
-                      $/yr
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                  {OTHER_INCOME_LINES.map(({ key, label }) => (
-                    <CurrencyField
-                      key={key}
-                      label={label}
-                      suffix={`/${oiPeriod}`}
-                      value={Math.round(((r.other_income_sublines?.[key] as number) || 0) * oiMult * 100) / 100}
-                      onChange={(v) => updateOtherIncomeSubline(key, v)}
+                {oiUsesLineItems ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized (advanced)</span>
+                      <button
+                        type="button"
+                        onClick={() => { setR({ ...r, other_income: undefined }); markDirty(); }}
+                        className="text-[10px] text-slate-500 hover:text-slate-300"
+                      >
+                        revert to simple
+                      </button>
+                    </div>
+                    <OtherIncomeLineItems
+                      items={r.other_income!.line_items!}
+                      expenses={e}
+                      totalUnits={totalUnits}
+                      vacancyRate={r.vacancy_rate}
+                      onChange={(items) => {
+                        const monthly = estimateLineItemsMonthly(items, e, totalUnits, r.vacancy_rate);
+                        // Keep other_income_monthly synced for displays that don't
+                        // read line items; the engine ignores it when items exist.
+                        setR({ ...r, other_income: { line_items: items }, other_income_monthly: monthly });
+                        markDirty();
+                      }}
                     />
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Utility Reimbursement (RUBS) can be entered here <span className="font-semibold">or</span> netted in the
-                  Utilities expense section (negative line) — pick <span className="font-semibold">one</span> to avoid
-                  double-counting.
-                </p>
-                {/* Structured RUBS (fix-spec Phase 4.2): derive the reimbursement
-                    instead of hand-typing it. recovery × utilities × physical occupancy. */}
-                <div className="flex items-end gap-3 flex-wrap border-t border-slate-800 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const on = r.rubs?.mode === "structured";
-                      setR({ ...r, rubs: on ? undefined : { mode: "structured", recovery_pct: r.rubs?.recovery_pct ?? 0.80, source_note: r.rubs?.source_note } });
-                      markDirty();
-                    }}
-                    className={`px-2 py-1.5 rounded text-xs border ${r.rubs?.mode === "structured" ? "bg-blue-900/40 border-blue-500 text-blue-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
-                  >
-                    Structured RUBS: {r.rubs?.mode === "structured" ? "ON" : "OFF"}
-                  </button>
-                  {r.rubs?.mode === "structured" && (
-                    <>
-                      <div className="w-28">
-                        <PctField label="Recovery %" value={r.rubs.recovery_pct ?? 0.80} onChange={(v) => { setR({ ...r, rubs: { ...r.rubs!, recovery_pct: v } }); markDirty(); }} />
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized</span>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setR({ ...r, other_income: { line_items: seedLineItems() }, rubs: undefined }); markDirty(); }}
+                          className="text-[10px] text-blue-400 hover:text-blue-300"
+                        >
+                          switch to advanced (RUBS by line)
+                        </button>
+                        <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
+                          <button type="button" onClick={() => setOiPeriod("mo")} className={`px-2 py-0.5 ${oiPeriod === "mo" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>$/mo</button>
+                          <button type="button" onClick={() => setOiPeriod("yr")} className={`px-2 py-0.5 ${oiPeriod === "yr" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>$/yr</button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-[220px]">
-                        <label className="text-[11px] text-slate-400 block mb-1">Source note {(r.rubs.recovery_pct ?? 0.80) > 0.85 && <span className="text-amber-400">(required above 85%)</span>}</label>
-                        <input
-                          type="text"
-                          value={r.rubs.source_note ?? ""}
-                          placeholder="e.g. Lease audit 2026-05: 100% billback in place"
-                          onChange={(e) => { setR({ ...r, rubs: { ...r.rubs!, source_note: e.target.value } }); markDirty(); }}
-                          className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-600"
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                      {OTHER_INCOME_LINES.map(({ key, label }) => (
+                        <CurrencyField
+                          key={key}
+                          label={label}
+                          suffix={`/${oiPeriod}`}
+                          value={Math.round(((r.other_income_sublines?.[key] as number) || 0) * oiMult * 100) / 100}
+                          onChange={(v) => updateOtherIncomeSubline(key, v)}
                         />
-                      </div>
-                    </>
-                  )}
-                </div>
-                {r.rubs?.mode === "structured" && (
-                  <p className="text-[11px] text-slate-500">
-                    Derived RUBS = recovery × utilities expense × physical occupancy, replacing the manual
-                    Utility Reimb. line above. Default 80%; above 85% requires collections evidence.
-                  </p>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Utility Reimbursement (RUBS) can be entered here <span className="font-semibold">or</span> netted in the
+                      Utilities expense section (negative line) — pick <span className="font-semibold">one</span> to avoid
+                      double-counting. For per-utility RUBS with recovery ratios, use <span className="font-semibold">switch to advanced</span>.
+                    </p>
+                    {/* Structured RUBS (fix-spec Phase 4.2): derive the reimbursement
+                        instead of hand-typing it. recovery × utilities × physical occupancy. */}
+                    <div className="flex items-end gap-3 flex-wrap border-t border-slate-800 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const on = r.rubs?.mode === "structured";
+                          setR({ ...r, rubs: on ? undefined : { mode: "structured", recovery_pct: r.rubs?.recovery_pct ?? 0.80, source_note: r.rubs?.source_note } });
+                          markDirty();
+                        }}
+                        className={`px-2 py-1.5 rounded text-xs border ${r.rubs?.mode === "structured" ? "bg-blue-900/40 border-blue-500 text-blue-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
+                      >
+                        Structured RUBS: {r.rubs?.mode === "structured" ? "ON" : "OFF"}
+                      </button>
+                      {r.rubs?.mode === "structured" && (
+                        <>
+                          <div className="w-28">
+                            <PctField label="Recovery %" value={r.rubs.recovery_pct ?? 0.80} onChange={(v) => { setR({ ...r, rubs: { ...r.rubs!, recovery_pct: v } }); markDirty(); }} />
+                          </div>
+                          <div className="flex-1 min-w-[220px]">
+                            <label className="text-[11px] text-slate-400 block mb-1">Source note {(r.rubs.recovery_pct ?? 0.80) > 0.85 && <span className="text-amber-400">(required above 85%)</span>}</label>
+                            <input
+                              type="text"
+                              value={r.rubs.source_note ?? ""}
+                              placeholder="e.g. Lease audit 2026-05: 100% billback in place"
+                              onChange={(e) => { setR({ ...r, rubs: { ...r.rubs!, source_note: e.target.value } }); markDirty(); }}
+                              className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-600"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {r.rubs?.mode === "structured" && (
+                      <p className="text-[11px] text-slate-500">
+                        Derived RUBS = recovery × utilities expense × physical occupancy, replacing the manual
+                        Utility Reimb. line above. Default 80%; above 85% requires collections evidence.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

@@ -49,15 +49,17 @@ export function computeReconciliationChecks(
     checks.push({ id: "a", name: "Exit reconciliation (explicit price)", pass: true, detail: `Sale price input ${fmt$(m.exit_value)}` });
   } else if (method === "tax_loaded") {
     const rate = exitEffectiveTaxRate(inputs);
-    const noiExTax = lastAnnual.noi + lastAnnual.opex_breakdown.property_tax;
+    // m.exit_noi is the STABILIZED last-year NOI (non-recurring other income
+    // excluded) — the figure the closed form actually capitalizes.
+    const noiExTax = m.exit_noi + lastAnnual.opex_breakdown.property_tax;
     const diff = Math.abs(m.exit_value * (cap + rate) - noiExTax);
     checks.push({
       id: "a", name: "Exit reconciliation (tax-loaded closed form)", pass: diff < 1,
       detail: `|exitValue × (cap ${(cap * 100).toFixed(2)}% + rate ${(rate * 100).toFixed(2)}%) − NOI-ex-tax ${fmt$(noiExTax)}| = ${fmt$(diff)}`,
     });
   } else {
-    const diff = Math.abs(m.exit_value * cap - lastAnnual.noi);
-    checks.push({ id: "a", name: "Exit reconciliation (naive NOI/cap)", pass: diff < 1, detail: `|exitValue × cap − last NOI| = ${fmt$(diff)}` });
+    const diff = Math.abs(m.exit_value * cap - m.exit_noi);
+    checks.push({ id: "a", name: "Exit reconciliation (naive NOI/cap)", pass: diff < 1, detail: `|exitValue × cap − stabilized exit NOI| = ${fmt$(diff)}` });
   }
 
   // (b) Stabilized GPR ties to unit-mix market/renovated totals

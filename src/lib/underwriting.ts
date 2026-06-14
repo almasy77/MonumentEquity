@@ -102,11 +102,37 @@ export interface RubsAssumptions {
   source_note?: string; // required (in practice) when recovery_pct > 0.85
 }
 
+// Itemized other income (FIX: itemized-other-income). On real deals other
+// income is mostly RUBS plus a few flat line items, and a single opaque number
+// can't be validated against a T-12, stressed, or explained. When
+// `other_income.line_items` is present it is the source of truth and SUPERSEDES
+// both the Phase 4 `rubs` knob and the flat `other_income_monthly` field.
+export type RubsBasis =
+  | "utilities_total"
+  | "utilities_electric"
+  | "utilities_water"
+  | "utilities_gas";
+
+export interface OtherIncomeLineItem {
+  label: string; // "RUBS - Electric", "Laundry", "Parking", "Pet rent"
+  kind: "flat" | "rubs"; // flat = $/mo fixed; rubs = recovery % of a utility expense
+  monthly_amount?: number; // kind="flat"
+  rubs_recovery_pct?: number; // kind="rubs", e.g. 0.80 (>1.0 = gross-up, allowed)
+  rubs_basis?: RubsBasis; // kind="rubs"; default "utilities_total"
+  source_note?: string; // e.g. "T-12 Jun25-May26 actual"
+  recurring?: boolean; // default true; false = in-period only, EXCLUDED from exit value
+}
+
+export interface OtherIncomeAssumptions {
+  line_items?: OtherIncomeLineItem[];
+}
+
 export interface RevenueAssumptions {
   unit_mix: UnitMix[];
   other_income_monthly: number; // laundry, parking, pet fees, etc. (sum of sublines when itemized)
   other_income_sublines?: OtherIncomeSublines; // optional itemization; engine ignores (reads the total)
   rubs?: RubsAssumptions; // structured mode REPLACES other_income_sublines.utility_reimbursement
+  other_income?: OtherIncomeAssumptions; // itemized line items; supersedes rubs + flat when present
   vacancy_rate: number;
   bad_debt_rate: number;
   concessions_rate: number;
@@ -688,6 +714,27 @@ export interface SensitivityCell {
   irr: number | null;
 }
 
+// Per-line and aggregate view of itemized other income (FIX: itemized-other-
+// income). Year-1 figures; consumed by the Excel export and Validation check.
+export interface OtherIncomeLineResult {
+  label: string;
+  kind: "flat" | "rubs";
+  annual_amount: number; // year-1 annual $ (recurring or not)
+  recurring: boolean;
+  rubs_basis?: RubsBasis;
+  implied_recovery_ratio?: number; // rubs only: annual_amount / basis annual expense
+  source_note?: string;
+}
+
+export interface OtherIncomeDetail {
+  lines: OtherIncomeLineResult[];
+  total_annual: number; // all lines, year 1
+  stabilized_annual: number; // recurring lines only (drives exit value)
+  rubs_total_annual: number;
+  utilities_annual: number; // year-1 total utilities expense
+  aggregate_recovery_ratio: number | null; // rubs_total / utilities; null if no utilities
+}
+
 export interface UnderwritingResult {
   monthly: MonthlyRow[];
   annual: AnnualSummary[];
@@ -697,6 +744,7 @@ export interface UnderwritingResult {
   tax?: TaxResult; // present only when inputs.tax is provided
   unit_schedule: UnitStateSchedule; // per-unit monthly states — Rent Matrix + diagnostics
   property_tax_vectors?: ReturnType<typeof computePropertyTaxVectors>; // Phase 2 — all 3 scenarios by tax year
+  other_income_detail?: OtherIncomeDetail; // present only when itemized line items are used
 }
 
 // ─── Closing Cost Helpers ────────────────────────────────────
@@ -777,6 +825,9 @@ export function calculateUnderwriting(
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
   let amortBalance = loanAmount; // running balance for the interest/principal split
+  // Per-month non-recurring other income (line-item model). Received in-period
+  // but excluded from the stabilized NOI that drives exit value.
+  const nonRecurringOtherByMonth: number[] = [];
 
   for (let m = 1; m <= totalMonths; m++) {
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
@@ -790,26 +841,41 @@ export function calculateUnderwriting(
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
     const concessions = gpr * revenue.concessions_rate;
-    // Structured RUBS (Phase 4.2): derived reimbursement replaces the manual
-    // utility_reimbursement subline. Utilities are resolved with a pre-RUBS
-    // EGI context (only matters if utilities were entered as % of EGI), and
-    // physical occupancy comes from the unit-state schedule — offline and
-    // vacant units don't reimburse.
-    let otherIncome = revenue.other_income_monthly;
-    if (revenue.rubs?.mode === "structured") {
-      const preEgi = gpr - vacancyLoss - badDebt - concessions + otherIncome;
-      const preCtx = { totalUnits, monthlyEgi: preEgi, monthlyGpr: gpr, escalation: Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex) };
+    // Physical occupancy from the unit-state schedule — offline and vacant
+    // units don't reimburse. Shared by both RUBS computations below.
+    const occupiedUnitsThisMonth = unitSchedule.units.reduce((c, u) => {
+      const st = u.states[m - 1];
+      return c + (st === "in_place" || st === "market" || st === "renovated" ? 1 : 0);
+    }, 0);
+    const physOcc = totalUnits > 0 ? occupiedUnitsThisMonth / totalUnits : 0;
+    // Other income, in precedence order: itemized line items → Phase 4 rubs
+    // knob → legacy flat field. Utilities (for RUBS basis) are resolved with a
+    // pre-other-income EGI context, which only matters if utilities were
+    // entered as % of EGI.
+    const otherIncomeEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), yearIndex);
+    let otherIncome: number;
+    let nonRecurringOther = 0;
+    if (hasOtherIncomeLineItems(revenue)) {
+      const items = revenue.other_income!.line_items!;
+      const preEgi = gpr - vacancyLoss - badDebt - concessions;
+      const utilCtx = { totalUnits, monthlyEgi: preEgi, monthlyGpr: gpr, escalation: otherIncomeEscalation };
+      const { resolve } = makeUtilityBasisResolverMonthly(expenses, utilCtx);
+      otherIncome = lineItemOtherIncomeMonthly(items, physOcc, resolve, false);
+      const stabilized = lineItemOtherIncomeMonthly(items, physOcc, resolve, true);
+      nonRecurringOther = otherIncome - stabilized;
+    } else if (revenue.rubs?.mode === "structured") {
+      const flat = revenue.other_income_monthly;
+      const preEgi = gpr - vacancyLoss - badDebt - concessions + flat;
+      const preCtx = { totalUnits, monthlyEgi: preEgi, monthlyGpr: gpr, escalation: otherIncomeEscalation };
       const preUtilSub = resolveSublinesMonthly(expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined, preCtx);
       const utilitiesPre = preUtilSub !== null ? preUtilSub : resolveOpexMonthly(expenses.opex_inputs?.utilities, expenses.utilities_per_unit, "per_unit_annual", preCtx);
-      const occupiedUnits = unitSchedule.units.reduce((c, u) => {
-        const st = u.states[m - 1];
-        return c + (st === "in_place" || st === "market" || st === "renovated" ? 1 : 0);
-      }, 0);
-      const physOcc = totalUnits > 0 ? occupiedUnits / totalUnits : 0;
       const recovery = revenue.rubs.recovery_pct ?? 0.80;
       const manualRubs = revenue.other_income_sublines?.utility_reimbursement ?? 0;
-      otherIncome = otherIncome - manualRubs + recovery * utilitiesPre * physOcc;
+      otherIncome = flat - manualRubs + recovery * utilitiesPre * physOcc;
+    } else {
+      otherIncome = revenue.other_income_monthly;
     }
+    nonRecurringOtherByMonth.push(nonRecurringOther);
     const egi = gpr - vacancyLoss - badDebt - concessions + otherIncome;
 
     // OpEx — resolve each line from opex_inputs (if set) or legacy fields
@@ -957,7 +1023,13 @@ export function calculateUnderwriting(
   }
 
   // ── Exit ──
-  const lastYearNOI = annual.length > 0 ? annual[annual.length - 1].noi : 0;
+  const rawLastYearNOI = annual.length > 0 ? annual[annual.length - 1].noi : 0;
+  // Stabilized exit NOI excludes non-recurring other income (e.g. deposit
+  // forfeiture): it is received in-period but must NOT be capitalized into the
+  // sale value. For scenarios without itemized line items this is a no-op, so
+  // legacy output is byte-identical.
+  const lastYearNonRecurringOther = nonRecurringOtherByMonth.slice(-12).reduce((a, b) => a + b, 0);
+  const lastYearNOI = rawLastYearNOI - lastYearNonRecurringOther;
   // Exit-side reassessment: your buyer underwrites THEIR taxes at THEIR price.
   // Circular (value depends on NOI depends on tax depends on value) — closed
   // form: exitValue = NOI_excluding_tax / (cap + effective_tax_rate).
@@ -1102,7 +1174,9 @@ export function calculateUnderwriting(
   // ── RUBS recovery surfacing (fix-spec Phase 4.2) ──
   {
     const utilitiesY1 = annual[0]?.opex_breakdown.utilities ?? 0;
-    if (revenue.rubs?.mode === "structured") {
+    if (hasOtherIncomeLineItems(revenue)) {
+      // Itemized model owns the warning; skip the Phase 4 single-knob path.
+    } else if (revenue.rubs?.mode === "structured") {
       const rec = revenue.rubs.recovery_pct ?? 0.80;
       if (rec > 0.85 && !revenue.rubs.source_note?.trim()) {
         warnings.push(`RUBS recovery ${(rec * 100).toFixed(0)}% exceeds 85% with no source note — document collections evidence or lower the assumption`);
@@ -1116,6 +1190,74 @@ export function calculateUnderwriting(
         }
       }
     }
+  }
+
+  // ── Itemized other income detail + warnings (FIX: itemized-other-income) ──
+  let otherIncomeDetail: OtherIncomeDetail | undefined;
+  if (hasOtherIncomeLineItems(revenue)) {
+    const items = revenue.other_income!.line_items!;
+    const utilitiesY1 = annual[0]?.opex_breakdown.utilities ?? 0;
+    const egiY1 = annual[0]?.egi ?? 0;
+    const gprY1 = annual[0]?.gpr ?? 0;
+    // Year-1 average PHYSICAL occupancy from the unit schedule — matches the
+    // monthly loop's RUBS basis so this detail ties to annual[0].other_income.
+    let occSum = 0, occMonths = 0;
+    for (let mo = 0; mo < Math.min(12, totalMonths); mo++) {
+      const occ = unitSchedule.units.reduce((c, u) => {
+        const st = u.states[mo];
+        return c + (st === "in_place" || st === "market" || st === "renovated" ? 1 : 0);
+      }, 0);
+      occSum += totalUnits > 0 ? occ / totalUnits : 0;
+      occMonths++;
+    }
+    const physOcc = occMonths > 0 ? occSum / occMonths : 1;
+    const oiCtx = { totalUnits, annualEgi: egiY1, annualGpr: gprY1, escalation: 1 };
+    const resolveBasis = makeUtilityBasisResolverAnnual(expenses, oiCtx);
+    const subs = expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined;
+
+    const lines: OtherIncomeLineResult[] = [];
+    let totalAnnual = 0;
+    let stabilizedAnnual = 0;
+    let rubsTotalAnnual = 0;
+    for (const it of items) {
+      const recurring = it.recurring !== false;
+      let annualAmount: number;
+      let impliedRatio: number | undefined;
+      if (it.kind === "rubs") {
+        const basis = it.rubs_basis ?? "utilities_total";
+        const basisAnnual = resolveBasis(basis);
+        annualAmount = (it.rubs_recovery_pct ?? 0) * basisAnnual * physOcc;
+        impliedRatio = basisAnnual > 0 ? annualAmount / basisAnnual : undefined;
+        rubsTotalAnnual += annualAmount;
+        // Sub-basis fallback warning (once per line).
+        const key = rubsBasisToSublineKey(basis);
+        if (key && !(subs?.[key] && subs[key]!.value)) {
+          warnings.push(`RUBS line "${it.label}" bills against ${basis.replace("utilities_", "")} but that utility subline is not itemized — falling back to total utilities`);
+        }
+        // Gross-up (>100%) without a source note.
+        if ((it.rubs_recovery_pct ?? 0) > 1.0 && !it.source_note?.trim()) {
+          warnings.push(`RUBS line "${it.label}" recovers ${((it.rubs_recovery_pct ?? 0) * 100).toFixed(0)}% (gross-up) without a source note — cite a T-12 or lease audit`);
+        }
+      } else {
+        annualAmount = (it.monthly_amount ?? 0) * 12;
+      }
+      totalAnnual += annualAmount;
+      if (recurring) stabilizedAnnual += annualAmount;
+      lines.push({ label: it.label, kind: it.kind, annual_amount: annualAmount, recurring, rubs_basis: it.rubs_basis, implied_recovery_ratio: impliedRatio, source_note: it.source_note });
+    }
+
+    const aggregateRatio = utilitiesY1 > 0 ? rubsTotalAnnual / utilitiesY1 : null;
+    if (aggregateRatio !== null && aggregateRatio > 1.0) {
+      warnings.push(`Aggregate RUBS recovery ${(aggregateRatio * 100).toFixed(0)}% of utilities — above 100% (gross-up); ensure each RUBS line cites a source`);
+    }
+    otherIncomeDetail = {
+      lines,
+      total_annual: totalAnnual,
+      stabilized_annual: stabilizedAnnual,
+      rubs_total_annual: rubsTotalAnnual,
+      utilities_annual: utilitiesY1,
+      aggregate_recovery_ratio: aggregateRatio,
+    };
   }
 
   // ── Sensitivity ──
@@ -1167,6 +1309,7 @@ export function calculateUnderwriting(
     tax: taxResult,
     unit_schedule: unitSchedule,
     property_tax_vectors: propertyTaxVectors,
+    other_income_detail: otherIncomeDetail,
   };
 }
 
@@ -1246,6 +1389,118 @@ function resolveSublinesAnnual(
     }
   }
   return anyHasValue ? sum : null;
+}
+
+// ─── Itemized other income (FIX: itemized-other-income) ──────
+// A RUBS basis maps to a specific utilities subline; "utilities_total" means
+// the whole utilities line. Returns null for total.
+function rubsBasisToSublineKey(basis: RubsBasis): keyof UtilitiesSublines | null {
+  switch (basis) {
+    case "utilities_electric": return "electric";
+    case "utilities_water": return "water_sewer";
+    case "utilities_gas": return "gas";
+    default: return null; // utilities_total
+  }
+}
+
+/**
+ * Resolve the per-period utility expense that a RUBS line bills against.
+ * Sub-bases (electric/water/gas) resolve the matching subline; if that subline
+ * is absent we fall back to total utilities (the caller warns once). The
+ * resolver closure is built per call site so it shares that site's escalation
+ * and EGI context exactly.
+ */
+function makeUtilityBasisResolverMonthly(
+  expenses: ExpenseAssumptions,
+  ctx: { totalUnits: number; monthlyEgi: number; monthlyGpr: number; escalation: number },
+): { resolve: (basis: RubsBasis) => number; missingSubBasis: (basis: RubsBasis) => boolean } {
+  const subs = expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined;
+  const total = () => {
+    const s = resolveSublinesMonthly(subs, ctx);
+    return s !== null ? s : resolveOpexMonthly(expenses.opex_inputs?.utilities, expenses.utilities_per_unit, "per_unit_annual", ctx);
+  };
+  const missingSubBasis = (basis: RubsBasis) => {
+    const key = rubsBasisToSublineKey(basis);
+    if (!key) return false;
+    const sub = subs?.[key];
+    return !(sub && sub.value);
+  };
+  const resolve = (basis: RubsBasis) => {
+    const key = rubsBasisToSublineKey(basis);
+    if (!key) return total();
+    const sub = subs?.[key];
+    if (sub && sub.value) return resolveOpexMonthly(sub, 0, sub.mode, ctx);
+    return total();
+  };
+  return { resolve, missingSubBasis };
+}
+
+/** Annual analogue of makeUtilityBasisResolverMonthly. */
+function makeUtilityBasisResolverAnnual(
+  expenses: ExpenseAssumptions,
+  ctx: { totalUnits: number; annualEgi: number; annualGpr: number; escalation: number },
+): (basis: RubsBasis) => number {
+  const subs = expenses.opex_inputs?.utilities_sublines as Record<string, OpexInput | undefined> | undefined;
+  const total = () => {
+    const s = resolveSublinesAnnual(subs, ctx);
+    return s !== null ? s : resolveOpexAnnual(expenses.opex_inputs?.utilities, expenses.utilities_per_unit, "per_unit_annual", ctx);
+  };
+  return (basis: RubsBasis) => {
+    const key = rubsBasisToSublineKey(basis);
+    if (!key) return total();
+    const sub = subs?.[key];
+    if (sub && sub.value) return resolveOpexAnnual(sub, 0, sub.mode, ctx);
+    return total();
+  };
+}
+
+/**
+ * Other income for ONE month from itemized line items.
+ *   flat: monthly_amount (does NOT grow — matches legacy other_income_monthly).
+ *   rubs: recovery_pct × resolved utility-basis expense × physical occupancy.
+ * forStabilized=true drops non-recurring items (recurring===false) so they
+ * never inflate the exit valuation.
+ */
+function lineItemOtherIncomeMonthly(
+  items: OtherIncomeLineItem[],
+  physOcc: number,
+  resolveBasisMonthly: (basis: RubsBasis) => number,
+  forStabilized: boolean,
+): number {
+  let total = 0;
+  for (const it of items) {
+    if (forStabilized && it.recurring === false) continue;
+    if (it.kind === "rubs") {
+      total += (it.rubs_recovery_pct ?? 0) * resolveBasisMonthly(it.rubs_basis ?? "utilities_total") * physOcc;
+    } else {
+      total += it.monthly_amount ?? 0;
+    }
+  }
+  return total;
+}
+
+/** Annual analogue of lineItemOtherIncomeMonthly (flat amounts ×12). */
+function lineItemOtherIncomeAnnual(
+  items: OtherIncomeLineItem[],
+  physOcc: number,
+  resolveBasisAnnual: (basis: RubsBasis) => number,
+  forStabilized: boolean,
+): number {
+  let total = 0;
+  for (const it of items) {
+    if (forStabilized && it.recurring === false) continue;
+    if (it.kind === "rubs") {
+      total += (it.rubs_recovery_pct ?? 0) * resolveBasisAnnual(it.rubs_basis ?? "utilities_total") * physOcc;
+    } else {
+      total += (it.monthly_amount ?? 0) * 12;
+    }
+  }
+  return total;
+}
+
+/** True when the scenario drives other income from itemized line items. */
+function hasOtherIncomeLineItems(revenue: RevenueAssumptions): boolean {
+  return !!(revenue.other_income?.line_items && revenue.other_income.line_items.length > 0);
 }
 
 function calculateMonthlyPayment(
@@ -1782,9 +2037,15 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     }
     annualGPR *= yearGrowth;
 
-    let annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
-      + revenue.other_income_monthly * 12;
-    annualEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, annualEGI, annualGPR, expEscalationFor(expenses, y));
+    let annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate);
+    if (hasOtherIncomeLineItems(revenue)) {
+      const oiCtx = { totalUnits, annualEgi: annualEGI, annualGpr: annualGPR, escalation: expEscalationFor(expenses, y) };
+      const resolveBasis = makeUtilityBasisResolverAnnual(expenses, oiCtx);
+      annualEGI += lineItemOtherIncomeAnnual(revenue.other_income!.line_items!, Math.max(0, 1 - revenue.vacancy_rate), resolveBasis, false);
+    } else {
+      annualEGI += revenue.other_income_monthly * 12;
+      annualEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, annualEGI, annualGPR, expEscalationFor(expenses, y));
+    }
 
     const taxEscalation = Math.pow(1 + expenses.tax_escalation_rate, y);
     const expEscalation = Math.pow(1 + (expenses.expense_escalation_rate || 0), y);
@@ -1860,9 +2121,16 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   }
   exitGPR *= lastYearGrowth;
 
-  let exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate)
-    + revenue.other_income_monthly * 12;
-  exitEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, exitEGI, exitGPR, expEscalationFor(expenses, exit.hold_period_years - 1));
+  let exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate);
+  if (hasOtherIncomeLineItems(revenue)) {
+    // Exit uses the STABILIZED figure — non-recurring line items excluded.
+    const exitOiCtx = { totalUnits, annualEgi: exitEGI, annualGpr: exitGPR, escalation: expEscalationFor(expenses, exit.hold_period_years - 1) };
+    const resolveBasis = makeUtilityBasisResolverAnnual(expenses, exitOiCtx);
+    exitEGI += lineItemOtherIncomeAnnual(revenue.other_income!.line_items!, Math.max(0, 1 - revenue.vacancy_rate), resolveBasis, true);
+  } else {
+    exitEGI += revenue.other_income_monthly * 12;
+    exitEGI += structuredRubsAnnualDelta(revenue, expenses, totalUnits, exitEGI, exitGPR, expEscalationFor(expenses, exit.hold_period_years - 1));
+  }
   const taxEsc = Math.pow(1 + expenses.tax_escalation_rate, exit.hold_period_years - 1);
   const expEsc = Math.pow(1 + (expenses.expense_escalation_rate || 0), exit.hold_period_years - 1);
   const oiE = expenses.opex_inputs;
