@@ -2186,7 +2186,23 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                           <PctField label="Effective Tax Rate" value={tr.effective_tax_rate} onChange={(v) => updateTr({ effective_tax_rate: v })} />
                           <CurrencyField label="Reassessed Value" value={tr.reassessed_value ?? p.purchase_price} onChange={(v) => updateTr({ reassessed_value: v })} />
-                          <NumField label="Phase-In Year" value={tr.phase_in_year ?? 1} onChange={(v) => updateTr({ phase_in_year: Math.max(1, Math.round(v)) })} />
+                          {(() => {
+                            // Month-precise phase-in (1 = first month of the hold).
+                            // Migrate the legacy year value on first edit.
+                            const phaseInMonth = tr.phase_in_month ?? ((tr.phase_in_year ?? 1) - 1) * 12 + 1;
+                            return (
+                              <div>
+                                <NumField
+                                  label="Phase-In Month"
+                                  value={phaseInMonth}
+                                  onChange={(v) => updateTr({ phase_in_month: Math.max(1, Math.round(v)), phase_in_year: undefined })}
+                                />
+                                <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                                  mo 1 = first month · ≈ yr {Math.floor((phaseInMonth - 1) / 12) + 1}, mo {((phaseInMonth - 1) % 12) + 1}
+                                </p>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-end pb-1">
                             <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
                               <input
@@ -2200,7 +2216,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                           </div>
                         </div>
                         <p className="text-[10px] text-slate-500">
-                          Operations: from the phase-in year, property tax = reassessed value × rate ({fmtCurrency(estReassessed)}/yr), escalated. Exit: value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
+                          Operations: from the phase-in month, property tax = reassessed value × rate ({fmtCurrency(estReassessed)}/yr), escalated; the prior bill applies until then (a mid-year switch is pro-rated). Exit: value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
                         </p>
 
                         {/* Property Tax v2 (fix-spec Phase 2): abatement record + scenario.
