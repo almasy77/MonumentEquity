@@ -472,22 +472,38 @@ function BareCurrencyInput({
   );
 }
 
+// Small hover-explainer dot. Uses the native title tooltip (consistent with
+// the rest of the form) — copy can be multi-line via \n.
+function InfoDot({ tip }: { tip: string }) {
+  return (
+    <span
+      title={tip}
+      className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full border border-slate-600 text-slate-500 text-[9px] leading-none cursor-help align-middle hover:text-slate-300 hover:border-slate-400"
+    >
+      i
+    </span>
+  );
+}
+
 function CurrencyField({
   label,
   value,
   onChange,
   suffix,
+  tooltip,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   suffix?: string;
+  tooltip?: string;
 }) {
   return (
     <div>
       <Label className="text-xs text-slate-400">
         {label}
         {suffix && <span className="text-slate-600 ml-1">{suffix}</span>}
+        {tooltip && <InfoDot tip={tooltip} />}
       </Label>
       <BareCurrencyInput value={value} onChange={onChange} />
     </div>
@@ -879,6 +895,7 @@ function OpexLineField({
   indented,
   readOnlySum,
   multiplier,
+  tooltip,
 }: {
   label: string;
   input: OpexInput;
@@ -890,6 +907,7 @@ function OpexLineField({
   indented?: boolean;
   readOnlySum?: number; // when set, render as read-only showing this annual total
   multiplier?: number; // post-multiplier applied to annual display (e.g. turnover rate)
+  tooltip?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -909,6 +927,7 @@ function OpexLineField({
       <div className={`col-span-4 text-sm truncate flex items-center gap-1 ${indented ? "text-slate-400 pl-6" : "text-slate-300"}`} title={label}>
         {leftContent}
         <span className="truncate">{label}</span>
+        {tooltip && <InfoDot tip={tooltip} />}
       </div>
       <div className="col-span-3">
         {readOnlySum !== undefined ? (
@@ -1723,7 +1742,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     <CurrencyField label="Prorations" value={ccBk.prorations || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, prorations: v } }); markDirty(); }} />
                     <CurrencyField label="3rd Party Reports" value={ccBk.third_party_reports || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, third_party_reports: v } }); markDirty(); }} />
                     <CurrencyField label="Transfer Taxes" value={ccBk.transfer_taxes || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, transfer_taxes: v } }); markDirty(); }} />
-                    <CurrencyField label="Tax / Insurance Escrow" value={ccBk.reserves_escrow || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, reserves_escrow: v } }); markDirty(); }} />
+                    <CurrencyField label="Tax / Insurance Escrow" tooltip={"Lender-prefunded tax & insurance escrow at closing so those bills are paid on time.\n\nStatement: Balance sheet — funded cash held by the lender on your behalf (not an expense).\nEscrow: Yes — held by the lender for the life of the loan, drawn as bills come due; balance returned at payoff. Can be reduced, waived, or made 'springing' on strong low-leverage deals."} value={ccBk.reserves_escrow || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, reserves_escrow: v } }); markDirty(); }} />
                     <CurrencyField label="Other Closing Costs" value={ccBk.other_closing || 0} onChange={(v) => { setP({ ...p, closing_cost_breakdown: { ...ccBk, other_closing: v } }); markDirty(); }} />
                   </div>
                 </div>
@@ -1732,7 +1751,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     (distinct from annual Replacement Reserve and Capital Reserve) */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
                   <div>
-                    <CurrencyField label="CapEx Reserve (equity at closing)" value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                    <CurrencyField label="CapEx Reserve (equity at closing)" tooltip={"Equity funded at closing for renovation shortfalls — e.g. the opening balance of a lender-held replacement-reserve escrow.\n\nStatement: Balance sheet — funded cash (lender-held if escrowed). The replacement-reserve portion is the SAME money as your annual reserve, pre-funded — not a second expense.\nEscrow: If lender-held, kept for the life of the loan and drawn as work completes; balance returned at payoff."} value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
                     <p className="text-[10px] text-slate-500 mt-0.5">Equity funded at closing for renovation shortfalls</p>
                   </div>
                   <div>
@@ -2252,7 +2271,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <OpexLineField label="Repairs & Maint." input={opexInputs.repairs_maintenance || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("repairs_maintenance", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
                 <OpexLineField label="Turnover Cost" input={opexInputs.turnover || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("turnover", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} multiplier={turnoverDisplayMultiplier} />
                 <OpexLineField label="Admin / Legal / Mktg" input={opexInputs.admin_legal_marketing || { value: 0, mode: "total_annual" }} onChange={(v) => updateOpexLine("admin_legal_marketing", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
-                <OpexLineField label="Replacement Reserve (annual)" input={opexInputs.reserves || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("reserves", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
+                <OpexLineField label="Replacement Reserve (annual)" tooltip={"Annual set-aside for future capital replacements — appliances, flooring, roof, parking lot. ~$250–350/unit for newer buildings.\n\nStatement: Income statement — an annual deduction from cash flow (below NOI). The accumulating balance is a balance-sheet asset.\nEscrow: Usually held in a lender-controlled escrow on agency loans (initial deposit at closing + monthly), drawn by submitting invoices for completed work; remaining balance returned at payoff. May be reduced or waived on low-leverage / newer assets."} input={opexInputs.reserves || { value: 0, mode: "per_unit_annual" }} onChange={(v) => updateOpexLine("reserves", v)} units={totalUnits} egi={t12EGI} gpr={t12GPR} />
               </div>
 
               {/* Property tax reassessment — operations + exit (seller's bill is not your bill) */}
@@ -2587,6 +2606,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <p className="text-[11px] text-slate-500">
                   The probabilistic &ldquo;expect ~$X of capital events over the hold, timing unknown&rdquo; bucket — spread <span className="font-semibold">evenly across the full hold</span> so the whole amount lands inside it. Distinct from the replacement reserve (turn-driven) and from dated Named Projects (which truncate if they run past the hold).
                 </p>
+                <p className="text-[10px] text-slate-500"><span className="text-slate-400 font-medium">Statement:</span> income statement — a recurring deduction below NOI (not lender-escrowed; you hold it).</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <CurrencyField label="Total Over Hold" value={c.capital_reserve_total ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_total: v }); markDirty(); }} />
                   <CurrencyField label="Per Unit / Yr" value={c.capital_reserve_per_unit ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_per_unit: v }); markDirty(); }} />
@@ -2629,80 +2649,12 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </p>
         </Section>
 
-        {/* Depreciation */}
-        <Section title="Depreciation">
-          {(() => {
-            const landAssess = dep.land_tax_assessment || 0;
-            const impAssess = dep.improvement_tax_assessment || 0;
-            const totalAssess = landAssess + impAssess;
-            const landPct = totalAssess > 0 ? landAssess / totalAssess : 0;
-            const impPct = totalAssess > 0 ? impAssess / totalAssess : 0;
-            const depreciableBasis = p.purchase_price * impPct;
-            const straightLine = depreciableBasis / 27.5;
-            const accelPct = dep.accelerated_depreciation_pct || 0;
-            const acceleratedPortion = depreciableBasis * accelPct;
-            const remainderPortion = depreciableBasis - acceleratedPortion;
-            const remainderAnnual = remainderPortion / 27.5;
-            const acceleratedYear1 = accelPct > 0 ? acceleratedPortion + remainderAnnual : 0;
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left: inputs */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Tax Assessments</div>
-                  <CurrencyField label="Land Assessment" value={landAssess} onChange={(v) => { setDep({ ...dep, land_tax_assessment: v }); markDirty(); }} />
-                  <CurrencyField label="Improvement Assessment" value={impAssess} onChange={(v) => { setDep({ ...dep, improvement_tax_assessment: v }); markDirty(); }} />
-                  <ReadOnlyField label="% Value in Land" value={totalAssess > 0 ? `${(landPct * 100).toFixed(1)}%` : "—"} />
-                  <ReadOnlyField label="% Value in Improvements" value={totalAssess > 0 ? `${(impPct * 100).toFixed(1)}%` : "—"} />
-                  <div className="pt-2">
-                    <PctField label="% Accelerated Depreciation" value={accelPct} onChange={(v) => { setDep({ ...dep, accelerated_depreciation_pct: v }); markDirty(); }} />
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-slate-500">% of improvements eligible for bonus depreciation in year 1 (cost segregation)</p>
-                    </div>
-                  </div>
-                </div>
-                {/* Right: computed results */}
-                <div className="space-y-3">
-                  <div className="text-xs text-slate-500 font-medium">Depreciation Estimates</div>
-                  <ReadOnlyField label="Depreciable Basis" value={fmtCurrency(depreciableBasis)} suffix={`= ${fmtCurrency(p.purchase_price)} × ${(impPct * 100).toFixed(1)}%`} />
-                  <div className="border border-slate-800/50 rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
-                      <tbody>
-                        <tr className="border-b border-slate-800/50">
-                          <td className="px-3 py-2 text-slate-400">Straight-Line (27.5 yr)</td>
-                          <td className="px-3 py-2 text-right text-slate-200 font-medium">{fmtCurrency(straightLine)}<span className="text-slate-500 text-xs">/yr</span></td>
-                        </tr>
-                        {accelPct > 0 && (
-                          <tr className="border-b border-slate-800/50">
-                            <td className="px-3 py-2 text-slate-400">Accelerated Yr 1</td>
-                            <td className="px-3 py-2 text-right text-green-400 font-medium">{fmtCurrency(acceleratedYear1)}</td>
-                          </tr>
-                        )}
-                        {accelPct > 0 && (
-                          <tr className="border-b border-slate-800/50">
-                            <td className="px-3 py-2 text-slate-400">Yrs 2+ (Remainder)</td>
-                            <td className="px-3 py-2 text-right text-slate-200 font-medium">{fmtCurrency(remainderAnnual)}<span className="text-slate-500 text-xs">/yr</span></td>
-                          </tr>
-                        )}
-                        {accelPct > 0 && (
-                          <tr className="bg-slate-800/30">
-                            <td className="px-3 py-2 text-slate-400">Yr 1 Bonus Deduction</td>
-                            <td className="px-3 py-2 text-right text-green-400 font-medium">+{fmtCurrency(acceleratedPortion)}</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Straight-line: 27.5-year residential schedule. Accelerated: eligible portion taken as bonus depreciation in year 1, remainder on 27.5-year schedule.
-                  </p>
-                </div>
-              </div>
-            );
-          })()}
-        </Section>
-
-        {/* Tax Treatment (TAX_TREATMENT_SPEC.md) — after-tax modeling, owner-specific */}
-        <Section title="Tax Treatment">
+        {/* Depreciation & Taxes — merged card (reserves-and-tax-card-ui-spec.md).
+            One home for every basis input (single source of truth — kills the
+            land-allocation drift), a read-only schedule, then the cash-tax
+            assumptions. Three visually-distinct sections: basis → schedule →
+            cash taxes. */}
+        <Section title="Depreciation & Taxes">
           {(() => {
             const holdYears = ex.hold_period_years || 10;
             const enabled = !!tx;
@@ -2724,8 +2676,21 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               next[i] = !next[i];
               updateTx({ reps_status: next });
             };
+            const subHeader = (label: string, sub?: string) => (
+              <div className="border-b border-slate-700/60 pb-1 mb-1">
+                <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">{label}</div>
+                {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+              </div>
+            );
+            // Capitalized acquisition costs (mirrors tax.ts): itemized excludes
+            // prorations + escrow; rate mode → price × rate.
+            const ccBk = p.closing_cost_breakdown || {};
+            const acqCosts = p.closing_cost_mode === "itemized"
+              ? (ccBk.title_insurance || 0) + (ccBk.legal_fees || 0) + (ccBk.property_costs || 0) + (ccBk.third_party_reports || 0) + (ccBk.transfer_taxes || 0) + (ccBk.other_closing || 0)
+              : p.purchase_price * (p.closing_cost_rate || 0);
+            const hasReno = (c.units_to_renovate || 0) > 0 || (c.projects?.length ?? 0) > 0;
             return (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-[11px] text-slate-500 italic">
                     Estimate — not tax advice. Owner-specific conventions (MFJ NYC, OpCo/PropCo, REPS, 1031 exit) per TAX_TREATMENT_SPEC.md. Confirm with CPA.
@@ -2741,111 +2706,141 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </label>
                 </div>
 
-                {enabled && tx && (
+                {!enabled && (
+                  <p className="text-[11px] text-slate-500">Enable to model depreciation (incl. cost segregation) and after-tax returns.</p>
+                )}
+
+                {enabled && tx && (() => {
+                  // Read-only depreciation schedule from the canonical basis
+                  // inputs (display estimate; the Tax sheet has exact per-year).
+                  const totalBasis = p.purchase_price + acqCosts;
+                  const impBasis = totalBasis * (1 - tx.land_allocation_pct);
+                  const b5 = impBasis * tx.costseg_5yr_pct;
+                  const b15 = impBasis * tx.costseg_15yr_pct;
+                  const b275 = impBasis - b5 - b15;
+                  const bonus = tx.federal_bonus_pct;
+                  const yr1Bonus = bonus * (b5 + b15);
+                  const sl275Annual = b275 / 27.5;
+                  const yr1Total = yr1Bonus + sl275Annual * (11.5 / 12) + (b5 * (1 - bonus)) / 5 / 2 + (b15 * (1 - bonus)) / 15 / 2;
+                  const ongoing = sl275Annual + (bonus < 1 ? (b5 * (1 - bonus)) / 5 + (b15 * (1 - bonus)) / 15 : 0);
+                  return (
                   <>
-                    {/* REPS attestation gate (spec section 1) — per-year, heavily audited */}
-                    <div className="bg-amber-950/20 border border-amber-800/40 rounded p-3 space-y-2">
-                      <div className="text-xs text-amber-300 font-medium">
-                        REPS attestation — answer per year: is real estate &gt;50% of the principal&apos;s working time
-                        this year, AND &ge;750 hours, with material participation in the rentals?
+                    {/* ── Section 1: Basis & Allocation (canonical inputs) ── */}
+                    <div className="space-y-3">
+                      {subHeader("Basis & Allocation", "Entered once — every other figure references these.")}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <ReadOnlyField label="Purchase Price" value={fmtCurrency(p.purchase_price)} />
+                        <ReadOnlyField label="Acq. Costs (capitalized)" value={fmtCurrency(acqCosts)} />
+                        <PctField label="Land Allocation" value={tx.land_allocation_pct} onChange={(v) => updateTx({ land_allocation_pct: v })} />
+                        <ReadOnlyField label="Improvement Basis" value={fmtCurrency(impBasis)} />
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {repsYears.map((on, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => toggleRepsYear(i)}
-                            title={`Year ${i + 1}: REPS ${on ? "ON — loss offsets W-2" : "OFF — loss suspended (PAL); a 1031 will NOT release it"}`}
-                            className={`text-[11px] px-2 py-0.5 rounded border font-medium tabular-nums ${
-                              on
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-700/40"
-                                : "bg-slate-800 text-slate-500 border-slate-700"
-                            }`}
-                          >
-                            Y{i + 1}
-                          </button>
-                        ))}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <PctField label="5-yr Cost-Seg" value={tx.costseg_5yr_pct} onChange={(v) => updateTx({ costseg_5yr_pct: v })} />
+                        <PctField label="15-yr Land Impr." value={tx.costseg_15yr_pct} onChange={(v) => updateTx({ costseg_15yr_pct: v })} />
+                        <PctField label="Federal Bonus" value={tx.federal_bonus_pct} onChange={(v) => updateTx({ federal_bonus_pct: v })} />
+                        <div className="flex items-end pb-1">
+                          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                            <input type="checkbox" checked={tx.state_conforms_bonus} onChange={(e2) => updateTx({ state_conforms_bonus: e2.target.checked })} className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500" />
+                            NY conforms to bonus
+                          </label>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-amber-400/70">
-                        OFF years suspend the loss as a PAL — and a 1031 exit does NOT release suspended PALs.
+                      {/* Reno share only appears when a renovation budget exists. */}
+                      {hasReno ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <PctField label="Reno 5-yr Share" value={tx.reno_5yr_pct} onChange={(v) => updateTx({ reno_5yr_pct: v })} />
+                          <PctField label="Repairs Expensed" value={tx.reno_repairs_expensed_pct} onChange={(v) => updateTx({ reno_repairs_expensed_pct: v })} />
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">No renovation capex on this deal — reno cost-seg inputs are hidden (set to 0).</p>
+                      )}
+                      <p className="text-[11px] text-slate-500">
+                        Land is carved out first; cost-seg percentages apply to the improvement basis. Land Allocation is the single source — the old assessment-based depreciation card has been folded in here.
                       </p>
                     </div>
 
-                    {/* Rates & loss limits */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <PctField label="Federal Rate" value={tx.federal_ordinary_rate} onChange={(v) => updateTx({ federal_ordinary_rate: v })} />
-                      <PctField label="NY + NYC Rate" value={tx.state_local_ordinary_rate} onChange={(v) => updateTx({ state_local_ordinary_rate: v })} />
-                      <PctField label="NIIT" value={tx.niit_rate} onChange={(v) => updateTx({ niit_rate: v })} />
-                      <CurrencyField label="461(l) Cap (MFJ)" value={tx.ebl_cap_mfj} onChange={(v) => updateTx({ ebl_cap_mfj: v })} />
+                    {/* ── Section 2: Depreciation Schedule (read-only) ── */}
+                    <div className="space-y-2">
+                      {subHeader("Depreciation Schedule", "Computed from the basis above (estimate; Tax sheet has exact per-year).")}
+                      <div className="border border-slate-800/50 rounded-md overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-800/50"><td className="px-3 py-1.5 text-slate-400">5-yr bucket (personal property)</td><td className="px-3 py-1.5 text-right text-slate-200 tabular-nums">{fmtCurrency(Math.round(b5))}</td></tr>
+                            <tr className="border-b border-slate-800/50"><td className="px-3 py-1.5 text-slate-400">15-yr bucket (land improvements)</td><td className="px-3 py-1.5 text-right text-slate-200 tabular-nums">{fmtCurrency(Math.round(b15))}</td></tr>
+                            <tr className="border-b border-slate-800/50"><td className="px-3 py-1.5 text-slate-400">27.5-yr bucket (building)</td><td className="px-3 py-1.5 text-right text-slate-200 tabular-nums">{fmtCurrency(Math.round(b275))}</td></tr>
+                            <tr className="border-b border-slate-800/50 bg-slate-800/30"><td className="px-3 py-1.5 text-slate-300 font-medium">Year-1 depreciation (incl. bonus)</td><td className="px-3 py-1.5 text-right text-green-400 font-medium tabular-nums">{fmtCurrency(Math.round(yr1Total))}</td></tr>
+                            <tr><td className="px-3 py-1.5 text-slate-400">Ongoing / yr (Yrs 2+)</td><td className="px-3 py-1.5 text-right text-slate-200 tabular-nums">{fmtCurrency(Math.round(ongoing))}<span className="text-slate-500 text-xs">/yr</span></td></tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
 
-                    {/* Entity view */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div>
-                        <Label className="text-xs text-slate-400">Headline View</Label>
-                        <select
-                          value={tx.opco_view}
-                          onChange={(e2) => updateTx({ opco_view: e2.target.value as "propco" | "household" })}
-                          className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
-                        >
-                          <option value="household">Household (OpCo fee recycled)</option>
-                          <option value="propco">PropCo standalone</option>
-                        </select>
+                    {/* ── Section 3: After-Tax Assumptions ── */}
+                    <div className="space-y-3">
+                      {subHeader("After-Tax Assumptions", "Rates, REPS usability, and exit treatment — turn book depreciation into cash taxes.")}
+                      {/* REPS attestation gate (spec section 1) — per-year, heavily audited */}
+                      <div className="bg-amber-950/20 border border-amber-800/40 rounded p-3 space-y-2">
+                        <div className="text-xs text-amber-300 font-medium">
+                          REPS attestation — answer per year: is real estate &gt;50% of the principal&apos;s working time
+                          this year, AND &ge;750 hours, with material participation in the rentals?
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {repsYears.map((on, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => toggleRepsYear(i)}
+                              title={`Year ${i + 1}: REPS ${on ? "ON — loss offsets W-2" : "OFF — loss suspended (PAL); a 1031 will NOT release it"}`}
+                              className={`text-[11px] px-2 py-0.5 rounded border font-medium tabular-nums ${on ? "bg-emerald-500/10 text-emerald-400 border-emerald-700/40" : "bg-slate-800 text-slate-500 border-slate-700"}`}
+                            >
+                              Y{i + 1}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-amber-400/70">
+                          OFF years suspend the loss as a PAL (no current benefit) — and a 1031 exit does NOT release suspended PALs.
+                        </p>
                       </div>
-                      <PctField label="OpCo Fee Leakage" value={tx.opco_fee_tax_rate} onChange={(v) => updateTx({ opco_fee_tax_rate: v })} />
-                      <PctField label="Federal Bonus" value={tx.federal_bonus_pct} onChange={(v) => updateTx({ federal_bonus_pct: v })} />
-                      <div className="flex items-end pb-1">
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <PctField label="Federal Rate" value={tx.federal_ordinary_rate} onChange={(v) => updateTx({ federal_ordinary_rate: v })} />
+                        <PctField label="NY + NYC Rate" value={tx.state_local_ordinary_rate} onChange={(v) => updateTx({ state_local_ordinary_rate: v })} />
+                        <PctField label="NIIT" value={tx.niit_rate} onChange={(v) => updateTx({ niit_rate: v })} />
+                        <CurrencyField label="461(l) Cap (MFJ)" value={tx.ebl_cap_mfj} onChange={(v) => updateTx({ ebl_cap_mfj: v })} />
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div>
+                          <Label className="text-xs text-slate-400">Headline View</Label>
+                          <select
+                            value={tx.opco_view}
+                            onChange={(e2) => updateTx({ opco_view: e2.target.value as "propco" | "household" })}
+                            className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                          >
+                            <option value="household">Household (OpCo fee recycled)</option>
+                            <option value="propco">PropCo standalone</option>
+                          </select>
+                        </div>
+                        <PctField label="OpCo Fee Leakage" value={tx.opco_fee_tax_rate} onChange={(v) => updateTx({ opco_fee_tax_rate: v })} />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-5">
                         <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={tx.state_conforms_bonus}
-                            onChange={(e2) => updateTx({ state_conforms_bonus: e2.target.checked })}
-                            className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
-                          />
-                          NY conforms to bonus
+                          <input type="checkbox" checked={tx.exit_via_1031} onChange={(e2) => updateTx({ exit_via_1031: e2.target.checked })} className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500" />
+                          Exit via 1031 exchange
                         </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                          <input type="checkbox" checked={tx.personal_property_worthless_at_exit} onChange={(e2) => updateTx({ personal_property_worthless_at_exit: e2.target.checked })} className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500" />
+                          1245 personal property worthless at exit
+                        </label>
+                        <span className="text-[10px] text-slate-500 italic">
+                          Taxes are deferred, not eliminated — deferred gain carries into the replacement property. §1245/§1250 recapture is computed at a fully-taxable sale.
+                        </span>
                       </div>
-                    </div>
-
-                    {/* Basis & cost-seg */}
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      <PctField label="Land Allocation" value={tx.land_allocation_pct} onChange={(v) => updateTx({ land_allocation_pct: v })} />
-                      <PctField label="5-yr Cost-Seg" value={tx.costseg_5yr_pct} onChange={(v) => updateTx({ costseg_5yr_pct: v })} />
-                      <PctField label="15-yr Land Impr." value={tx.costseg_15yr_pct} onChange={(v) => updateTx({ costseg_15yr_pct: v })} />
-                      <PctField label="Reno 5-yr Share" value={tx.reno_5yr_pct} onChange={(v) => updateTx({ reno_5yr_pct: v })} />
-                      <PctField label="Repairs Expensed" value={tx.reno_repairs_expensed_pct} onChange={(v) => updateTx({ reno_repairs_expensed_pct: v })} />
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Land is carved out first; cost-seg percentages apply to the improvement basis. Federal takes bonus on the 5-yr and 15-yr buckets; NY adds bonus back.
-                      Keep <span className="font-semibold">Land Allocation</span> consistent with the Depreciation block&apos;s assessment ratio (the engine warns if they differ). Reno 5-yr share only applies to actual renovation capex. The cost-seg study <span className="font-semibold">fee</span> is entered in Closing Costs (uses-of-funds) and deducted as a Year-1 professional fee here.
-                    </p>
-
-                    {/* Exit */}
-                    <div className="flex flex-wrap items-center gap-5">
-                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tx.exit_via_1031}
-                          onChange={(e2) => updateTx({ exit_via_1031: e2.target.checked })}
-                          className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
-                        />
-                        Exit via 1031 exchange
-                      </label>
-                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tx.personal_property_worthless_at_exit}
-                          onChange={(e2) => updateTx({ personal_property_worthless_at_exit: e2.target.checked })}
-                          className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
-                        />
-                        1245 personal property worthless at exit
-                      </label>
-                      <span className="text-[10px] text-slate-500 italic">
-                        Taxes are deferred, not eliminated — deferred gain carries into the replacement property.
-                      </span>
                     </div>
                   </>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
