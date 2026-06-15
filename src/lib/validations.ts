@@ -351,6 +351,8 @@ export const scenarioSchema = z.object({
       projects: z.array(capexProjectSchema).default([]),
       reserves_per_unit: z.number().optional(),
       pca_complete: z.boolean().optional(),
+      capital_reserve_total: z.number().optional(),
+      capital_reserve_per_unit: z.number().optional(),
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),

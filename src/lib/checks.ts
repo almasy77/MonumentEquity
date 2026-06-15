@@ -172,17 +172,19 @@ export function allChecksPass(checks: ReconciliationCheck[]): boolean {
   return checks.every((c) => c.pass);
 }
 
-// ─── CapEx guardrail (fix-spec Phase 4.3) ────────────────────
-// An old building with zero named CapEx projects and no PCA on file means
-// deferred maintenance is unmodeled. Surfaced on the Validation sheet and in
-// the sidecar warnings — not a tie-out, so it does not gate ALL CHECKS PASS.
+// ─── CapEx guardrail (fix-spec Phase 4.3/4.4) ────────────────
+// An old building with zero named CapEx projects, a zero capital reserve, and
+// no PCA on file means deferred maintenance is unmodeled. Surfaced on the
+// Validation sheet and in the sidecar warnings — not a tie-out, so it does not
+// gate ALL CHECKS PASS.
 export function capexGuardrailWarning(deal: Deal, inputs: ScenarioInputs): string | null {
   const yearBuilt = deal.year_built;
   if (!yearBuilt) return null;
   const age = new Date().getFullYear() - yearBuilt;
   const namedProjects = inputs.capex.projects?.length ?? 0;
-  if (age > 30 && namedProjects === 0 && !inputs.capex.pca_complete) {
-    return `Building is ${age} years old (built ${yearBuilt}) with no named CapEx projects and no PCA on file — deferred maintenance is unmodeled. Add scoped projects or mark the PCA complete.`;
+  const capitalReserve = (inputs.capex.capital_reserve_total ?? 0) + (inputs.capex.capital_reserve_per_unit ?? 0);
+  if (age > 30 && namedProjects === 0 && capitalReserve === 0 && !inputs.capex.pca_complete) {
+    return `Building is ${age} years old (built ${yearBuilt}) with no named CapEx projects, no capital reserve, and no PCA on file — deferred maintenance is unmodeled. Add scoped projects, set a capital reserve, or mark the PCA complete.`;
   }
   return null;
 }

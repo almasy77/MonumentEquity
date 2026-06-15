@@ -2464,6 +2464,33 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
+        {/* CapEx: Capital Reserve — the capital-events bucket (Phase 4.3) */}
+        <Section title="CapEx: Capital Reserve">
+          {(() => {
+            const holdMonths = (ex.hold_period_years || 10) * 12;
+            const fromTotal = holdMonths > 0 ? (c.capital_reserve_total ?? 0) / holdMonths : 0;
+            const fromPerUnit = ((c.capital_reserve_per_unit ?? 0) * totalUnits) / 12;
+            const monthly = fromTotal + fromPerUnit;
+            return (
+              <div className="space-y-3">
+                <p className="text-[11px] text-slate-500">
+                  The probabilistic &ldquo;expect ~$X of capital events over the hold, timing unknown&rdquo; bucket — spread <span className="font-semibold">evenly across the full hold</span> so the whole amount lands inside it. Distinct from the replacement reserve (turn-driven) and from dated Named Projects (which truncate if they run past the hold).
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <CurrencyField label="Total Over Hold" value={c.capital_reserve_total ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_total: v }); markDirty(); }} />
+                  <CurrencyField label="Per Unit / Yr" value={c.capital_reserve_per_unit ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_per_unit: v }); markDirty(); }} />
+                  <ReadOnlyField label="Modeled / Mo" value={`${fmtCurrency(Math.round(monthly))}/mo`} />
+                </div>
+                {monthly > 0 && (
+                  <p className="text-[10px] text-slate-500 tabular-nums">
+                    ≈ {fmtCurrency(Math.round(monthly * 12))}/yr · {fmtCurrency(Math.round(monthly * holdMonths))} over the {holdMonths / 12}-yr hold
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+        </Section>
+
         {/* Exit */}
         <Section title="Exit">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

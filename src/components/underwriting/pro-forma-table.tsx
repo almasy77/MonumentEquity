@@ -129,8 +129,12 @@ export function ProFormaTable({
     { key: "noi", label: "Net Operating Income", bold: true, highlight: true },
     { key: "debt_service", label: "Less: Debt Service", negative: true },
     { key: "cash_flow_before_capex_and_reserves", label: "Cash Flow before CapEx & Reserves", bold: true },
-    { key: "reserves", label: "Less: Reserves", negative: true },
-    { key: "capex", label: "Less: CapEx", negative: true },
+    { key: "reserves", label: "Less: Replacement Reserve", negative: true },
+    // Capital reserve (Phase 4.3) — shown only when the deal uses the tier.
+    ...(annual.some((a) => (a.capital_reserve ?? 0) !== 0)
+      ? [{ key: "capital_reserve", label: "Less: Capital Reserve", negative: true } as RowDef]
+      : []),
+    { key: "capex", label: "Less: CapEx (Named Projects)", negative: true },
     { key: "cash_flow", label: "Cash Flow", bold: true, highlight: true },
     // Key per-period metrics (rendered as percentages)
     { key: "cap_rate", label: "Cap Rate", pct: true },
