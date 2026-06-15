@@ -498,8 +498,9 @@ function buildMonthlySheet(
     { label: "Net Operating Income", getValue: r => r.noi, bold: true },
     { label: "Less: Debt Service", getValue: r => r.debt_service, negative: true },
     { label: "Cash Flow before CapEx & Reserves", getValue: r => r.cash_flow_before_capex_and_reserves, bold: true },
-    { label: "Less: Reserves", getValue: r => r.reserves, negative: true },
-    { label: "Less: CapEx", getValue: r => r.capex, negative: true },
+    { label: "Less: Replacement Reserve", getValue: r => r.reserves, negative: true },
+    { label: "Less: Capital Reserve", getValue: r => r.capital_reserve, negative: true },
+    { label: "Less: CapEx (Named Projects)", getValue: r => r.capex, negative: true },
     { label: "Cash Flow (Before Taxes)", getValue: r => r.cash_flow, bold: true },
     { label: "Cumulative Cash Flow", getValue: r => r.cumulative_cash_flow },
   ];
@@ -582,8 +583,9 @@ function buildAnnualSheet(
     { label: "Net Operating Income", key: "noi", bold: true },
     { label: "Less: Debt Service", key: "debt_service", negative: true },
     { label: "Cash Flow before CapEx & Reserves", key: "cash_flow_before_capex_and_reserves", bold: true },
-    { label: "Less: Reserves", key: "reserves", negative: true },
-    { label: "Less: CapEx", key: "capex", negative: true },
+    { label: "Less: Replacement Reserve", key: "reserves", negative: true },
+    { label: "Less: Capital Reserve", key: "capital_reserve", negative: true },
+    { label: "Less: CapEx (Named Projects)", key: "capex", negative: true },
     { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true },
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
     { label: "Cap Rate", key: "cap_rate", pct: true },
@@ -814,6 +816,24 @@ function buildCapexSheet(wb: ExcelJS.Workbook, capex: ScenarioInputs["capex"]) {
   row5.getCell(2).font = BOLD_FONT;
 
   ws.addRow([]);
+
+  // Capital reserve section (Phase 4.3) — the capital-events bucket spread
+  // evenly across the full hold (does not truncate like a dated project).
+  if ((capex.capital_reserve_total ?? 0) > 0 || (capex.capital_reserve_per_unit ?? 0) > 0) {
+    addSectionHeader(ws, "Capital Reserve (capital-events bucket)", 5);
+    if ((capex.capital_reserve_total ?? 0) > 0) {
+      const crT = ws.addRow(["Total Over Hold", capex.capital_reserve_total]);
+      crT.getCell(2).numFmt = CURRENCY_FMT;
+    }
+    if ((capex.capital_reserve_per_unit ?? 0) > 0) {
+      const crU = ws.addRow(["Per Unit / Yr", capex.capital_reserve_per_unit]);
+      crU.getCell(2).numFmt = CURRENCY_FMT;
+    }
+    const crNote = ws.addRow(["Spread evenly across the full hold — see Pro Forma 'Less: Capital Reserve'."]);
+    crNote.getCell(1).font = { ...NORMAL_FONT, italic: true };
+    ws.addRow([]);
+  }
+
   ws.addRow([]);
 
   // Projects section
@@ -1472,7 +1492,7 @@ function buildTaxDetailSheet(
   ws.addRow([]);
 
   const notes = ws.addRow([
-    "Reappraisal: Franklin County triennial update 2026, sexennial reappraisal 2029 (verify tentative values when posted). BOR complaint window: Jan 1 – Mar 31 of the year after the tax year. Default scenario rule: abatement_lost whenever the transfer is not CONFIRMED.",
+    "Reappraisal: Franklin County triennial update 2026, sexennial reappraisal 2029 (verify tentative values when posted). BOR complaint window: Jan 1 – Mar 31 of the year after the tax year. Default scenario rule: abatement_lost whenever the transfer is not CONFIRMED. Payment timing: each tax year's bill is modeled WITHIN its own calendar year (accrual). Ohio bills in arrears (tax year T collected in T+1), so true cash-basis tax steps land ~1 year later than shown here — the current treatment is conservative (increases recognized ~a year early).",
   ]);
   notes.getCell(1).font = { ...NORMAL_FONT, italic: true };
   notes.getCell(1).alignment = { wrapText: true };

@@ -411,7 +411,22 @@ export function propertyTaxBillForTaxYear(
   }
 }
 
-/** Monthly property tax under the scenario in force (1/12 of that month's tax-year bill). */
+/**
+ * Monthly property tax under the scenario in force (1/12 of that month's
+ * tax-year bill).
+ *
+ * KNOWN LIMITATION — tax payment timing (Ohio arrears, deferred): we recognize
+ * a tax year's bill WITHIN its own calendar year (accrual basis) — the bill for
+ * tax year T is spread across the 12 pro forma months whose calendar year is T.
+ * Ohio actually bills in ARREARS (tax year T is collected in T+1, first-half
+ * ~Jan–Feb), so on a true cash basis every tax transition — abatement expiry,
+ * reappraisal re-mark — lands roughly a year later than modeled here. We
+ * intentionally do NOT model the arrears lag yet (it shifts tax cash ~1 yr and
+ * re-baselines all golden outputs); the current treatment is therefore
+ * conservative (tax increases recognized ~a year early). Revisit with a single
+ * taxYearToProFormaMonth(taxYear, closingDate, billingHalf) helper if/when the
+ * arrears cash timing is prioritized.
+ */
 export function propertyTaxForMonthV2(
   pt: PropertyTaxAssumptions,
   purchasePrice: number,
@@ -519,6 +534,13 @@ export interface CapexAssumptions {
   renovation_downtime_enabled?: boolean; // whether to model vacancy during renovation
   renovation_downtime_months?: number; // months each unit is offline (default 1)
   projects: CapexProject[];
+  // Capital reserve (fix-spec Phase 4.3) — the probabilistic "expect ~$X of
+  // capital events over the hold, timing unknown" bucket. Spread EVENLY across
+  // the full hold so the entire amount lands inside it (named-project blocks
+  // truncate when they run past the hold; this tier does not). Recurring line
+  // below NOI, distinct from the replacement reserve and from named projects.
+  capital_reserve_total?: number; // total $ over the hold
+  capital_reserve_per_unit?: number; // $/unit/yr (additive to total when both set)
 }
 
 export interface DepreciationAssumptions {
@@ -627,10 +649,11 @@ export interface MonthlyRow {
   // Cash Flow before CapEx & Reserves = NOI - debt service
   cash_flow_before_capex_and_reserves: number;
   // Capital items (below NOI)
-  reserves: number;
-  // Cash Flow before CapEx = NOI - debt service - reserves
+  reserves: number; // replacement reserve (turn-driven)
+  capital_reserve: number; // capital-events bucket spread evenly over the hold (Phase 4.3)
+  // Cash Flow before CapEx = NOI - debt service - reserves - capital reserve
   cash_flow_before_capex: number;
-  capex: number;
+  capex: number; // named projects (dated lumps)
   // Cash Flow = NOI - debt service - reserves - capex
   cash_flow: number;
   cumulative_cash_flow: number;
@@ -658,6 +681,7 @@ export interface AnnualSummary {
   principal_paid: number;
   cash_flow_before_capex_and_reserves: number;
   reserves: number;
+  capital_reserve: number;
   cash_flow_before_capex: number;
   capex: number;
   cash_flow: number;
@@ -932,11 +956,15 @@ export function calculateUnderwriting(
     const principalPaid = m <= financing.io_period_months ? 0 : Math.max(0, ds - interestPaid);
     amortBalance = Math.max(0, amortBalance - principalPaid);
 
-    // CapEx for this month
+    // CapEx for this month (named projects — dated lumps)
     const monthCapex = calculateMonthCapex(capex, m);
+    // Capital reserve (Phase 4.3): the capital-events bucket spread EVENLY over
+    // the full hold, so the whole amount lands inside the hold (flat — not
+    // escalated; it's a fixed pool, not a per-period operating cost).
+    const monthlyCapitalReserve = capitalReserveMonthly(capex, totalUnits, totalMonths);
 
     const cashFlowBeforeCapexAndReserves = noi - ds;
-    const cashFlowBeforeCapex = cashFlowBeforeCapexAndReserves - monthlyReserves;
+    const cashFlowBeforeCapex = cashFlowBeforeCapexAndReserves - monthlyReserves - monthlyCapitalReserve;
     const cashFlow = cashFlowBeforeCapex - monthCapex;
     cumulativeCF += cashFlow;
 
@@ -960,6 +988,7 @@ export function calculateUnderwriting(
       principal_paid: principalPaid,
       cash_flow_before_capex_and_reserves: cashFlowBeforeCapexAndReserves,
       reserves: monthlyReserves,
+      capital_reserve: monthlyCapitalReserve,
       cash_flow_before_capex: cashFlowBeforeCapex,
       capex: monthCapex,
       cash_flow: cashFlow,
@@ -1009,6 +1038,7 @@ export function calculateUnderwriting(
       principal_paid: sum((r) => r.principal_paid),
       cash_flow_before_capex_and_reserves: sum((r) => r.cash_flow_before_capex_and_reserves),
       reserves: sum((r) => r.reserves),
+      capital_reserve: sum((r) => r.capital_reserve),
       cash_flow_before_capex: sum((r) => r.cash_flow_before_capex),
       capex: sum((r) => r.capex),
       cash_flow: annualCF,
@@ -1278,6 +1308,20 @@ export function calculateUnderwriting(
     capex.projects.reduce((s, p) => s + p.cost, 0);
   if (totalUnits > 0 && totalCapex / totalUnits > 25000) {
     warnings.push("CapEx exceeds $25K/unit — verify intentional");
+  }
+
+  // Named-project truncation (Phase 4.3): a dated lump that runs past the hold
+  // only books the months that fall inside it. Steer open-ended spend to the
+  // capital reserve tier (which spreads across the full hold).
+  for (const proj of capex.projects) {
+    const lastMonth = (proj.start_month || 1) + (proj.duration_months || 1) - 1;
+    if (lastMonth > totalMonths) {
+      const monthsInside = Math.max(0, totalMonths - (proj.start_month || 1) + 1);
+      const captured = (proj.duration_months || 1) > 0 ? (monthsInside / (proj.duration_months || 1)) * proj.cost : proj.cost;
+      warnings.push(
+        `CapEx project "${proj.name}" runs to month ${lastMonth} but the hold ends at month ${totalMonths} — only ~$${Math.round(captured).toLocaleString()} of $${Math.round(proj.cost).toLocaleString()} is modeled. Use the capital reserve tier for open-ended spend.`,
+      );
+    }
   }
 
   const opexRatio = annual.length > 0 && annual[0].egi > 0
@@ -1848,6 +1892,18 @@ export function buildUnitStateSchedule(args: {
  * A unit completing renovation in month M is offline for `downtime_months`
  * months ending in M (i.e., months M-downtime+1 through M inclusive).
  */
+/**
+ * Monthly capital reserve (Phase 4.3): the total pool spread evenly across the
+ * full hold (so the whole amount lands inside it), plus any per-unit/yr figure.
+ * Flat — not escalated — because it's a fixed reserve allocation, not an
+ * operating cost that grows with inflation.
+ */
+function capitalReserveMonthly(capex: CapexAssumptions, totalUnits: number, totalMonths: number): number {
+  const fromTotal = totalMonths > 0 ? (capex.capital_reserve_total ?? 0) / totalMonths : 0;
+  const fromPerUnit = ((capex.capital_reserve_per_unit ?? 0) * totalUnits) / 12;
+  return fromTotal + fromPerUnit;
+}
+
 function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
   let total = 0;
 
@@ -2084,11 +2140,13 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
       annualCapex += calculateMonthCapex(capex, m);
     }
+    // Capital reserve (Phase 4.3) — flat monthly × 12, same as the main loop.
+    const annualCapitalReserve = capitalReserveMonthly(capex, totalUnits, totalMonths) * 12;
 
     // Debt service is applied AFTER the loop — the loan can't be sized until
     // year-1 NOI is known (Phase 4.1 DSCR sizing), and NOI is loan-independent.
     annualNOIs.push(annualNOI);
-    annualBelowNOI.push(annualReserves + annualCapex);
+    annualBelowNOI.push(annualReserves + annualCapitalReserve + annualCapex);
   }
 
   // DSCR-aware sizing, mirroring the main engine so sensitivity cells use the
