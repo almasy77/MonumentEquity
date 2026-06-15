@@ -225,7 +225,7 @@ function buildSummarySheet(
   addLabelValue(ws, "Purchase Price", m.purchase_price, CURRENCY_FMT);
   addLabelValue(ws, "Closing Costs", m.closing_costs, CURRENCY_FMT);
   addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
-  addLabelValue(ws, "CapEx Reserve", m.capex_reserve, CURRENCY_FMT);
+  addLabelValue(ws, "CapEx Reserve (equity at closing)", m.capex_reserve, CURRENCY_FMT);
   addLabelValue(ws, "Total Cost", m.total_cost, CURRENCY_FMT);
   addLabelValue(
     ws,
@@ -443,7 +443,7 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   addInputRow(ws, opexLabel("Utilities", oix?.utilities, "$/unit/yr"), opexValue(oix?.utilities, inputs.expenses.utilities_per_unit), opexFmt(oix?.utilities));
   addInputRow(ws, opexLabel("Admin/Legal/Marketing", oix?.admin_legal_marketing, "$/yr"), opexValue(oix?.admin_legal_marketing, inputs.expenses.admin_legal_marketing), opexFmt(oix?.admin_legal_marketing));
   addInputRow(ws, opexLabel("Contract Services", oix?.contract_services, "$/yr"), opexValue(oix?.contract_services, inputs.expenses.contract_services), opexFmt(oix?.contract_services));
-  addInputRow(ws, opexLabel("Reserves", oix?.reserves, "$/unit/yr"), opexValue(oix?.reserves, inputs.expenses.reserves_per_unit), opexFmt(oix?.reserves));
+  addInputRow(ws, opexLabel("Replacement Reserve", oix?.reserves, "$/unit/yr"), opexValue(oix?.reserves, inputs.expenses.reserves_per_unit), opexFmt(oix?.reserves));
   ws.addRow([]);
 
   addSectionHeader(ws, "Exit Assumptions", 5);
