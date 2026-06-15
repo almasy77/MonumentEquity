@@ -226,6 +226,9 @@ function buildSummarySheet(
   addLabelValue(ws, "Closing Costs", m.closing_costs, CURRENCY_FMT);
   addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
   addLabelValue(ws, "CapEx Reserve (equity at closing)", m.capex_reserve, CURRENCY_FMT);
+  if (m.cost_seg_study_cost > 0) {
+    addLabelValue(ws, "Cost-Seg Study (at closing)", m.cost_seg_study_cost, CURRENCY_FMT);
+  }
   addLabelValue(ws, "Total Cost", m.total_cost, CURRENCY_FMT);
   addLabelValue(
     ws,
