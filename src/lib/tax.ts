@@ -46,9 +46,9 @@ export interface TaxAssumptions {
   opco_fee_tax_rate: number; // SE/payroll leakage on the recycled fee
   // basis & cost-seg (applied to improvement basis, never full price)
   land_allocation_pct: number; // default = county auditor land ratio
-  costseg_5yr_pct: number; // default 0.20
-  costseg_15yr_pct: number; // default 0.09
-  reno_5yr_pct: number; // default 0.58
+  costseg_5yr_pct: number; // default 0.25 (5-yr personal property reclass)
+  costseg_15yr_pct: number; // default 0.08 (15-yr land improvements)
+  reno_5yr_pct: number; // default 0.58 — only applies to actual reno/capex spend
   reno_repairs_expensed_pct: number; // default 0
   // bonus / conformity
   federal_bonus_pct: number; // 1.00 post-1/19/2025
@@ -69,8 +69,8 @@ export const TAX_DEFAULTS: TaxAssumptions = {
   management_fee_pct: 0.08,
   opco_fee_tax_rate: 0.15,
   land_allocation_pct: 0.2,
-  costseg_5yr_pct: 0.2,
-  costseg_15yr_pct: 0.09,
+  costseg_5yr_pct: 0.25,
+  costseg_15yr_pct: 0.08,
   reno_5yr_pct: 0.58,
   reno_repairs_expensed_pct: 0,
   federal_bonus_pct: 1.0,
@@ -169,6 +169,11 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     acquisitionCosts = purchase.purchase_price * (purchase.closing_cost_rate || 0);
   }
 
+  // Cost-seg study fee (spec Part 1): deductible as a Year-1 professional fee.
+  // Immaterial vs. the depreciation shield, but kept honest. NOT capitalized
+  // to basis and NOT in NOI — it's a transaction cost in uses-of-funds.
+  const costSegFeeY1 = purchase.cost_seg_study_cost || 0;
+
   // ── Basis & buckets (§6): land carve-out FIRST, cost-seg on improvement basis ──
   const totalCostBasis = purchase.purchase_price + acquisitionCosts;
   const improvementBasis = totalCostBasis * (1 - tax.land_allocation_pct);
@@ -258,7 +263,8 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
       ? Math.max(0, ctx.originationFee - finAmortAnnual * (y - 1))
       : finAmortAnnual;
 
-    const prepaids = y === 1 ? prepaidDeductionY1 : 0;
+    // Year-1 deductions: prepaids/prorations + the cost-seg study fee.
+    const prepaids = y === 1 ? prepaidDeductionY1 + costSegFeeY1 : 0;
     const capexExpDeduction = capexExpensed;
 
     // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − expensed repairs

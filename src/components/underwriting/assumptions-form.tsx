@@ -1728,20 +1728,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                 </div>
 
-                {/* CapEx Reserve — equity funded at closing (distinct from the
-                    annual Replacement Reserve and the Capital Reserve tier) */}
+                {/* CapEx Reserve + Cost-Seg Study — equity funded at closing
+                    (distinct from annual Replacement Reserve and Capital Reserve) */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
-                  <CurrencyField label="CapEx Reserve (equity at closing)" value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
-                  <div className="col-span-1 sm:col-span-3 flex items-end">
-                    <p className="text-[10px] text-slate-500 pb-2">Additional equity funded at closing for renovation shortfalls</p>
+                  <div>
+                    <CurrencyField label="CapEx Reserve (equity at closing)" value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                    <p className="text-[10px] text-slate-500 mt-0.5">Equity funded at closing for renovation shortfalls</p>
+                  </div>
+                  <div>
+                    <CurrencyField label="Cost-Seg Study (at closing)" value={p.cost_seg_study_cost || 0} onChange={(v) => { setP({ ...p, cost_seg_study_cost: v }); markDirty(); }} />
+                    <p className="text-[10px] text-slate-500 mt-0.5">One-time fee, ~$10K typical; $0 if no study. Uses-of-funds only — not opex/NOI.</p>
                   </div>
                 </div>
 
                 {/* Totals row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
                   <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0))} />
-                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) - loanAmount)} />
+                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) + (p.cost_seg_study_cost || 0))} />
+                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) + (p.cost_seg_study_cost || 0) - loanAmount)} />
                 </div>
               </div>
             );
@@ -2813,6 +2817,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     </div>
                     <p className="text-[11px] text-slate-500">
                       Land is carved out first; cost-seg percentages apply to the improvement basis. Federal takes bonus on the 5-yr and 15-yr buckets; NY adds bonus back.
+                      Keep <span className="font-semibold">Land Allocation</span> consistent with the Depreciation block&apos;s assessment ratio (the engine warns if they differ). Reno 5-yr share only applies to actual renovation capex. The cost-seg study <span className="font-semibold">fee</span> is entered in Closing Costs (uses-of-funds) and deducted as a Year-1 professional fee here.
                     </p>
 
                     {/* Exit */}

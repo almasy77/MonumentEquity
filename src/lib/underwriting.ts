@@ -6,7 +6,7 @@
  */
 
 import { calculateIRR } from "./irr";
-import { computeTaxLayer } from "./tax";
+import { computeTaxLayer, TAX_DEFAULTS } from "./tax";
 import type { TaxAssumptions, TaxResult } from "./tax";
 
 // ─── Input Types ─────────────────────────────────────────────
@@ -30,6 +30,7 @@ export interface PurchaseAssumptions {
   closing_cost_mode?: ClosingCostMode; // "rate" uses closing_cost_rate, "itemized" uses breakdown sum (default: "rate")
   closing_cost_breakdown?: ClosingCostBreakdown;
   capex_reserve?: number; // Additional equity funded at closing to cover renovation CapEx shortfalls
+  cost_seg_study_cost?: number; // Cost-seg study fee — one-time cash at closing (uses-of-funds only; not opex/NOI). Default 0.
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
   bid_price?: number;
@@ -709,7 +710,8 @@ export interface DealMetrics {
   closing_costs: number;
   origination_fee: number;
   capex_reserve: number;
-  total_cost: number; // purchase + closing + origination + capex reserve
+  cost_seg_study_cost: number; // one-time cost-seg study fee at closing (uses-of-funds)
+  total_cost: number; // purchase + closing + origination + capex reserve + cost-seg study
   loan_amount: number;
   down_payment: number; // purchase_price - loan_amount (encompasses earnest money)
   loan_sizing_constraint: "ltv" | "dscr"; // which limb of min(LTV, DSCR) bound
@@ -810,10 +812,14 @@ export function calculateUnderwriting(
   // ── Purchase & Financing ──
   const closingCosts = computeClosingCosts(purchase);
   const capexReserve = purchase.capex_reserve || 0;
+  // Cost-seg study fee (spec Part 1): a one-time cash outflow at closing —
+  // uses-of-funds only. Deliberately NOT in opex/NOI/cap/DSCR. Defaults to 0
+  // when unset so deals without a cost-seg study are unaffected.
+  const costSegStudyCost = purchase.cost_seg_study_cost || 0;
   const ltvLoanAmount = purchase.purchase_price * financing.ltv;
   const loanAmount = _resize?.loanOverride ?? ltvLoanAmount;
   const originationFee = loanAmount * financing.origination_fee_rate;
-  const totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve;
+  const totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve + costSegStudyCost;
   const totalEquity = totalCost - loanAmount;
 
   // Monthly debt service calculation
@@ -1160,6 +1166,7 @@ export function calculateUnderwriting(
     closing_costs: closingCosts,
     origination_fee: originationFee,
     capex_reserve: capexReserve,
+    cost_seg_study_cost: costSegStudyCost,
     total_cost: totalCost,
     loan_amount: loanAmount,
     down_payment: downPayment,
@@ -1334,6 +1341,32 @@ export function calculateUnderwriting(
   if (opexRatio < 0.35 && opexRatio > 0) warnings.push("OpEx ratio below 35% — may underestimate expenses");
   if (opexRatio > 0.60) warnings.push("OpEx ratio above 60% — verify expenses");
 
+  // ── Cost-seg / depreciation guardrails (cost-seg spec Part 2) ──
+  if (inputs.tax) {
+    const t = { ...TAX_DEFAULTS, ...inputs.tax };
+    // (1) Land allocation single-source: the Depreciation block (assessment
+    // ratio) and the Tax sheet (land_allocation_pct) must agree.
+    const dpa = inputs.depreciation;
+    if (dpa?.land_tax_assessment && dpa?.improvement_tax_assessment) {
+      const denom = dpa.land_tax_assessment + dpa.improvement_tax_assessment;
+      const assessLand = denom > 0 ? dpa.land_tax_assessment / denom : 0;
+      if (Math.abs(assessLand - t.land_allocation_pct) > 0.02) {
+        warnings.push(`Land allocation differs between the Depreciation block (${(assessLand * 100).toFixed(0)}%) and the Tax sheet (${(t.land_allocation_pct * 100).toFixed(0)}%) — reconcile to one value.`);
+      }
+    }
+    // (2) Reno 5-yr share set but the deal has no renovation capex → no effect;
+    // flag the stale assumption.
+    const holdCapex = annual.reduce((s, a) => s + a.capex, 0);
+    if (t.reno_5yr_pct > 0 && holdCapex < 1) {
+      warnings.push(`Reno 5-yr cost-seg share is ${(t.reno_5yr_pct * 100).toFixed(0)}% but the deal has no renovation capex — it has no effect; set to 0 for clarity.`);
+    }
+    // (3) Aggressive short-life reclass.
+    const shortLife = t.costseg_5yr_pct + t.costseg_15yr_pct;
+    if (shortLife > 0.40) {
+      warnings.push(`Cost-seg short-life reclass is ${(shortLife * 100).toFixed(0)}% (5-yr + 15-yr) — exceeds 40%; confirm against an engineering study (typical multifamily 25–38%).`);
+    }
+  }
+
   // ── Tax layer (TAX_TREATMENT_SPEC.md) — only when tax assumptions provided ──
   // tax.ts imports only TYPES from this module, so the static import in this
   // file's header creates no runtime cycle.
@@ -1347,6 +1380,14 @@ export function calculateUnderwriting(
         originationFee,
       })
     : undefined;
+
+  // (4) Usability gate: a Year-1 cost-seg loss only helps if it can be used
+  // (REPS that year, or passive income to absorb it). The tax engine already
+  // suspends it (PAL) when REPS is off — surface that so the shield isn't
+  // mistaken for a credited benefit.
+  if (taxResult && taxResult.years[0] && !taxResult.years[0].reps_on && taxResult.years[0].federal_taxable_income < 0) {
+    warnings.push(`Year-1 cost-seg loss of $${Math.round(-taxResult.years[0].federal_taxable_income).toLocaleString()} is suspended (REPS off this year, no passive income to absorb it) — it is carried forward, not credited to after-tax IRR.`);
+  }
 
   const propertyTaxVectors = expenses.property_tax_v2?.enabled
     ? computePropertyTaxVectors(expenses.property_tax_v2, purchase.purchase_price, exit.hold_period_years)
