@@ -462,7 +462,11 @@ export interface TaxReassessment {
   enabled: boolean;
   effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County
   reassessed_value?: number; // default: purchase price
-  phase_in_year?: number; // pro forma year the reassessed bill starts (1 = immediately). Default 1.
+  // The reassessed bill starts at a specific PRO FORMA MONTH (1 = first month
+  // of the hold). phase_in_month takes precedence; phase_in_year is the legacy
+  // year-granularity fallback (year Y ⇒ month (Y-1)*12 + 1).
+  phase_in_month?: number; // 1-indexed pro forma month
+  phase_in_year?: number; // legacy fallback; pro forma year (1 = immediately)
   apply_at_exit?: boolean; // recompute exit value with buyer's tax at exit price. Default true.
 }
 
@@ -910,9 +914,9 @@ export function calculateUnderwriting(
       property_tax: (() => {
         const v2 = expenses.property_tax_v2;
         if (v2?.enabled) return propertyTaxForMonthV2(v2, purchase.purchase_price, m - 1);
-        const reassessed = reassessedAnnualTax(expenses, purchase.purchase_price, yearIndex);
-        return reassessed !== null
-          ? reassessed / 12
+        const reassessedMo = reassessedTaxForMonth(expenses, purchase.purchase_price, m - 1);
+        return reassessedMo !== null
+          ? reassessedMo
           : resolveOpexMonthly(oi?.property_tax, expenses.property_tax_total, "total_annual", taxCtx);
       })(),
       utilities: utilSubSum !== null ? utilSubSum : resolveOpexMonthly(oi?.utilities, expenses.utilities_per_unit, "per_unit_annual", opexCtx),
@@ -1545,22 +1549,72 @@ function getUnitsPerMonth(capex: CapexAssumptions): number {
   return capex.units_per_month || 0;
 }
 
+/** 0-indexed pro forma month the reassessed bill begins. phase_in_month wins;
+ *  phase_in_year is the legacy fallback (year Y ⇒ month index (Y-1)*12). */
+function reassessedPhaseInMonthIndex(r: TaxReassessment): number {
+  if (r.phase_in_month != null) return Math.max(0, Math.round(r.phase_in_month) - 1);
+  return Math.max(0, ((r.phase_in_year ?? 1) - 1) * 12);
+}
+
+/**
+ * Reassessed property tax for a 0-indexed pro forma MONTH, or null when
+ * reassessment is disabled / not yet phased in (caller falls back to the
+ * entered bill for that month). Month-precise: the bill switches on at the
+ * exact phase-in month. Escalation steps at pro forma YEAR boundaries relative
+ * to the phase-in year (consistent with all other opex escalation).
+ */
+export function reassessedTaxForMonth(
+  expenses: ExpenseAssumptions,
+  purchasePrice: number,
+  monthIndex: number,
+): number | null {
+  const r = expenses.tax_reassessment;
+  if (!r || !r.enabled || r.effective_tax_rate <= 0) return null;
+  const startMonth = reassessedPhaseInMonthIndex(r);
+  if (monthIndex < startMonth) return null;
+  const annualBase = (r.reassessed_value ?? purchasePrice) * r.effective_tax_rate;
+  const yearsElapsed = Math.max(0, Math.floor(monthIndex / 12) - Math.floor(startMonth / 12));
+  return (annualBase / 12) * Math.pow(1 + expenses.tax_escalation_rate, yearsElapsed);
+}
+
 /**
  * Reassessed annual property tax for a 0-indexed pro forma year, or null when
- * reassessment is disabled / not yet phased in (caller falls back to the
- * entered bill). Escalation applies from the phase-in year forward.
+ * no month of that year is reassessed (caller falls back to the entered bill).
+ * Sums the month-precise figures, so a mid-year phase-in returns only the
+ * post-phase-in portion; year-boundary phase-ins return the full annual bill
+ * (byte-identical to the legacy year-granularity behavior).
  */
 export function reassessedAnnualTax(
   expenses: ExpenseAssumptions,
   purchasePrice: number,
   yearIndex: number,
 ): number | null {
-  const r = expenses.tax_reassessment;
-  if (!r || !r.enabled || r.effective_tax_rate <= 0) return null;
-  const phaseInIndex = Math.max(0, (r.phase_in_year ?? 1) - 1);
-  if (yearIndex < phaseInIndex) return null;
-  const base = (r.reassessed_value ?? purchasePrice) * r.effective_tax_rate;
-  return base * Math.pow(1 + expenses.tax_escalation_rate, yearIndex - phaseInIndex);
+  let sum = 0;
+  let any = false;
+  for (let mo = yearIndex * 12; mo < yearIndex * 12 + 12; mo++) {
+    const m = reassessedTaxForMonth(expenses, purchasePrice, mo);
+    if (m !== null) { sum += m; any = true; }
+  }
+  return any ? sum : null;
+}
+
+/**
+ * Operations property tax for a year in the simplified/sensitivity path,
+ * BLENDING the reassessed and entered bills month-by-month so a mid-year
+ * phase-in is handled exactly (pre-phase-in months use the entered bill).
+ */
+function reassessedBlendedAnnual(
+  expenses: ExpenseAssumptions,
+  purchasePrice: number,
+  yearIndex: number,
+  enteredAnnual: number,
+): number {
+  const enteredMonthly = enteredAnnual / 12;
+  let sum = 0;
+  for (let mo = yearIndex * 12; mo < yearIndex * 12 + 12; mo++) {
+    sum += reassessedTaxForMonth(expenses, purchasePrice, mo) ?? enteredMonthly;
+  }
+  return sum;
 }
 
 
@@ -2071,7 +2125,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
       resolveOpexAnnual(oiS?.insurance, expenses.insurance_per_unit, "per_unit_annual", sCtx) +
       (expenses.property_tax_v2?.enabled
         ? propertyTaxForMonthV2(expenses.property_tax_v2, purchase.purchase_price, y * 12 + 6) * 12
-        : (reassessedAnnualTax(expenses, purchase.purchase_price, y) ?? resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx))) +
+        : (expenses.tax_reassessment?.enabled
+            ? reassessedBlendedAnnual(expenses, purchase.purchase_price, y, resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx))
+            : resolveOpexAnnual(oiS?.property_tax, expenses.property_tax_total, "total_annual", sTaxCtx))) +
       (utilSubSumS !== null ? utilSubSumS : resolveOpexAnnual(oiS?.utilities, expenses.utilities_per_unit, "per_unit_annual", sCtx)) +
       resolveOpexAnnual(oiS?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", sCtx) +
       (svcSubSumS !== null ? svcSubSumS : resolveOpexAnnual(oiS?.contract_services, expenses.contract_services, "total_annual", sCtx));
@@ -2151,7 +2207,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     resolveOpexAnnual(oiE?.insurance, expenses.insurance_per_unit, "per_unit_annual", eCtx) +
     (expenses.property_tax_v2?.enabled
       ? propertyTaxForMonthV2(expenses.property_tax_v2, purchase.purchase_price, exit.hold_period_years * 12 - 6) * 12
-      : (reassessedAnnualTax(expenses, purchase.purchase_price, exit.hold_period_years - 1) ?? resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx))) +
+      : (expenses.tax_reassessment?.enabled
+          ? reassessedBlendedAnnual(expenses, purchase.purchase_price, exit.hold_period_years - 1, resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx))
+          : resolveOpexAnnual(oiE?.property_tax, expenses.property_tax_total, "total_annual", eTaxCtx))) +
     (utilSubSumE !== null ? utilSubSumE : resolveOpexAnnual(oiE?.utilities, expenses.utilities_per_unit, "per_unit_annual", eCtx)) +
     resolveOpexAnnual(oiE?.admin_legal_marketing, expenses.admin_legal_marketing, "total_annual", eCtx) +
     (svcSubSumE !== null ? svcSubSumE : resolveOpexAnnual(oiE?.contract_services, expenses.contract_services, "total_annual", eCtx));
