@@ -122,9 +122,18 @@ export function UnderwritingClient({
     }
   }
 
-  async function updateScenario(updates: Partial<Record<string, unknown>>) {
+  // applyResult=false is the autosave path: persist the assumptions quietly
+  // (no spinner, and crucially do NOT push the recomputed result or the bumped
+  // scenario into state — that would reset the form mid-edit and the displayed
+  // KPIs would jump on every keystroke). The form stays the source of truth
+  // until the user explicitly hits "Refresh KPIs" (applyResult=true).
+  async function updateScenario(
+    updates: Partial<Record<string, unknown>>,
+    opts?: { applyResult?: boolean },
+  ) {
     if (!activeId) return;
-    setLoading(true);
+    const applyResult = opts?.applyResult !== false;
+    if (applyResult) setLoading(true);
     try {
       const res = await fetch(`/api/scenarios/${activeId}`, {
         method: "PUT",
@@ -132,7 +141,7 @@ export function UnderwritingClient({
         body: JSON.stringify(updates),
       });
 
-      if (res.ok) {
+      if (res.ok && applyResult) {
         const data: ScenarioWithResult = await res.json();
         setScenarios((prev) =>
           prev.map((s) => (s.id === activeId ? data.scenario : s))
@@ -142,7 +151,7 @@ export function UnderwritingClient({
     } catch (err) {
       console.error("Failed to update scenario:", err);
     } finally {
-      setLoading(false);
+      if (applyResult) setLoading(false);
     }
   }
 
@@ -596,7 +605,7 @@ function ScenarioAnalysis({
   result: UnderwritingResult;
   deal: Deal;
   loading: boolean;
-  onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
+  onUpdate: (updates: Partial<Record<string, unknown>>, opts?: { applyResult?: boolean }) => Promise<void>;
 }) {
   return (
     <div className="space-y-4">
