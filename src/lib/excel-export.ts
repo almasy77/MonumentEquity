@@ -1180,6 +1180,51 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
   }
   ws.addRow([]);
 
+  // ─── Reserves & escrows ───
+  addSectionHeader(ws, "Reserves & escrows — three different jobs", 4);
+  styleHeaderRow(ws.addRow(["Reserve", "Statement", "Escrow", "What it is"]), 4);
+  const reserves: [string, string, string, string][] = [
+    [
+      "Replacement (CapEx) Reserve",
+      "Income statement (below NOI); balance is a B/S asset",
+      "Usually lender-escrowed on agency loans",
+      "Annual set-aside for future capital replacements (appliances, flooring, roof, parking). ~$250–350/unit for newer buildings. Funded a little each year; drawn by invoice for completed work; balance returned at payoff. May be reduced/waived on low-leverage, newer assets.",
+    ],
+    [
+      "Operating (Liquidity) Reserve",
+      "Balance sheet only (a cash cushion, not an expense)",
+      "Never lender-escrowed — borrower-controlled",
+      "Cash cushion for income shortfalls (vacancy spikes, slow collections, surprise non-capital costs). Sized in months of carry, typically 3–6 months of debt service + operating expenses. Does NOT reduce NOI or modeled cash flow; recoverable. The lender may verify it for a post-close liquidity test but never holds it.",
+    ],
+    [
+      "Lender Escrows at Closing",
+      "Balance sheet (funded cash, lender-held)",
+      "Yes — held by the lender for the life of the loan",
+      "Accounts the lender pre-funds at closing: the opening balance of the replacement-reserve escrow, plus tax & insurance escrows so those bills are paid on time. The replacement-reserve portion is the SAME money as your reserve, pre-funded — not a second expense. Drawn as work completes / bills come due; balance returned at payoff.",
+    ],
+  ];
+  for (const [name, stmt, esc, what] of reserves) {
+    const r = ws.addRow([name, stmt, esc, what]);
+    r.getCell(1).font = BOLD_FONT;
+    r.getCell(2).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(3).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(4).font = NORMAL_FONT;
+    for (let i = 1; i <= 4; i++) { r.getCell(i).border = THIN_BORDER; r.getCell(i).alignment = { wrapText: true, vertical: "top" }; }
+    r.height = 56;
+  }
+  ws.addRow([]);
+  const escrowQ = ws.addRow(["Are initial reserves always held in escrow, and for how long?"]);
+  escrowQ.getCell(1).font = BOLD_FONT;
+  ws.mergeCells(`A${escrowQ.number}:D${escrowQ.number}`);
+  const escrowA = ws.addRow([
+    "Not always. Replacement reserve and tax/insurance are typically escrowed (lender-held) on agency loans, but can be reduced, waived, or made 'springing' (funded only if DSCR drops below a covenant) on strong, low-leverage, newer deals; on bank/portfolio loans it's more negotiable. The operating reserve is never lender-escrowed — it's your own liquidity. When escrowed, escrows run for the life of the loan: the replacement-reserve escrow revolves (fund monthly, draw as you document qualifying capital work) and tax/insurance escrows pay out as bills come due; any remaining balance is returned at payoff or sale. Some lenders release or step down the replacement-reserve requirement mid-term if performance covenants are met.",
+  ]);
+  escrowA.getCell(1).font = NORMAL_FONT;
+  escrowA.getCell(1).alignment = { wrapText: true };
+  ws.mergeCells(`A${escrowA.number}:D${escrowA.number}`);
+  escrowA.height = 72;
+  ws.addRow([]);
+
   // ─── NOI Margins ───
   addSectionHeader(ws, "NOI margin (NOI ÷ EGI) — typical ranges by property class & age", 4);
   styleHeaderRow(ws.addRow(["Class / Vintage", "Typical NOI Margin", "Notes"]), 3);
