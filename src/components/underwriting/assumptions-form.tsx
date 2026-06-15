@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, Trash2, Save, Loader2, Plus, X, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2, RefreshCw, Check, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
@@ -14,7 +14,7 @@ import type { TaxAssumptions } from "@/lib/tax";
 
 interface Props {
   scenario: Scenario;
-  onUpdate: (updates: Partial<Record<string, unknown>>) => Promise<void>;
+  onUpdate: (updates: Partial<Record<string, unknown>>, opts?: { applyResult?: boolean }) => Promise<void>;
   onDelete: () => void;
   loading: boolean;
   dealT12?: T12Statement;
@@ -1079,7 +1079,9 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [dep, setDep] = useState(depreciation);
   const taxInitial = ((scenario as Record<string, unknown>).tax_assumptions ?? undefined) as TaxAssumptions | undefined;
   const [tx, setTx] = useState<TaxAssumptions | undefined>(taxInitial);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(false); // edits not yet autosaved
+  const [saving, setSaving] = useState(false); // autosave in flight
+  const [kpisStale, setKpisStale] = useState(false); // edits since last KPI refresh
   const [renovatedBasis, setRenovatedBasis] = useState<"current" | "market">("market");
 
   // Rent comps for the market-rent guardrail (spec B8). Fetched once per deal city;
@@ -1135,6 +1137,10 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     markDirty();
   }
 
+  // Re-sync local state from the scenario when it changes EXTERNALLY (AI
+  // assistant edit, or a KPI refresh that bumped the version). Autosave does
+  // NOT bump scenario.version (it's a quiet persist), so this never fires
+  // mid-typing and never clobbers in-flight keystrokes.
   useEffect(() => {
     setP(purchase);
     setF(financing);
@@ -1145,15 +1151,23 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     setDep(depreciation);
     setTx(taxInitial);
     setDirty(false);
+    setSaving(false);
+    setKpisStale(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario.version]);
 
+  // Monotonic edit counter — lets an in-flight autosave detect whether the user
+  // typed again before it resolved, so it never clears `dirty` over a newer edit.
+  const editSeqRef = useRef(0);
+
   function markDirty() {
+    editSeqRef.current += 1;
     setDirty(true);
+    setKpisStale(true);
   }
 
-  async function save() {
-    await onUpdate({
+  function buildUpdates() {
+    return {
       purchase_assumptions: p,
       financing_assumptions: f,
       revenue_assumptions: r,
@@ -1162,9 +1176,47 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       exit_assumptions: ex,
       depreciation_assumptions: dep,
       tax_assumptions: tx ?? null,
-    });
-    setDirty(false);
+    };
   }
+
+  // "Refresh KPIs" — persist AND recompute the displayed metrics/pro forma.
+  // The version bump from this save flows back through the reset effect above,
+  // which clears dirty/saving/kpisStale.
+  async function refreshKPIs() {
+    setSaving(false);
+    await onUpdate(buildUpdates(), { applyResult: true });
+    setDirty(false);
+    setKpisStale(false);
+  }
+
+  // Debounced autosave: 1.2s after the last edit, quietly persist (no KPI
+  // recompute, no form reset). Re-armed on every edit because the assumption
+  // states are in the dep list.
+  useEffect(() => {
+    if (!dirty) return;
+    const t = setTimeout(() => {
+      const seq = editSeqRef.current;
+      setSaving(true);
+      onUpdate(buildUpdates(), { applyResult: false })
+        // Only clear dirty if no edit landed while this save was in flight; a
+        // newer edit (seq advanced) leaves dirty set so the effect re-arms.
+        .then(() => { if (editSeqRef.current === seq) setDirty(false); })
+        .finally(() => { setSaving(false); });
+    }, 1200);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, p, f, r, e, c, ex, dep, tx]);
+
+  // Flush any pending edits on unmount (e.g. switching scenarios) so the last
+  // ~1.2s of typing is never lost. The ref is refreshed each render via an
+  // effect so the unmount-only cleanup always calls the latest closure.
+  const flushRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    flushRef.current = () => {
+      if (dirty) void onUpdate(buildUpdates(), { applyResult: false });
+    };
+  });
+  useEffect(() => () => flushRef.current(), []);
 
   // Unit mix helpers
   const unitMix = r.unit_mix || [{ type: "Average", count: 1, current_rent: 1000, market_rent: 1100, renovated_rent_premium: 200 }];
@@ -1487,30 +1539,37 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const t12NOI = t12EGI - t12TotalOpex;
 
   return (
-    <Card className={`bg-slate-900 ${dirty ? "border-yellow-700/60" : "border-slate-800"}`}>
+    <Card className={`bg-slate-900 ${kpisStale ? "border-amber-700/50" : "border-slate-800"}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-white text-base flex items-center gap-2">
             Assumptions
-            {dirty && <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" title="Unsaved changes" />}
+            {/* Autosave status — edits persist automatically. */}
+            <span className="text-[11px] font-normal flex items-center gap-1">
+              {saving || dirty ? (
+                <span className="text-slate-400 flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
+              ) : (
+                <span className="text-emerald-500/80 flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>
+              )}
+            </span>
           </CardTitle>
           <div className="flex items-center gap-2">
-            {dirty && (
-              <Button
-                onClick={save}
-                disabled={loading}
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {loading ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="h-3 w-3 mr-1" /> Recalculate
-                  </>
-                )}
-              </Button>
-            )}
+            {kpisStale && <span className="text-[11px] text-amber-400">KPIs out of date</span>}
+            <Button
+              onClick={refreshKPIs}
+              disabled={loading}
+              size="sm"
+              title="Recompute the metrics, pro forma, and sensitivity from the current assumptions"
+              className={kpisStale ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"}
+            >
+              {loading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <>
+                  <RefreshCw className="h-3 w-3 mr-1" /> Refresh KPIs
+                </>
+              )}
+            </Button>
             <Button
               variant="outline"
               size="sm"
