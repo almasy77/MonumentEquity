@@ -1662,6 +1662,22 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <ReadOnlyField label="Down Payment" value={fmtCurrency(downPayment)} />
                   <PctField label="Origination Fee Rate" value={f.origination_fee_rate} onChange={(v) => { setF({ ...f, origination_fee_rate: v }); markDirty(); }} />
                   <ReadOnlyField label="Origination Fee" value={fmtCurrency(originationFee)} />
+                  <div>
+                    <Label className="text-xs text-slate-400">Loan Type</Label>
+                    <select
+                      value={f.loan_type || ""}
+                      onChange={(e) => { setF({ ...f, loan_type: (e.target.value || undefined) as typeof f.loan_type }); markDirty(); }}
+                      className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                    >
+                      <option value="">Unspecified (agency)</option>
+                      <option value="agency">Agency (Fannie/Freddie)</option>
+                      <option value="bank">Bank</option>
+                      <option value="portfolio">Portfolio</option>
+                      <option value="bridge">Bridge</option>
+                      <option value="cash">Cash</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Sets the LOI financing-contingency window (agency 75 / bank 60 / bridge 45 days).</p>
+                  </div>
                 </div>
                 {/* DSCR-aware sizing (fix-spec Phase 4.1): loan = min(LTV, DSCR proceeds) */}
                 <div className="flex items-end gap-3 flex-wrap">

@@ -52,7 +52,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     contacts = results.filter((c): c is Contact => c !== null);
   }
 
-  const buffer = await generateLOI({ deal, purchase, contacts });
+  const buffer = await generateLOI({ deal, purchase, contacts, scenario });
 
   const safeName = deal.address.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
   const date = new Date().toISOString().split("T")[0];

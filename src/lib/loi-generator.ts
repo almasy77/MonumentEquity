@@ -6,14 +6,16 @@ import {
   HeadingLevel,
   Packer,
   BorderStyle,
+  TabStopType,
 } from "docx";
-import type { Deal, Contact } from "@/lib/validations";
-import type { PurchaseAssumptions } from "@/lib/underwriting";
+import type { Deal, Contact, Scenario } from "@/lib/validations";
+import type { PurchaseAssumptions, FinancingAssumptions, RevenueAssumptions } from "@/lib/underwriting";
 
 interface LOIData {
   deal: Deal;
   purchase: PurchaseAssumptions;
   contacts: Contact[];
+  scenario?: Scenario; // supplies loan type (financing window) + RUBS detection
 }
 
 const H_FONT = "DM Serif Display";
@@ -87,12 +89,27 @@ function daysText(days: number): string {
 }
 
 export async function generateLOI(data: LOIData): Promise<Buffer> {
-  const { deal, purchase, contacts } = data;
+  const { deal, purchase, contacts, scenario } = data;
 
   const price = purchase.bid_price || purchase.loi_amount || purchase.purchase_price;
-  const earnest = purchase.earnest_money || 0;
+  // Earnest money (item 2): honor an explicit override, else size as a % of
+  // price clamped to [min, max]. Default 1%, $25k floor, no cap.
+  const emPct = purchase.earnest_money_pct ?? 0.01;
+  const emMin = purchase.earnest_money_min ?? 25_000;
+  const emComputed = Math.max(emMin, Math.round(price * emPct));
+  const earnest = (purchase.earnest_money && purchase.earnest_money > 0)
+    ? purchase.earnest_money
+    : (purchase.earnest_money_max ? Math.min(emComputed, purchase.earnest_money_max) : emComputed);
   const ddDays = purchase.due_diligence_days || 45;
   const closingDays = purchase.closing_days || 60;
+  // Financing-contingency window (item 3): independent of DD; defaulted by loan
+  // type (agency runs long: appraisal + Phase I + PCA + agency underwriting).
+  const fin = (scenario?.financing_assumptions ?? {}) as Partial<FinancingAssumptions>;
+  const financingDays = fin.financing_contingency_days ?? (
+    fin.loan_type === "bank" || fin.loan_type === "portfolio" ? 60
+      : fin.loan_type === "bridge" || fin.loan_type === "cash" ? 45
+      : 75 // agency or unspecified
+  );
   // Default to today's date when the user hasn't explicitly set one. An explicit
   // value is respected (e.g. backdating, regenerating an existing LOI revision).
   const loiDate = purchase.loi_date || todayLocalISODate();
@@ -104,7 +121,35 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     ? `${contactName(seller)}${seller.company ? `, ${seller.company}` : ""}`
     : "[SELLER NAME]";
 
-  const addr = `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`.trim();
+  // Property address (item 1): ALWAYS from the parcel/site fields, never the
+  // owner mailing address. Print the parcel ID, and the county's alternate site
+  // address when it differs from the marketed address.
+  const baseAddr = `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`.trim();
+  const countyName = deal.county ? `${deal.county} County ` : "";
+  const parcelBit = deal.parcel_number ? `${countyName}Parcel ID ${deal.parcel_number}` : "";
+  const altBit = deal.county_site_address?.trim() && deal.county_site_address.trim() !== deal.address.trim()
+    ? `also identified in county records as ${deal.county_site_address.trim()}`
+    : "";
+  const parens = [parcelBit, altBit].filter(Boolean).join(", ");
+  const addr = parens ? `${baseAddr} (${parens})` : baseAddr;
+  // Data-source guardrail: the property ZIP should come from the parcel, not the
+  // owner's mailing address.
+  if (deal.zip && deal.owner_mailing_address?.includes(deal.zip)) {
+    console.warn(`[LOI] Property ZIP ${deal.zip} also appears in the owner mailing address — verify the site ZIP is from the parcel/listing record, not the owner record.`);
+  }
+
+  // Tax incentive (item 4) + RUBS (item 4b) detection.
+  const incentiveType = deal.incentive_type; // CRA | TIF | PILOT | LIHTC | undefined
+  const grantingAuthority = deal.granting_authority?.trim() || "the applicable granting authority";
+  const isPilot = incentiveType === "TIF" || incentiveType === "PILOT";
+  const incomeRestricted = incentiveType === "LIHTC";
+  const rev = (scenario?.revenue_assumptions ?? {}) as Partial<RevenueAssumptions>;
+  const hasRubs = !!(
+    rev.rubs?.mode === "structured" ||
+    rev.other_income?.line_items?.some((li) => li.kind === "rubs") ||
+    (rev.other_income_sublines?.utility_reimbursement ?? 0) > 0
+  );
+
   const units = deal.units;
   const pType = deal.property_type || "multifamily";
   const state = STATE_NAMES[deal.state] || deal.state;
@@ -112,6 +157,32 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
   const expDate = purchase.loi_expiration
     ? formatDate(purchase.loi_expiration)
     : addDaysDate(loiDate, 10);
+
+  // ── Conditional tax-incentive clauses (item 4) ──
+  const incLabel = incentiveType ?? "";
+  const abatementWord = isPilot ? "incentive (PILOT)" : "tax abatement";
+  const incentiveDeliverables: Paragraph[] = incentiveType
+    ? [bullet(isPilot
+        ? `The executed ${incLabel} agreement and all amendments, the PILOT payment schedule, and all annual compliance filings and correspondence with ${grantingAuthority} regarding the incentive.`
+        : `The executed ${incLabel} tax abatement agreement and all amendments, together with all annual compliance filings, tenant income certifications, and correspondence with ${grantingAuthority} regarding the abatement.`)]
+    : [];
+  // RUBS deliverable — whenever the model carries RUBS income (item 4b).
+  const rubsDeliverable: Paragraph[] = hasRubs
+    ? [bullet(`Utility reimbursement/RUBS billing methodology and trailing 12-month billed-versus-collected detail, together with the lease provisions authorizing the utility pass-through.`)]
+    : [];
+  // Income-restricted lease-audit scope (item 5).
+  const incomeRestrictedDD: Paragraph[] = incomeRestricted
+    ? [bullet(`Tenant income certifications and rent-cap compliance documentation for Buyer's verification (note: utility reimbursements/RUBS count toward the rent cap).`)]
+    : [];
+  const incentiveCondition: Paragraph[] = incentiveType
+    ? [bullet(`Written confirmation from ${grantingAuthority} that the ${incLabel} ${abatementWord} on the Property remains in full force and effect, transfers to and survives conveyance to Buyer, and that Buyer is able to maintain compliance; and that no compliance default, clawback, reduction, or revocation is pending or threatened.`)]
+    : [];
+  const incentiveCovenant: Paragraph[] = incentiveType
+    ? [bullet(`Take or omit any action that would jeopardize, reduce, impair, or accelerate the expiration of the ${incLabel} ${abatementWord}, or cause the Property to fall out of compliance with its terms (including required income certifications and annual filings).`)]
+    : [];
+  const proofOfFunds: Paragraph[] = purchase.attach_proof_of_funds
+    ? [p([n(`Buyer encloses with this Letter of Intent proof of funds and/or a lender pre-qualification evidencing Buyer's financial capability to consummate the transaction.`)], 200)]
+    : [];
 
   const children: Paragraph[] = [
     // Title
@@ -153,7 +224,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     p([
       n(`Within three (3) business days of the full execution of the PSA, Buyer shall deposit `),
       b(fmt(earnest)),
-      n(` as earnest money ("Deposit") into an escrow account with a mutually agreed-upon title company. The Deposit shall be fully refundable during the Due Diligence Period and shall remain refundable to Buyer if (i) Buyer terminates due to title or survey objections that Seller fails to cure, (ii) the Financing Contingency is not satisfied, (iii) Seller defaults under the PSA, or (iv) the conditions precedent in Section 8 are not satisfied. The Deposit shall become non-refundable only upon expiration of the Due Diligence Period and satisfaction or waiver of the Financing Contingency, except as otherwise provided in the PSA.`),
+      n(`${price > 0 ? ` (approximately ${(earnest / price * 100).toFixed(1)}% of the purchase price)` : ""} as earnest money ("Deposit") into an escrow account with a mutually agreed-upon title company. The Deposit shall be fully refundable during the Due Diligence Period and shall remain refundable to Buyer if (i) Buyer terminates due to title or survey objections that Seller fails to cure, (ii) the Financing Contingency is not satisfied, (iii) Seller defaults under the PSA, or (iv) the conditions precedent in Section 8 are not satisfied. The Deposit shall become non-refundable only upon expiration of the Due Diligence Period and satisfaction or waiver of the Financing Contingency, except as otherwise provided in the PSA.`),
     ], 200),
 
     // 3. Due Diligence Period
@@ -165,7 +236,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     // 4. Financing Contingency
     heading("4. Financing Contingency"),
     p([
-      n(`Buyer's obligation to close shall be contingent upon Buyer obtaining acquisition financing on commercially reasonable terms, including a loan-to-value ratio of approximately 65–75% and customary multifamily underwriting terms. Buyer shall use commercially reasonable efforts to secure a loan commitment within ${daysText(ddDays)} days of the Effective Date. If Buyer is unable to obtain a binding loan commitment by such date, Buyer may terminate the PSA and the Deposit shall be returned in full.`),
+      n(`Buyer's obligation to close shall be contingent upon Buyer obtaining acquisition financing on commercially reasonable terms, including a loan-to-value ratio of approximately 65–75% and customary multifamily underwriting terms. Buyer shall use commercially reasonable efforts to secure a loan commitment within ${daysText(financingDays)} days of the Effective Date. If Buyer is unable to obtain a binding loan commitment by such date, Buyer may terminate the PSA and the Deposit shall be returned in full.`),
     ], 200),
 
     // 5. Closing Timeline
@@ -196,6 +267,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("No material adverse change in the physical, financial, or legal condition of the Property between the Effective Date and Closing"),
     bullet("Continued accuracy of Seller's representations and warranties as of Closing"),
     bullet("Receipt of a satisfactory Phase I Environmental Site Assessment and, if recommended, Phase II"),
+    ...incentiveCondition,
     spacer(),
 
     // 9. Seller Deliverables During Due Diligence
@@ -211,6 +283,9 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Utility bills for the trailing 12 months"),
     bullet("Schedule of personal property included in the sale"),
     bullet("Any pending litigation, code violations, or governmental notices affecting the Property"),
+    ...incentiveDeliverables,
+    ...rubsDeliverable,
+    ...incomeRestrictedDD,
     spacer(),
 
     // 10. Operating Covenants During Contract
@@ -222,6 +297,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Apply or refund tenant security deposits other than in the ordinary course"),
     bullet("Encumber the Property with any new lien, mortgage, easement, or restriction"),
     bullet("Settle, compromise, or initiate any litigation affecting the Property"),
+    ...incentiveCovenant,
     spacer(),
 
     // 11. Closing Economics and Prorations
@@ -262,6 +338,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("Lender pre-qualification or term sheet (if financing is used)"),
     bullet("Buyer entity formation documents and authorized signatory evidence"),
     bullet("Brief portfolio summary and prior multifamily transaction history"),
+    ...proofOfFunds,
     spacer(),
 
     // 16. Non-Binding Nature
@@ -287,25 +364,33 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     // Closing
     p([n("We look forward to the opportunity to acquire this property and are prepared to move expeditiously toward a mutually agreeable transaction. Please contact us with any questions.")], 300),
 
-    // Signature
-    p([n("Respectfully submitted,")]),
-    spacer(400),
+    // ── Signature block (item 6) ──
+    // signatureOnNewPage (default true): start the sign-off on a fresh page.
+    new Paragraph({
+      spacing: { before: 400, after: 200 },
+      keepNext: true, keepLines: true, widowControl: true,
+      pageBreakBefore: purchase.signature_on_new_page !== false,
+      children: [n("Respectfully submitted,")],
+    }),
 
-    // Buyer sig
-    sigLine(),
-    p([b("Buyer: "), n(buyer)]),
-    p([b("By: "), ph("[Authorized Signatory Name and Title]")]),
-    p([b("Date: "), n(formatDate(loiDate))], 300),
+    // Buyer block
+    sigRow("Signed:", n("__________________________________"), { before: 400 }),
+    sigRow("Buyer:", n(buyer)),
+    sigRow("By:", ph(`[Authorized Signatory Name and Title]`)),
+    sigRow("Date:", n(formatDate(loiDate)), { after: 300 }),
 
-    // Accepted
-    p([b("ACCEPTED AND AGREED:")]),
-    spacer(400),
-
-    // Seller sig
-    sigLine(),
-    p([b("Seller: "), n(sellerWithCo)]),
-    p([b("By: "), ph("[Authorized Signatory Name and Title]")]),
-    p([b("Date: "), ph("[Date]")]),
+    // Acceptance block
+    new Paragraph({
+      spacing: { before: 400, after: 100 },
+      keepNext: true, keepLines: true, widowControl: true,
+      children: [b("ACCEPTED AND AGREED:")],
+    }),
+    sigRow("Signed:", n("________________________________________")),
+    sigRow("Seller:", n(seller ? sellerWithCo : "________________________________________")),
+    sigRow("By:", n("________________________________________")),
+    pKept([ph("[Authorized Signatory Name and Title]")]),
+    sigRow("Date:", n("________________________________________")),
+    pKept([ph("[Month, Day/Year]")]),
   ];
 
   const doc = new Document({
@@ -337,22 +422,30 @@ function para(
   return new Paragraph({ alignment, spacing, children, border });
 }
 
+// widowControl on every paragraph (item 6b) — no single line orphaned across a
+// page break.
 function p(children: TextRun[], after = 100): Paragraph {
-  return new Paragraph({ spacing: { after }, children });
+  return new Paragraph({ spacing: { after }, widowControl: true, children });
 }
 
+// keepNext on Heading 2 (item 6b) — a section heading never ends a page alone.
 function heading(text: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 200, after: 100 },
+    keepNext: true,
+    widowControl: true,
     children: [new TextRun({ text, bold: true, font: H_FONT, size: 24 })],
   });
 }
 
+// keepLines on list items (item 6b) — a clause does not split across a page.
 function bullet(text: string): Paragraph {
   return new Paragraph({
     bullet: { level: 0 },
     spacing: { after: 50 },
+    keepLines: true,
+    widowControl: true,
     children: [n(text)],
   });
 }
@@ -361,12 +454,23 @@ function spacer(after = 200): Paragraph {
   return new Paragraph({ spacing: { after }, children: [] });
 }
 
-function sigLine(): Paragraph {
+// A signature row: bold label, tab, value — kept together and with the next row
+// so the whole block never splits across a page (item 6).
+function sigRow(label: string, value: TextRun, spacing: { before?: number; after?: number } = {}): Paragraph {
   return new Paragraph({
-    spacing: { after: 50 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000", space: 1 } },
-    children: [],
+    spacing: { after: 100, ...spacing },
+    keepLines: true,
+    keepNext: true,
+    widowControl: true,
+    tabStops: [{ type: TabStopType.LEFT, position: 1440 }],
+    children: [b(label), new TextRun({ text: "\t", font: B_FONT, size: SZ }), value],
   });
+}
+
+// Paragraph kept with the next (for the [name/title] and [date] placeholder
+// lines that follow a signature row).
+function pKept(children: TextRun[]): Paragraph {
+  return new Paragraph({ spacing: { after: 100 }, keepLines: true, keepNext: true, widowControl: true, children });
 }
 
 // ── Number to words ──

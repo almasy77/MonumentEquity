@@ -155,6 +155,13 @@ export const dealSchema = z.object({
   assessed_value: z.number().optional(),
   tax_rate: z.number().optional(), // mill rate
   tax_record_url: z.string().url().optional(), // county tax assessor link
+  // County auditor's site address when it differs from the marketed address
+  // (some parcels are indexed under a different street). Rendered in the LOI.
+  county_site_address: z.string().optional(),
+  // Tax incentive on the parcel — drives conditional LOI clauses.
+  // Free text (CRA / TIF / PILOT / LIHTC) so the inline editor can set it.
+  incentive_type: z.string().optional(),
+  granting_authority: z.string().optional(), // e.g. "the City of Columbus"
 
   // Ownership (who holds title today — distinct from any "seller" contact on a live deal)
   owner_name: z.string().optional(), // owner entity per county records, e.g. "3677 Indianola LLC"

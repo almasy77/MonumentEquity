@@ -89,6 +89,9 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
           <EditableField label="County" value={deal.county || ""} onSave={(v) => updateDeal("county", v)} placeholder="Enter county" />
           <EditableField label="Tax Parcel #" value={deal.parcel_number || ""} onSave={(v) => updateDeal("parcel_number", v)} placeholder="APN / Parcel number" />
+          <EditableField label="County Site Address (alt)" value={deal.county_site_address || ""} onSave={(v) => updateDeal("county_site_address", v)} placeholder="If county indexes a different street" />
+          <EditableField label="Tax Incentive" value={deal.incentive_type || ""} onSave={(v) => updateDeal("incentive_type", v)} placeholder="CRA / TIF / PILOT / LIHTC" />
+          <EditableField label="Granting Authority" value={deal.granting_authority || ""} onSave={(v) => updateDeal("granting_authority", v)} placeholder="e.g. the City of Columbus" />
         </div>
 
         {/* Links row */}
