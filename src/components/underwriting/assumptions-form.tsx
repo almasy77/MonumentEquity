@@ -1747,16 +1747,22 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </div>
                 </div>
 
-                {/* CapEx Reserve + Cost-Seg Study — equity funded at closing
-                    (distinct from annual Replacement Reserve and Capital Reserve) */}
+                {/* Operating Reserve + Cost-Seg Study — cash funded at closing
+                    (distinct from the annual Replacement Reserve and the
+                    Capital Reserve tier). The operating reserve is RETURNED at
+                    exit; the study fee is spent. */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
                   <div>
-                    <CurrencyField label="CapEx Reserve (equity at closing)" tooltip={"Equity funded at closing for renovation shortfalls — e.g. the opening balance of a lender-held replacement-reserve escrow.\n\nStatement: Balance sheet — funded cash (lender-held if escrowed). The replacement-reserve portion is the SAME money as your annual reserve, pre-funded — not a second expense.\nEscrow: If lender-held, kept for the life of the loan and drawn as work completes; balance returned at payoff."} value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
-                    <p className="text-[10px] text-slate-500 mt-0.5">Equity funded at closing for renovation shortfalls</p>
+                    <CurrencyField label="Operating Reserve (funded at closing)" tooltip={"Cash cushion for income shortfalls (vacancy spikes, slow collections, surprise non-capital costs). Funded at closing and counted in equity.\n\nStatement: Balance sheet — a recoverable cash balance, not an expense. It does NOT reduce NOI or modeled cash flow.\nReturned at exit: the unspent balance comes back to equity in the final period (lifts IRR / equity multiple). Distinct from the annual Replacement Reserve, which is consumed."} value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                    <p className="text-[10px] text-slate-500 mt-0.5">Recoverable liquidity cushion — returned to equity at exit.</p>
+                  </div>
+                  <div>
+                    <PctField label="Operating Reserve Yield" value={p.operating_reserve_yield_rate ?? 0} suffix="%/yr" onChange={(v) => { setP({ ...p, operating_reserve_yield_rate: v }); markDirty(); }} />
+                    <p className="text-[10px] text-slate-500 mt-0.5">Optional — interest earned while held. Default 0 (returned flat).</p>
                   </div>
                   <div>
                     <CurrencyField label="Cost-Seg Study (at closing)" value={p.cost_seg_study_cost || 0} onChange={(v) => { setP({ ...p, cost_seg_study_cost: v }); markDirty(); }} />
-                    <p className="text-[10px] text-slate-500 mt-0.5">One-time fee, ~$10K typical; $0 if no study. Uses-of-funds only — not opex/NOI.</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">One-time fee, ~$10K typical; $0 if no study. Spent (not returned); deducted Year-1 on the tax sheet.</p>
                   </div>
                 </div>
 
@@ -2822,7 +2828,25 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                           </select>
                         </div>
                         <PctField label="OpCo Fee Leakage" value={tx.opco_fee_tax_rate} onChange={(v) => updateTx({ opco_fee_tax_rate: v })} />
+                        {(p.cost_seg_study_cost ?? 0) > 0 && (
+                          <div>
+                            <Label className="text-xs text-slate-400">Cost-Seg Fee Treatment</Label>
+                            <select
+                              value={tx.cost_seg_fee_tax_treatment ?? "expense_year1"}
+                              onChange={(e2) => updateTx({ cost_seg_fee_tax_treatment: e2.target.value as "expense_year1" | "capitalize_amortize" })}
+                              className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                            >
+                              <option value="expense_year1">Expense Year 1 (§162)</option>
+                              <option value="capitalize_amortize">Capitalize / amortize 15 yr</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
+                      {(p.cost_seg_study_cost ?? 0) > 0 && (
+                        <p className="text-[10px] text-slate-500">
+                          The ${(p.cost_seg_study_cost ?? 0).toLocaleString()} cost-seg study fee (in Closing Costs) is deducted here as a §162 professional fee — separate from the depreciation shield, run through the same REPS/§461(l) usability gate. Default: expense in Year 1 (confirm treatment with CPA).
+                        </p>
+                      )}
 
                       <div className="flex flex-wrap items-center gap-5">
                         <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">

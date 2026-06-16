@@ -58,6 +58,10 @@ export interface TaxAssumptions {
   // exit
   exit_via_1031: boolean; // true → no gain/recapture tax modeled
   personal_property_worthless_at_exit: boolean; // true
+  // cost-seg study fee tax treatment (the fee itself lives in uses-of-funds as
+  // purchase.cost_seg_study_cost). expense_year1 = §162 professional fee
+  // deducted in full in Year 1 (default); capitalize_amortize = 15-yr SL.
+  cost_seg_fee_tax_treatment?: "expense_year1" | "capitalize_amortize";
 }
 
 export const TAX_DEFAULTS: TaxAssumptions = {
@@ -78,6 +82,7 @@ export const TAX_DEFAULTS: TaxAssumptions = {
   ebl_cap_mfj: 512_000,
   exit_via_1031: true,
   personal_property_worthless_at_exit: true,
+  cost_seg_fee_tax_treatment: "expense_year1",
 };
 
 // ─── Outputs ─────────────────────────────────────────────────
@@ -113,6 +118,8 @@ export interface TaxResult {
   after_tax_irr_household: number | null;
   year1_federal_shield: number; // positive $ benefit in year 1 (0 if REPS off)
   year1_state_shield: number;
+  cost_seg_fee_deduction_total: number; // total study-fee deduction taken over the hold
+  cost_seg_fee_shield: number; // memo: that deduction × combined ordinary rate (gate-open reference)
   pal_carryforward_at_exit: number; // NOT released by the 1031 — deferred value
   deferred_gain_memo: DeferredGainMemo;
 }
@@ -141,6 +148,7 @@ export interface TaxLayerContext {
   annual: AnnualSummary[];
   totalEquity: number;
   netSaleProceeds: number; // pre-tax (1031 — stays pre-tax)
+  returnOfOperatingReserve: number; // recoverable reserve returned at exit (return of capital — non-taxable)
   exitValue: number;
   sellingCosts: number;
   originationFee: number;
@@ -169,10 +177,19 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     acquisitionCosts = purchase.purchase_price * (purchase.closing_cost_rate || 0);
   }
 
-  // Cost-seg study fee (spec Part 1): deductible as a Year-1 professional fee.
-  // Immaterial vs. the depreciation shield, but kept honest. NOT capitalized
-  // to basis and NOT in NOI — it's a transaction cost in uses-of-funds.
-  const costSegFeeY1 = purchase.cost_seg_study_cost || 0;
+  // Cost-seg study FEE deduction (operating-reserve-return spec Part 2):
+  // §162 professional fee. expense_year1 → full deduction in Year 1; or 15-yr
+  // straight-line if capitalize_amortize. NOT added to depreciable basis (it's
+  // the cost of the study, not the building) and NOT in NOI — the cash already
+  // sits in uses-of-funds. Runs through the SAME usability gate as depreciation
+  // because it lands inside taxable income below.
+  const costSegFee = purchase.cost_seg_study_cost || 0;
+  const costSegTreatment = tax.cost_seg_fee_tax_treatment ?? "expense_year1";
+  const costSegFeeDeductionForYear = (y: number): number =>
+    costSegTreatment === "capitalize_amortize"
+      ? (y <= 15 ? costSegFee / 15 : 0)
+      : (y === 1 ? costSegFee : 0);
+  let costSegFeeDeductedTotal = 0;
 
   // ── Basis & buckets (§6): land carve-out FIRST, cost-seg on improvement basis ──
   const totalCostBasis = purchase.purchase_price + acquisitionCosts;
@@ -263,13 +280,17 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
       ? Math.max(0, ctx.originationFee - finAmortAnnual * (y - 1))
       : finAmortAnnual;
 
-    // Year-1 deductions: prepaids/prorations + the cost-seg study fee.
-    const prepaids = y === 1 ? prepaidDeductionY1 + costSegFeeY1 : 0;
+    // Year-1 deductions: prepaids/prorations. The cost-seg study fee is a
+    // separate deduction line (Year-1 or amortized) folded into taxable income
+    // alongside depreciation so it runs through the same gate.
+    const prepaids = y === 1 ? prepaidDeductionY1 : 0;
+    const costSegFeeDed = costSegFeeDeductionForYear(y);
+    costSegFeeDeductedTotal += costSegFeeDed;
     const capexExpDeduction = capexExpensed;
 
-    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − expensed repairs
-    const tiFed = a.noi - a.interest_paid - fedDep - finAmort - prepaids - capexExpDeduction;
-    const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - capexExpDeduction;
+    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − study fee − expensed repairs
+    const tiFed = a.noi - a.interest_paid - fedDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction;
+    const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction;
 
     // ── Federal loss routing: REPS → §461(l) → NOL ──
     let fedTax = 0;
@@ -352,10 +373,12 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
   const deferredGain = Math.max(0, ctx.exitValue - ctx.sellingCosts - adjustedBasis);
 
   // After-tax IRRs: equity out, after-tax CFs, exit proceeds (pre-tax per 1031) in final year.
+  // Exit proceeds + return of the operating reserve (return of capital —
+  // non-taxable) land in the final period of both after-tax IRRs.
   const flowsPropco = [-ctx.totalEquity, ...atcfPropco];
-  flowsPropco[flowsPropco.length - 1] += ctx.netSaleProceeds;
+  flowsPropco[flowsPropco.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
   const flowsHousehold = [-ctx.totalEquity, ...atcfHousehold];
-  flowsHousehold[flowsHousehold.length - 1] += ctx.netSaleProceeds;
+  flowsHousehold[flowsHousehold.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
 
   const y1 = years[0];
 
@@ -365,6 +388,11 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     after_tax_irr_household: calculateIRR(flowsHousehold),
     year1_federal_shield: y1 && y1.federal_tax < 0 ? -y1.federal_tax : 0,
     year1_state_shield: y1 && y1.state_tax < 0 ? -y1.state_tax : 0,
+    cost_seg_fee_deduction_total: costSegFeeDeductedTotal,
+    // Memo (gate-open reference): the fee deduction × the combined ordinary
+    // rate. The ACTUAL benefit is already inside the after-tax IRR, gated by
+    // REPS/§461(l) like the depreciation shield.
+    cost_seg_fee_shield: costSegFeeDeductedTotal * (fedRate + stateRate),
     pal_carryforward_at_exit: palCFFed, // a 1031 is NOT a fully-taxable disposition — PALs stay suspended
     deferred_gain_memo: {
       deferred_gain: deferredGain,
