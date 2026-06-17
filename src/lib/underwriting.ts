@@ -36,6 +36,11 @@ export interface PurchaseAssumptions {
   // Persisted key stays `capex_reserve` for back-compat with saved scenarios.
   capex_reserve?: number;
   operating_reserve_yield_rate?: number; // optional yield while held (default 0 → returned flat)
+  // Auto-size the operating reserve to N months of carry (debt service +
+  // operating expenses) — a typical agency-style liquidity reserve. When
+  // "auto", the UI keeps capex_reserve synced to the computed figure.
+  operating_reserve_mode?: "manual" | "auto"; // default manual
+  operating_reserve_months?: number; // default 6 (months of carry) when auto
   cost_seg_study_cost?: number; // Cost-seg study fee — one-time cash at closing (uses-of-funds only; not opex/NOI). Default 0.
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)

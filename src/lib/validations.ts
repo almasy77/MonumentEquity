@@ -166,6 +166,7 @@ export const dealSchema = z.object({
   // Ownership (who holds title today — distinct from any "seller" contact on a live deal)
   owner_name: z.string().optional(), // owner entity per county records, e.g. "3677 Indianola LLC"
   owner_since: z.string().optional(), // acquisition date per county records (ISO date)
+  owner_acquisition_price: z.number().optional(), // price the current owner paid (county sale record)
   owner_mailing_address: z.string().optional(), // mailing address per county records
   owner_notes: z.string().optional(), // e.g. "estate sale likely", "out-of-state owner"
 

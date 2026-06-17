@@ -640,6 +640,8 @@ function ScenarioAnalysis({
         dealCity={deal.city}
         dealRentRoll={deal.rent_roll}
         year1Revenue={result.annual[0] ? result.annual[0].gpr + result.annual[0].other_income : undefined}
+        year1DebtService={result.annual[0]?.debt_service}
+        year1Opex={result.annual[0]?.total_opex}
       />
 
       {/* Pro Forma */}
