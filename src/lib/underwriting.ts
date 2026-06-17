@@ -29,7 +29,13 @@ export interface PurchaseAssumptions {
   closing_cost_rate: number; // % of purchase price
   closing_cost_mode?: ClosingCostMode; // "rate" uses closing_cost_rate, "itemized" uses breakdown sum (default: "rate")
   closing_cost_breakdown?: ClosingCostBreakdown;
-  capex_reserve?: number; // Additional equity funded at closing to cover renovation CapEx shortfalls
+  // Operating / liquidity reserve funded at closing (UI label: "Operating
+  // Reserve (funded at closing)"). It is RECOVERABLE cash held for liquidity —
+  // counted in equity at t0 AND returned to the investor at exit (unspent
+  // balance). Distinct from the annual Replacement Reserve, which is consumed.
+  // Persisted key stays `capex_reserve` for back-compat with saved scenarios.
+  capex_reserve?: number;
+  operating_reserve_yield_rate?: number; // optional yield while held (default 0 → returned flat)
   cost_seg_study_cost?: number; // Cost-seg study fee — one-time cash at closing (uses-of-funds only; not opex/NOI). Default 0.
   earnest_money: number; // Metadata only — tracked for deal terms but not used in equity/cash flow calculations (earnest money is credited at closing, not additive to total equity)
   // Scenario-level deal terms (metadata, not used in calculations)
@@ -735,6 +741,7 @@ export interface DealMetrics {
   exit_value: number;
   exit_noi: number;
   net_sale_proceeds: number;
+  return_of_operating_reserve: number; // recoverable operating reserve returned at exit
   total_profit: number;
 }
 
@@ -1103,7 +1110,14 @@ export function calculateUnderwriting(
   );
 
   const netSaleProceeds = exitValue - sellingCosts - loanBalance;
-  const totalDistributions = cumulativeCF + netSaleProceeds;
+  // Return of the operating reserve at exit (operating-reserve-return spec):
+  // the reserve funded at closing is recoverable cash, so the unspent balance
+  // (full amount in the base case, optionally grown by a yield) comes back to
+  // equity in the final period — a SEPARATE terminal line, not folded into the
+  // sale proceeds, so the waterfall stays auditable.
+  const operatingReserveYield = purchase.operating_reserve_yield_rate ?? 0;
+  const returnOfOperatingReserve = capexReserve * Math.pow(1 + operatingReserveYield, exit.hold_period_years);
+  const totalDistributions = cumulativeCF + netSaleProceeds + returnOfOperatingReserve;
   const totalProfit = totalDistributions - totalEquity;
 
   // ── Metrics ──
@@ -1112,11 +1126,12 @@ export function calculateUnderwriting(
   const goingInCap = purchase.purchase_price > 0 ? year1NOI / purchase.purchase_price : 0;
   const stabilizedCap = purchase.purchase_price > 0 ? stabilizedNOI / purchase.purchase_price : 0;
 
-  // IRR: cash flows = [-equity, annual CF year 1..N-1, annual CF year N + net sale proceeds]
+  // IRR: cash flows = [-equity, annual CF year 1..N-1, annual CF year N + net
+  // sale proceeds + return of operating reserve]
   const irrFlows: number[] = [-totalEquity];
   for (let y = 0; y < annual.length; y++) {
     if (y === annual.length - 1) {
-      irrFlows.push(annual[y].cash_flow + netSaleProceeds);
+      irrFlows.push(annual[y].cash_flow + netSaleProceeds + returnOfOperatingReserve);
     } else {
       irrFlows.push(annual[y].cash_flow);
     }
@@ -1186,6 +1201,7 @@ export function calculateUnderwriting(
     exit_value: exitValue,
     exit_noi: lastYearNOI,
     net_sale_proceeds: netSaleProceeds,
+    return_of_operating_reserve: returnOfOperatingReserve,
     total_profit: totalProfit,
   };
 
@@ -1375,6 +1391,7 @@ export function calculateUnderwriting(
         annual,
         totalEquity,
         netSaleProceeds,
+        returnOfOperatingReserve,
         exitValue,
         sellingCosts,
         originationFee,
@@ -2092,11 +2109,13 @@ function buildSensitivityGrid(
       }
       const netProceeds = exitVal * (1 - adjustedInputs.exit.selling_cost_rate) -
         result.loanBalance;
+      // Return of the operating reserve at exit (matches the headline IRR).
+      const sensReserveReturn = adjustedCapexReserve * Math.pow(1 + (adjustedInputs.purchase.operating_reserve_yield_rate ?? 0), adjustedInputs.exit.hold_period_years);
 
       const irrFlows: number[] = [-adjustedEquity];
       for (let y = 0; y < result.annualCashFlows.length; y++) {
         if (y === result.annualCashFlows.length - 1) {
-          irrFlows.push(result.annualCashFlows[y] + netProceeds);
+          irrFlows.push(result.annualCashFlows[y] + netProceeds + sensReserveReturn);
         } else {
           irrFlows.push(result.annualCashFlows[y]);
         }

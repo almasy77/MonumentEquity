@@ -209,7 +209,7 @@ function buildSummarySheet(
   }
 
   const totalCF = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-  const totalDistributions = totalCF + m.net_sale_proceeds;
+  const totalDistributions = totalCF + m.net_sale_proceeds + m.return_of_operating_reserve;
   const equityMultiple = m.total_equity > 0 ? totalDistributions / m.total_equity : 0;
 
   addLabelValueWithHurdle(ws, "IRR", m.irr ?? 0, PCT_FMT, 0.15, true);
@@ -225,7 +225,7 @@ function buildSummarySheet(
   addLabelValue(ws, "Purchase Price", m.purchase_price, CURRENCY_FMT);
   addLabelValue(ws, "Closing Costs", m.closing_costs, CURRENCY_FMT);
   addLabelValue(ws, "Origination Fee", m.origination_fee, CURRENCY_FMT);
-  addLabelValue(ws, "CapEx Reserve (equity at closing)", m.capex_reserve, CURRENCY_FMT);
+  addLabelValue(ws, "Operating Reserve (funded at closing)", m.capex_reserve, CURRENCY_FMT);
   if (m.cost_seg_study_cost > 0) {
     addLabelValue(ws, "Cost-Seg Study (at closing)", m.cost_seg_study_cost, CURRENCY_FMT);
   }
@@ -249,6 +249,9 @@ function buildSummarySheet(
   addLabelValue(ws, "Exit Value", m.exit_value, CURRENCY_FMT);
   addLabelValue(ws, "Exit NOI", m.exit_noi, CURRENCY_FMT);
   addLabelValue(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
+  if (m.return_of_operating_reserve > 0) {
+    addLabelValue(ws, "Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
+  }
   addLabelValue(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
 
   // Exit Detail (fix-spec Phase 3.1) — makes the exit method legible so the
@@ -636,7 +639,7 @@ function buildReturnsSheet(
   const m = result.metrics;
 
   const totalCF = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-  const totalDistributions = totalCF + m.net_sale_proceeds;
+  const totalDistributions = totalCF + m.net_sale_proceeds + m.return_of_operating_reserve;
   const equityMultiple = m.total_equity > 0 ? totalDistributions / m.total_equity : 0;
 
   addSectionHeader(ws, "Return Metrics", 2);
@@ -654,6 +657,9 @@ function buildReturnsSheet(
   addMetricRow(ws, "Total Equity Invested", m.total_equity, CURRENCY_FMT);
   addMetricRow(ws, "Total Cash Flow", totalCF, CURRENCY_FMT);
   addMetricRow(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
+  if (m.return_of_operating_reserve > 0) {
+    addMetricRow(ws, "Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
+  }
   addMetricRow(ws, "Total Distributions", totalDistributions, CURRENCY_FMT);
   addMetricRow(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
 
@@ -915,6 +921,29 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
   addValidationRow(ws, "IRR Calculated", m.irr !== null, m.irr !== null ? `${(m.irr * 100).toFixed(1)}%` : "Could not converge");
   addValidationRow(ws, "Equity Multiple > 1.0x", m.equity_multiple > 1.0, `${m.equity_multiple.toFixed(2)}x`);
   addValidationRow(ws, "Positive Net Sale Proceeds", m.net_sale_proceeds > 0, `$${Math.round(m.net_sale_proceeds).toLocaleString()}`);
+
+  // Operating reserve return (operating-reserve-return spec). The reserve is
+  // counted in equity at t0 and returned at exit; in the base case (no yield)
+  // the return equals the funded amount exactly.
+  {
+    const funded = inputs.purchase.capex_reserve || 0;
+    if (funded > 0) {
+      const yieldRate = inputs.purchase.operating_reserve_yield_rate ?? 0;
+      const ok = m.return_of_operating_reserve >= funded - 1; // returned at least funded
+      addValidationRow(
+        ws,
+        "Operating reserve returned at exit",
+        ok,
+        yieldRate > 0
+          ? `funded $${Math.round(funded).toLocaleString()} → returned $${Math.round(m.return_of_operating_reserve).toLocaleString()} (incl. ${(yieldRate * 100).toFixed(1)}% yield)`
+          : `funded $${Math.round(funded).toLocaleString()} returned in full (no yield)`,
+      );
+      // Distributions tie-out: Σ CF + net proceeds + reserve return.
+      const cfSum = result.annual.reduce((s, a) => s + a.cash_flow, 0);
+      const dist = cfSum + m.net_sale_proceeds + m.return_of_operating_reserve;
+      addValidationRow(ws, "Distributions = Σ CF + net proceeds + reserve return", true, `total $${Math.round(dist).toLocaleString()} (CF ${Math.round(cfSum).toLocaleString()} + proceeds ${Math.round(m.net_sale_proceeds).toLocaleString()} + reserve ${Math.round(m.return_of_operating_reserve).toLocaleString()})`);
+    }
+  }
 
   // Bid vs Purchase consistency (FIX: bid-price desync). PASS when the scenario
   // bid equals the modeled purchase price (the normal flow), or no bid is set.
