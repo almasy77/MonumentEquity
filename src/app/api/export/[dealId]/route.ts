@@ -57,7 +57,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   const result = calculateUnderwriting(inputs);
 
   // Generate Excel
-  const buffer = await generateExcelWorkbook(deal, scenario.name, inputs, result);
+  const buffer = await generateExcelWorkbook(deal, scenario.name, inputs, result, (scenario as Record<string, unknown>).notes as string | undefined);
 
   // Build filename
   const safeName = deal.address.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
