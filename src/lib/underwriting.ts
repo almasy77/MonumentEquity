@@ -46,6 +46,15 @@ export interface PurchaseAssumptions {
   due_diligence_days?: number;
   closing_days?: number;
   buyer_entity?: string;
+  // LOI earnest-money sizing (loi-template-fixes). When earnest_money is left 0,
+  // the LOI computes clamp(price × pct, min, max). An explicit earnest_money
+  // override (> 0) is honored as-is.
+  earnest_money_pct?: number; // default 0.01 (1%)
+  earnest_money_min?: number; // default 25000
+  earnest_money_max?: number; // optional cap
+  // LOI polish toggles
+  attach_proof_of_funds?: boolean; // attach POF/pre-qual to the LOI itself
+  signature_on_new_page?: boolean; // default true — page-break before the signature block
 }
 
 export interface FinancingAssumptions {
@@ -60,6 +69,8 @@ export interface FinancingAssumptions {
   // during an IO period). Set size_to_dscr=false to model LTV-only proceeds.
   size_to_dscr?: boolean; // default true
   dscr_floor?: number; // default 1.25
+  loan_type?: "agency" | "bank" | "portfolio" | "bridge" | "cash"; // drives the LOI financing-contingency window
+  financing_contingency_days?: number; // explicit override; else defaulted by loan_type
 }
 
 // Per-unit detail for a unit-mix row (spec B2 / ramp Phase 2). When present,
