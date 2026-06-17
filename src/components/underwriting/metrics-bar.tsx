@@ -74,6 +74,14 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
       value: fmt(metrics.net_sale_proceeds, "money"),
       color: metrics.net_sale_proceeds > 0 ? "text-green-400" : "text-red-400",
     },
+    // Shown only when an operating reserve is funded — confirms it's returned
+    // to equity at exit (the offset that lifts IRR / equity multiple).
+    ...(metrics.return_of_operating_reserve > 0 ? [{
+      label: "Reserve Returned",
+      title: "Operating reserve returned to equity at exit (return of capital — lifts IRR & equity multiple)",
+      value: fmt(metrics.return_of_operating_reserve, "money"),
+      color: "text-green-400",
+    }] : []),
   ];
 
   return (
