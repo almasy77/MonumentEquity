@@ -85,14 +85,15 @@ export async function generateExcelWorkbook(
   deal: Deal,
   scenarioName: string,
   inputs: ScenarioInputs,
-  result: UnderwritingResult
+  result: UnderwritingResult,
+  scenarioNotes?: string,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Monument Equity";
   wb.created = new Date();
 
   const reconChecks = computeReconciliationChecks(deal, inputs, result);
-  buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks);
+  buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks, scenarioNotes);
   buildAssumptionsSheet(wb, inputs, result);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
   buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
@@ -156,6 +157,7 @@ function buildSummarySheet(
   result: UnderwritingResult,
   inputs: ScenarioInputs,
   reconChecks: ReconciliationCheck[],
+  scenarioNotes?: string,
 ) {
   const ws = wb.addWorksheet("Summary");
   ws.columns = [{ width: 28 }, { width: 18 }, { width: 14 }, { width: 28 }, { width: 18 }];
@@ -293,6 +295,13 @@ function buildSummarySheet(
     addLabelValue(ws, "Tax Scenario In Force", result.property_tax_vectors?.scenario_in_force ?? "legacy/none");
     addLabelValue(ws, "App Version (git)", process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev");
     addLabelValue(ws, "Generated", new Date().toISOString());
+    if (scenarioNotes?.trim()) {
+      const nr = ws.addRow(["Scenario Notes", scenarioNotes.trim()]);
+      nr.getCell(1).font = BOLD_FONT;
+      nr.getCell(2).alignment = { wrapText: true, vertical: "top" };
+      ws.mergeCells(`B${nr.number}:E${nr.number}`);
+      nr.height = 48;
+    }
   }
 
   // Depreciation (if available)

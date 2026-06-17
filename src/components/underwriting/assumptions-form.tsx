@@ -1100,6 +1100,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [dep, setDep] = useState(depreciation);
   const taxInitial = ((scenario as Record<string, unknown>).tax_assumptions ?? undefined) as TaxAssumptions | undefined;
   const [tx, setTx] = useState<TaxAssumptions | undefined>(taxInitial);
+  const [notes, setNotes] = useState<string>(((scenario as Record<string, unknown>).notes as string) ?? "");
   const [dirty, setDirty] = useState(false); // edits not yet autosaved
   const [saving, setSaving] = useState(false); // autosave in flight
   const [kpisStale, setKpisStale] = useState(false); // edits since last KPI refresh
@@ -1171,6 +1172,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     setEx(exit);
     setDep(depreciation);
     setTx(taxInitial);
+    setNotes(((scenario as Record<string, unknown>).notes as string) ?? "");
     setDirty(false);
     setSaving(false);
     setKpisStale(false);
@@ -1215,6 +1217,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       exit_assumptions: ex,
       depreciation_assumptions: dep,
       tax_assumptions: tx ?? null,
+      notes,
     };
   }
 
@@ -1621,6 +1624,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        {/* Scenario notes & rationale — why this scenario differs (assumptions,
+            strategy, risks). Autosaves with the rest; does not affect KPIs. */}
+        <Section title="Scenario Notes & Rationale" defaultOpen={!!notes}>
+          <textarea
+            value={notes}
+            onChange={(e) => { setNotes(e.target.value); markDirty(); }}
+            rows={3}
+            placeholder="Why this scenario? Key assumptions, strategy, and risks — e.g. 'Upside: market rents on turn + 100% RUBS recovery; assumes 18-mo lease-up.'"
+            className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-sm text-white placeholder:text-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors resize-y"
+          />
+        </Section>
+
         {/* Bid & LOI — moved to top */}
         <Section title="Bid & LOI" defaultOpen>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

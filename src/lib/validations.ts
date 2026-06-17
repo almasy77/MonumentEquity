@@ -342,6 +342,7 @@ export const scenarioSchema = z.object({
   type: z.enum(SCENARIO_TYPES),
   version: z.number().int().default(1),
   is_active: z.boolean().default(true),
+  notes: z.string().optional(), // rationale / thinking behind this scenario
 
   purchase_assumptions: z.record(z.string(), z.unknown()).default({}),
   financing_assumptions: z.record(z.string(), z.unknown()).default({}),

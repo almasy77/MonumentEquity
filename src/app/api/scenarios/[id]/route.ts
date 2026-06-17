@@ -83,6 +83,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       name: body.name ?? existing.name,
       type: body.type ?? existing.type,
       is_active: body.is_active ?? existing.is_active,
+      notes: body.notes !== undefined ? body.notes : (existing as Record<string, unknown>).notes,
       purchase_assumptions: body.purchase_assumptions ?? existing.purchase_assumptions,
       financing_assumptions: body.financing_assumptions ?? existing.financing_assumptions,
       revenue_assumptions: body.revenue_assumptions ?? existing.revenue_assumptions,
