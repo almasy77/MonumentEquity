@@ -29,7 +29,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
   async function updateDeal(field: string, value: string) {
     let parsed: unknown = value;
     const numericFields = [
-      "units", "year_built", "square_footage", "asking_price",
+      "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -125,6 +125,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <EditableField label="Owner Entity" value={deal.owner_name || ""} onSave={(v) => updateDeal("owner_name", v)} placeholder="e.g. 3677 Indianola LLC" />
           <EditableField label="Owned Since" value={deal.owner_since || ""} onSave={(v) => updateDeal("owner_since", v)} type="date" placeholder="Acquisition date" />
+          <EditableField label="Acquired For" value={deal.owner_acquisition_price?.toString() || ""} onSave={(v) => updateDeal("owner_acquisition_price", v)} type="number" prefix="$" placeholder="Price owner paid (county sale record)" />
           <EditableField label="Owner Mailing Address" value={deal.owner_mailing_address || ""} onSave={(v) => updateDeal("owner_mailing_address", v)} placeholder="Per county records" />
           <EditableField label="Ownership Notes" value={deal.owner_notes || ""} onSave={(v) => updateDeal("owner_notes", v)} placeholder="e.g. out-of-state owner" />
         </div>

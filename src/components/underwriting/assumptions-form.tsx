@@ -22,6 +22,8 @@ interface Props {
   dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
   dealRentRoll?: RentRollUnit[]; // deal-level imported rent roll — source for per-unit rows (spec B2)
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
+  year1DebtService?: number; // engine year-1 debt service (annual $) — feeds the auto operating reserve
+  year1Opex?: number; // engine year-1 operating expenses (annual $) — feeds the auto operating reserve
 }
 
 // ─── Per-unit rows (spec B2 / ramp Phase 2) ───
@@ -1079,7 +1081,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, year1Revenue }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, year1Revenue, year1DebtService, year1Opex }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -1184,6 +1186,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     setDirty(true);
     setKpisStale(true);
   }
+
+  // Auto-sized operating reserve (months of carry = debt service + operating
+  // expenses, a typical agency-style liquidity reserve). Carry comes from the
+  // last engine result; when mode = "auto" we keep capex_reserve synced to the
+  // computed figure so the engine (equity, exit return) uses it consistently.
+  const orMode = p.operating_reserve_mode ?? "manual";
+  const orMonths = p.operating_reserve_months ?? 6;
+  const orMonthlyCarry = (year1DebtService != null && year1Opex != null)
+    ? (year1DebtService + year1Opex) / 12
+    : 0;
+  const orAuto = Math.round(orMonths * orMonthlyCarry);
+  useEffect(() => {
+    if (orMode === "auto" && orMonthlyCarry > 0 && Math.abs((p.capex_reserve || 0) - orAuto) >= 1) {
+      setP((prev) => ({ ...prev, capex_reserve: orAuto }));
+      markDirty();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orMode, orMonths, orAuto, orMonthlyCarry]);
 
   function buildUpdates() {
     return {
@@ -1767,10 +1787,37 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     (distinct from the annual Replacement Reserve and the
                     Capital Reserve tier). The operating reserve is RETURNED at
                     exit; the study fee is spent. */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-700 pt-3 items-start">
                   <div>
-                    <CurrencyField label="Operating Reserve (funded at closing)" tooltip={"Cash cushion for income shortfalls (vacancy spikes, slow collections, surprise non-capital costs). Funded at closing and counted in equity.\n\nStatement: Balance sheet — a recoverable cash balance, not an expense. It does NOT reduce NOI or modeled cash flow.\nReturned at exit: the unspent balance comes back to equity in the final period (lifts IRR / equity multiple). Distinct from the annual Replacement Reserve, which is consumed."} value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
-                    <p className="text-[10px] text-slate-500 mt-0.5">Recoverable liquidity cushion — returned to equity at exit.</p>
+                    {orMode === "auto" ? (
+                      <>
+                        <Label className="text-xs text-slate-400 flex items-center">Operating Reserve (auto)<InfoDot tip={"Auto-sized to N months of carry (debt service + operating expenses) — a typical agency-style liquidity reserve. Recoverable: returned to equity at exit. Carry uses the last computed result; hit Refresh KPIs after changing the loan or expenses."} /></Label>
+                        <div className="bg-slate-800/40 border border-slate-800 rounded-md text-sm h-8 px-3 flex items-center text-emerald-400 tabular-nums">{fmtCurrency(orAuto)}</div>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{orMonths} mo × {fmtCurrency(Math.round(orMonthlyCarry))}/mo carry{orMonthlyCarry === 0 ? " — refresh KPIs to size" : ""}</p>
+                      </>
+                    ) : (
+                      <>
+                        <CurrencyField label="Operating Reserve (funded at closing)" tooltip={"Cash cushion for income shortfalls (vacancy spikes, slow collections, surprise non-capital costs). Funded at closing and counted in equity.\n\nStatement: Balance sheet — a recoverable cash balance, not an expense. It does NOT reduce NOI or modeled cash flow.\nReturned at exit: the unspent balance comes back to equity in the final period (lifts IRR / equity multiple). Distinct from the annual Replacement Reserve, which is consumed."} value={p.capex_reserve || 0} onChange={(v) => { setP({ ...p, capex_reserve: v }); markDirty(); }} />
+                        <p className="text-[10px] text-slate-500 mt-0.5">Recoverable liquidity cushion — returned to equity at exit.</p>
+                      </>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-400">Reserve Sizing</Label>
+                    <select
+                      value={orMode}
+                      onChange={(e) => { setP({ ...p, operating_reserve_mode: e.target.value as "manual" | "auto" }); markDirty(); }}
+                      className="bg-slate-800 border border-slate-700 text-white text-sm h-8 rounded px-2 w-full"
+                    >
+                      <option value="manual">Manual entry</option>
+                      <option value="auto">Auto (months of carry)</option>
+                    </select>
+                    {orMode === "auto" && (
+                      <div className="mt-1">
+                        <NumField label="Months of Carry" value={orMonths} suffix="mo" onChange={(v) => { setP({ ...p, operating_reserve_months: Math.max(0, v) }); markDirty(); }} />
+                        <p className="text-[10px] text-slate-500 mt-0.5">Agency liquidity ≈ 6 mo of DS + opex.</p>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <PctField label="Operating Reserve Yield" value={p.operating_reserve_yield_rate ?? 0} suffix="%/yr" onChange={(v) => { setP({ ...p, operating_reserve_yield_rate: v }); markDirty(); }} />
