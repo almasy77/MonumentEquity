@@ -9,6 +9,7 @@
 
 import ExcelJS from "exceljs";
 import type { Deal } from "./validations";
+import { applyCapexToggles } from "./underwriting";
 import type {
   ScenarioInputs,
   UnderwritingResult,
@@ -807,7 +808,10 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
   }
 }
 
-function buildCapexSheet(wb: ExcelJS.Workbook, capex: ScenarioInputs["capex"]) {
+function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]) {
+  // Document the MODELED capex — disabled per-unit / named projects are excluded
+  // (matches the engine), so the sheet totals tie to the headline numbers.
+  const capex = applyCapexToggles(rawCapex);
   const ws = wb.addWorksheet("CapEx Schedule");
   ws.columns = [{ width: 24 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }];
 

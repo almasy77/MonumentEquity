@@ -331,6 +331,7 @@ export const capexProjectSchema = z.object({
   start_month: z.number().int().min(1),
   duration_months: z.number().int().min(1),
   category: z.string().optional(),
+  enabled: z.boolean().optional(), // default true; false → excluded from cost/cash flow without deleting
 });
 
 export type CapexProject = z.infer<typeof capexProjectSchema>;
@@ -352,6 +353,7 @@ export const scenarioSchema = z.object({
     .object({
       per_unit_cost: z.number().optional(),
       units_to_renovate: z.number().optional(),
+      per_unit_enabled: z.boolean().optional(), // default true; false → per-unit reno program off (no cost/premium/downtime)
       units_per_month: z.number().optional(),
       renovation_start_month: z.number().optional(),
       renovation_end_month: z.number().optional(),
