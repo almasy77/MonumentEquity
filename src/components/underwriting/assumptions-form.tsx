@@ -1317,6 +1317,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     markDirty();
   }
 
+  // Toggle a named project in/out of the model without deleting it (A/B impact).
+  function toggleProject(index: number) {
+    const updated = [...projects];
+    const isOn = updated[index].enabled !== false;
+    updated[index] = { ...updated[index], enabled: !isOn };
+    setC({ ...c, projects: updated });
+    markDirty();
+  }
+
   const totalUnits = unitMix.reduce((sum, u) => sum + u.count, 0);
 
   const subtotalUnits = totalUnits;
@@ -2512,9 +2521,23 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const span = Math.max(1, endMo - startMo + 1);
             const derivedUPM = c.units_to_renovate > 0 ? (c.units_to_renovate / span) : 0;
             const downtimeEnabled = c.renovation_downtime_enabled || false;
+            const perUnitOn = c.per_unit_enabled !== false; // default on
             return (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Include / exclude the whole per-unit reno program (cost +
+                    renovation rent premium + downtime) without deleting inputs. */}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setC({ ...c, per_unit_enabled: !perUnitOn }); markDirty(); }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${perUnitOn ? "bg-blue-600" : "bg-slate-700"}`}
+                    title={perUnitOn ? "Renovation program ON — included in the model" : "Renovation program OFF — excluded (no cost, rent premium, or downtime)"}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${perUnitOn ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                  <span className="text-xs text-slate-400">{perUnitOn ? "Renovation program ON" : "Renovation program OFF — excluded from the model"}</span>
+                </div>
+                <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 ${perUnitOn ? "" : "opacity-50"}`}>
                   <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
                   <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
                   <NumField label="Start Month" value={startMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
@@ -2522,7 +2545,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 </div>
                 <div className="flex items-center gap-4 text-xs text-slate-400">
                   <span>Units / Month: <span className="text-white font-medium">{derivedUPM % 1 === 0 ? derivedUPM : derivedUPM.toFixed(1)}</span></span>
-                  <span>Total CapEx: <span className="text-white font-medium">{fmtCurrency(c.per_unit_cost * c.units_to_renovate)}</span></span>
+                  <span>Total CapEx: <span className="text-white font-medium">{perUnitOn ? fmtCurrency(c.per_unit_cost * c.units_to_renovate) : "$0 (off)"}</span></span>
                 </div>
                 {/* Renovation Downtime */}
                 <div className="flex items-center gap-3 border-t border-slate-700 pt-3">
@@ -2558,9 +2581,11 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         {/* CapEx: Projects */}
         <Section title="CapEx: Named Projects">
           <div className="space-y-2">
-            {projects.map((proj: CapexProject, i: number) => (
-              <div key={i} className="grid grid-cols-5 gap-2 items-end">
-                <div>
+            {projects.map((proj: CapexProject, i: number) => {
+              const projOn = proj.enabled !== false; // default on
+              return (
+              <div key={i} className={`grid grid-cols-5 gap-2 items-end ${projOn ? "" : "opacity-50"}`}>
+                <div className={projOn ? "" : "line-through decoration-slate-600"}>
                   <Label className="text-xs text-slate-400">Project Name</Label>
                   <Input
                     value={proj.name}
@@ -2572,7 +2597,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <CurrencyField label="Cost" value={proj.cost} onChange={(v) => updateProject(i, "cost", v)} />
                 <NumField label="Start Month" value={proj.start_month} onChange={(v) => updateProject(i, "start_month", v)} />
                 <NumField label="Duration" value={proj.duration_months} suffix="mo" onChange={(v) => updateProject(i, "duration_months", v)} />
-                <div className="flex items-end pb-0.5">
+                <div className="flex items-end gap-1 pb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleProject(i)}
+                    title={projOn ? "Project ON — included in the model. Click to exclude without deleting." : "Project OFF — excluded from cost & cash flow. Click to include."}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${projOn ? "bg-blue-600" : "bg-slate-700"}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${projOn ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -2583,7 +2616,8 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
             <Button
               variant="outline"
               size="sm"
@@ -2689,7 +2723,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             const acqCosts = p.closing_cost_mode === "itemized"
               ? (ccBk.title_insurance || 0) + (ccBk.legal_fees || 0) + (ccBk.property_costs || 0) + (ccBk.third_party_reports || 0) + (ccBk.transfer_taxes || 0) + (ccBk.other_closing || 0)
               : p.purchase_price * (p.closing_cost_rate || 0);
-            const hasReno = (c.units_to_renovate || 0) > 0 || (c.projects?.length ?? 0) > 0;
+            const hasReno = (c.per_unit_enabled !== false && (c.units_to_renovate || 0) > 0) || (c.projects ?? []).some((p) => p.enabled !== false);
             return (
               <div className="space-y-5">
                 <div className="flex items-center justify-between gap-4">

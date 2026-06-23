@@ -181,7 +181,8 @@ export function capexGuardrailWarning(deal: Deal, inputs: ScenarioInputs): strin
   const yearBuilt = deal.year_built;
   if (!yearBuilt) return null;
   const age = new Date().getFullYear() - yearBuilt;
-  const namedProjects = inputs.capex.projects?.length ?? 0;
+  // Disabled projects are not modeled, so they don't count as coverage here.
+  const namedProjects = (inputs.capex.projects ?? []).filter((p) => p.enabled !== false).length;
   const capitalReserve = (inputs.capex.capital_reserve_total ?? 0) + (inputs.capex.capital_reserve_per_unit ?? 0);
   if (age > 30 && namedProjects === 0 && capitalReserve === 0 && !inputs.capex.pca_complete) {
     return `Building is ${age} years old (built ${yearBuilt}) with no named CapEx projects, no capital reserve, and no PCA on file — deferred maintenance is unmodeled. Add scoped projects, set a capital reserve, or mark the PCA complete.`;

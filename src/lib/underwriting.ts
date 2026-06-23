@@ -549,12 +549,17 @@ export interface CapexProject {
   cost: number;
   start_month: number; // 1-indexed
   duration_months: number;
+  enabled?: boolean; // default true; false → excluded from cost & cash flow without deleting (A/B impact)
 }
 
 export interface CapexAssumptions {
   pca_complete?: boolean; // property condition assessment on file (Phase 4.3 guardrail)
   per_unit_cost: number;
   units_to_renovate: number;
+  // default true; false → the per-unit renovation program is turned OFF entirely
+  // (no cost, no renovation rent premium, no downtime) so the un-renovated impact
+  // can be A/B'd without deleting the inputs.
+  per_unit_enabled?: boolean;
   units_per_month?: number; // legacy — derived from start/end when not set
   renovation_start_month: number; // 1-indexed, when per-unit renovations begin
   renovation_end_month?: number; // 1-indexed, when per-unit renovations end (inclusive)
@@ -828,7 +833,9 @@ export function calculateUnderwriting(
   // re-pass with the resized loan converges exactly. Not part of the API.
   _resize?: { loanOverride: number },
 ): UnderwritingResult {
-  const { purchase, financing, revenue, expenses, capex, exit } = inputs;
+  const { purchase, financing, revenue, expenses, capex: rawCapex, exit } = inputs;
+  // Honor the per-unit / named-project enable toggles before anything reads capex.
+  const capex = applyCapexToggles(rawCapex);
   const totalMonths = exit.hold_period_years * 12;
   const warnings: string[] = [];
 
@@ -2032,6 +2039,25 @@ function capitalReserveMonthly(capex: CapexAssumptions, totalUnits: number, tota
   return fromTotal + fromPerUnit;
 }
 
+/**
+ * Apply the enable/disable toggles so a turned-off capex item drops OUT of the
+ * model entirely — letting the user A/B the impact without deleting inputs.
+ * Defaults preserve legacy behavior: a missing `enabled` flag is treated as on.
+ * - Per-unit program off → zero units & cost so the renovation overlay assigns
+ *   no premium/downtime (the un-renovated baseline). Capital reserve is a
+ *   separate tier and is unaffected.
+ * - Named projects with enabled === false are removed from the schedule.
+ */
+export function applyCapexToggles(capex: CapexAssumptions): CapexAssumptions {
+  const perUnitOn = capex.per_unit_enabled !== false;
+  return {
+    ...capex,
+    units_to_renovate: perUnitOn ? capex.units_to_renovate : 0,
+    per_unit_cost: perUnitOn ? capex.per_unit_cost : 0,
+    projects: (capex.projects ?? []).filter((p) => p.enabled !== false),
+  };
+}
+
 function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
   let total = 0;
 
@@ -2183,7 +2209,9 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   loanBalance: number;
   loanAmount: number;
 } {
-  const { purchase, financing, revenue, expenses, capex, exit } = inputs;
+  const { purchase, financing, revenue, expenses, capex: rawCapex, exit } = inputs;
+  // Honor the per-unit / named-project enable toggles (matches the main path).
+  const capex = applyCapexToggles(rawCapex);
   const totalMonths = exit.hold_period_years * 12;
   const totalUnits = revenue.unit_mix.reduce((s, u) => s + u.count, 0);
   const ltvLoan = purchase.purchase_price * financing.ltv;
