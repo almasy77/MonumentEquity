@@ -1119,16 +1119,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     return () => { cancelled = true; };
   }, [dealCity]);
 
-  // Itemized Other Income (spec B6)
+  // Itemized Other Income (spec B6) — a rent-roll-style editable list of income
+  // lines (the row editor below is the only itemization UI).
   const [oiExpanded, setOiExpanded] = useState(false);
-  // Entry period for the itemization panel: $/mo or $/yr. Values are STORED
-  // monthly; /yr entry divides by 12 (rounded to cents) on the way in.
-  const [oiPeriod, setOiPeriod] = useState<"mo" | "yr">("mo");
-  const oiMult = oiPeriod === "yr" ? 12 : 1;
   const oiHasSublines = Object.values(r.other_income_sublines ?? {}).some((v) => (v as number) > 0);
   const oiUsesLineItems = !!(r.other_income?.line_items && r.other_income.line_items.length > 0);
   // Migrate the legacy sub-line / flat / single-knob-RUBS state into editable
-  // line items when the user switches to the advanced editor.
+  // line items when the user first opens the itemized list.
   function seedLineItems(): OtherIncomeLineItem[] {
     const out: OtherIncomeLineItem[] = [];
     const subs = r.other_income_sublines ?? {};
@@ -1150,13 +1147,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     if (out.length === 0) out.push({ label: "", kind: "flat", monthly_amount: 0, recurring: true });
     return out;
   }
-  function updateOtherIncomeSubline(key: keyof OtherIncomeSublines, displayValue: number) {
-    const monthly = Math.round((displayValue / oiMult) * 100) / 100;
-    const next: OtherIncomeSublines = { ...(r.other_income_sublines ?? {}), [key]: monthly };
-    const sum = Object.values(next).reduce((s: number, v) => s + ((v as number) || 0), 0);
-    // Keep the canonical total in sync — the engine only reads other_income_monthly.
-    setR({ ...r, other_income_sublines: next, other_income_monthly: Math.round(sum * 100) / 100 });
-    markDirty();
+  // Open the itemized list: on first open, migrate legacy sub-line / flat /
+  // structured-RUBS state into editable rows (line items are now the source of
+  // truth, so the superseded sub-lines / single-knob RUBS are cleared).
+  function openOtherIncomeItems() {
+    if (!oiUsesLineItems) {
+      const items = seedLineItems();
+      const monthly = estimateLineItemsMonthly(items, e, totalUnits, r.vacancy_rate);
+      setR({ ...r, other_income: { line_items: items }, other_income_monthly: monthly, other_income_sublines: undefined, rubs: undefined });
+      markDirty();
+    }
+    setOiExpanded(true);
   }
 
   // Re-sync local state from the scenario when it changes EXTERNALLY (AI
@@ -2111,7 +2112,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <Label className="text-xs text-slate-400">Other Income</Label>
                   <button
                     type="button"
-                    onClick={() => setOiExpanded(!oiExpanded)}
+                    onClick={() => (oiExpanded ? setOiExpanded(false) : openOtherIncomeItems())}
                     className="text-[10px] text-blue-400 hover:text-blue-300"
                   >
                     {oiExpanded ? "collapse" : "itemize"}
@@ -2145,111 +2146,27 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               </div>
             </div>
 
-            {/* Itemized Other Income. Two modes: the legacy fixed sub-line grid
-                (+ Phase 4 single-knob RUBS), or the advanced editable line-item
-                table which supersedes both when present. */}
+            {/* Itemized Other Income — a rent-roll-style editable list. Hit
+                ＋ Income line (flat $/mo) or ＋ RUBS line (recovery % of a utility
+                expense) for each source; the list is the source of truth and
+                supersedes the flat field. */}
             {oiExpanded && (
               <div className="border border-slate-800 rounded p-3 space-y-2">
-                {oiUsesLineItems ? (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized (advanced)</span>
-                      <button
-                        type="button"
-                        onClick={() => { setR({ ...r, other_income: undefined }); markDirty(); }}
-                        className="text-[10px] text-slate-500 hover:text-slate-300"
-                      >
-                        revert to simple
-                      </button>
-                    </div>
-                    <OtherIncomeLineItems
-                      items={r.other_income!.line_items!}
-                      expenses={e}
-                      totalUnits={totalUnits}
-                      vacancyRate={r.vacancy_rate}
-                      onChange={(items) => {
-                        const monthly = estimateLineItemsMonthly(items, e, totalUnits, r.vacancy_rate);
-                        // Keep other_income_monthly synced for displays that don't
-                        // read line items; the engine ignores it when items exist.
-                        setR({ ...r, other_income: { line_items: items }, other_income_monthly: monthly });
-                        markDirty();
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized</span>
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => { setR({ ...r, other_income: { line_items: seedLineItems() }, rubs: undefined }); markDirty(); }}
-                          className="text-[10px] text-blue-400 hover:text-blue-300"
-                        >
-                          switch to advanced (RUBS by line)
-                        </button>
-                        <div className="flex items-center rounded border border-slate-700 overflow-hidden text-[11px]">
-                          <button type="button" onClick={() => setOiPeriod("mo")} className={`px-2 py-0.5 ${oiPeriod === "mo" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>$/mo</button>
-                          <button type="button" onClick={() => setOiPeriod("yr")} className={`px-2 py-0.5 ${oiPeriod === "yr" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}>$/yr</button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                      {OTHER_INCOME_LINES.map(({ key, label }) => (
-                        <CurrencyField
-                          key={key}
-                          label={label}
-                          suffix={`/${oiPeriod}`}
-                          value={Math.round(((r.other_income_sublines?.[key] as number) || 0) * oiMult * 100) / 100}
-                          onChange={(v) => updateOtherIncomeSubline(key, v)}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Utility Reimbursement (RUBS) can be entered here <span className="font-semibold">or</span> netted in the
-                      Utilities expense section (negative line) — pick <span className="font-semibold">one</span> to avoid
-                      double-counting. For per-utility RUBS with recovery ratios, use <span className="font-semibold">switch to advanced</span>.
-                    </p>
-                    {/* Structured RUBS (fix-spec Phase 4.2): derive the reimbursement
-                        instead of hand-typing it. recovery × utilities × physical occupancy. */}
-                    <div className="flex items-end gap-3 flex-wrap border-t border-slate-800 pt-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const on = r.rubs?.mode === "structured";
-                          setR({ ...r, rubs: on ? undefined : { mode: "structured", recovery_pct: r.rubs?.recovery_pct ?? 0.80, source_note: r.rubs?.source_note } });
-                          markDirty();
-                        }}
-                        className={`px-2 py-1.5 rounded text-xs border ${r.rubs?.mode === "structured" ? "bg-blue-900/40 border-blue-500 text-blue-200" : "bg-slate-800 border-slate-700 text-slate-400"}`}
-                      >
-                        Structured RUBS: {r.rubs?.mode === "structured" ? "ON" : "OFF"}
-                      </button>
-                      {r.rubs?.mode === "structured" && (
-                        <>
-                          <div className="w-28">
-                            <PctField label="Recovery %" value={r.rubs.recovery_pct ?? 0.80} onChange={(v) => { setR({ ...r, rubs: { ...r.rubs!, recovery_pct: v } }); markDirty(); }} />
-                          </div>
-                          <div className="flex-1 min-w-[220px]">
-                            <label className="text-[11px] text-slate-400 block mb-1">Source note {(r.rubs.recovery_pct ?? 0.80) > 0.85 && <span className="text-amber-400">(required above 85%)</span>}</label>
-                            <input
-                              type="text"
-                              value={r.rubs.source_note ?? ""}
-                              placeholder="e.g. Lease audit 2026-05: 100% billback in place"
-                              onChange={(e) => { setR({ ...r, rubs: { ...r.rubs!, source_note: e.target.value } }); markDirty(); }}
-                              className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white placeholder:text-slate-600"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    {r.rubs?.mode === "structured" && (
-                      <p className="text-[11px] text-slate-500">
-                        Derived RUBS = recovery × utilities expense × physical occupancy, replacing the manual
-                        Utility Reimb. line above. Default 80%; above 85% requires collections evidence.
-                      </p>
-                    )}
-                  </>
-                )}
+                <span className="text-[11px] text-slate-500 font-medium">Other Income — itemized</span>
+                <OtherIncomeLineItems
+                  items={r.other_income?.line_items ?? []}
+                  expenses={e}
+                  totalUnits={totalUnits}
+                  vacancyRate={r.vacancy_rate}
+                  onChange={(items) => {
+                    const monthly = estimateLineItemsMonthly(items, e, totalUnits, r.vacancy_rate);
+                    // Line items are the source of truth; keep other_income_monthly
+                    // synced for displays that don't read them, and clear the
+                    // superseded sub-lines / single-knob RUBS.
+                    setR({ ...r, other_income: { line_items: items }, other_income_monthly: monthly, other_income_sublines: undefined, rubs: undefined });
+                    markDirty();
+                  }}
+                />
               </div>
             )}
 
