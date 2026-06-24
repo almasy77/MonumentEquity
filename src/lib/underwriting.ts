@@ -139,7 +139,8 @@ export type RubsBasis =
 export interface OtherIncomeLineItem {
   label: string; // "RUBS - Electric", "Laundry", "Parking", "Pet rent"
   kind: "flat" | "rubs"; // flat = $/mo fixed; rubs = recovery % of a utility expense
-  monthly_amount?: number; // kind="flat"
+  monthly_amount?: number; // kind="flat"; ALWAYS stored monthly (canonical) regardless of entry_period
+  entry_period?: "mo" | "yr"; // kind="flat" display/entry period only — default "mo"; storage stays monthly
   rubs_recovery_pct?: number; // kind="rubs", e.g. 0.80 (>1.0 = gross-up, allowed)
   rubs_basis?: RubsBasis; // kind="rubs"; default "utilities_total"
   source_note?: string; // e.g. "T-12 Jun25-May26 actual"
