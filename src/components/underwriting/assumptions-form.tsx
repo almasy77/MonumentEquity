@@ -750,7 +750,7 @@ function OtherIncomeLineItems({
         <div className="col-span-3">Description</div>
         <div className="col-span-2">Type</div>
         <div className="col-span-2">Amount / Recovery</div>
-        <div className="col-span-2">Basis</div>
+        <div className="col-span-2">Basis / Period</div>
         <div className="col-span-2 text-right">Annual</div>
         <div className="col-span-1 text-center">Recur</div>
       </div>
@@ -759,6 +759,7 @@ function OtherIncomeLineItems({
         const c = computed[i];
         const ratioOver = c.ratio !== null && c.ratio > 1.0;
         const isRubs = it.kind === "rubs";
+        const period = it.entry_period ?? "mo"; // flat lines: display/entry period — storage stays monthly
         const needsSource = isRubs && ratioOver && !it.source_note?.trim();
         return (
           <div key={i} className="rounded bg-slate-900/30 border border-slate-800/80 px-1.5 py-1.5">
@@ -790,10 +791,15 @@ function OtherIncomeLineItems({
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 pointer-events-none">%</span>
                     </div>
                   ) : (
-                    <BareCurrencyInput value={it.monthly_amount ?? 0} onChange={(v) => update(i, { monthly_amount: v })} />
+                    // Display in the chosen period; storage stays monthly. Don't
+                    // round the stored monthly (entered/12) so $/yr round-trips exactly.
+                    <BareCurrencyInput
+                      value={period === "yr" ? Math.round((it.monthly_amount ?? 0) * 12 * 100) / 100 : Math.round((it.monthly_amount ?? 0) * 100) / 100}
+                      onChange={(v) => update(i, { monthly_amount: period === "yr" ? v / 12 : v })}
+                    />
                   )}
                 </div>
-                {/* Basis (rubs only) */}
+                {/* Basis (rubs) or $/mo–$/yr entry period (flat) */}
                 <div className="col-span-6 sm:col-span-2">
                   {isRubs ? (
                     <select
@@ -804,7 +810,10 @@ function OtherIncomeLineItems({
                       {RUBS_BASES.map((b) => <option key={b} value={b}>{RUBS_BASIS_LABELS[b]}</option>)}
                     </select>
                   ) : (
-                    <div className="h-8 flex items-center text-xs text-slate-600 px-2">fixed $/mo</div>
+                    <div className="flex items-center rounded-md border border-slate-700 overflow-hidden h-8 text-xs">
+                      <button type="button" onClick={() => update(i, { entry_period: "mo" })} className={`flex-1 h-full ${period === "mo" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}>$/mo</button>
+                      <button type="button" onClick={() => update(i, { entry_period: "yr" })} className={`flex-1 h-full ${period === "yr" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}>$/yr</button>
+                    </div>
                   )}
                 </div>
                 {/* Annual computed + ratio */}
@@ -866,7 +875,7 @@ function OtherIncomeLineItems({
         </span>
       </div>
       <p className="text-[10px] text-slate-500 px-1">
-        Itemized other income overrides the flat field. RUBS = recovery × utility expense × physical occupancy.
+        Itemized other income overrides the flat field. Each flat line can be entered as <span className="text-slate-400">$/mo</span> or <span className="text-slate-400">$/yr</span>. RUBS = recovery × utility expense × physical occupancy.
         Uncheck <span className="text-slate-400">Recur</span> for one-time income (e.g. deposit forfeiture) — collected in-period but excluded from exit value.
         Estimates use current expense inputs; the export shows the engine&apos;s authoritative figures.
       </p>
