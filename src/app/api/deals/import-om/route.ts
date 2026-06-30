@@ -4,7 +4,8 @@ import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
 import { extractImageFromUrl } from "@/lib/ai-extract";
-import { fetchBlobFile } from "@/lib/blob-helpers";
+import { fetchBlobFile, persistDealFile } from "@/lib/blob-helpers";
+import type { DealFile } from "@/lib/validations";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
 
@@ -75,19 +76,30 @@ export async function POST(req: NextRequest) {
     const base64 = Buffer.from(buffer).toString("base64");
 
     const extracted = await extractFromOM(base64, mediaType);
-    if (blobCleanup) await blobCleanup();
 
     if (mode === "preview") {
+      if (blobCleanup) await blobCleanup();
       const duplicates = await findDuplicates(extracted);
       return NextResponse.json({ ...extracted, duplicates });
     }
 
+    // Save mode: persist the source file to the deal (deal-scoped Blob copy),
+    // then clean up the temporary upload blob.
+    const dealFile = await persistDealFile(
+      buffer,
+      actualFileName,
+      (extracted.document_type as DealFile["kind"]) ?? "other",
+      mediaType,
+      userId(session),
+    );
+    if (blobCleanup) await blobCleanup();
+
     if (dealId) {
       const contactIds = await createContacts(extracted.contacts);
-      return await updateExistingDeal(dealId, extracted, userId(session), contactIds);
+      return await updateExistingDeal(dealId, extracted, userId(session), contactIds, dealFile);
     }
 
-    return await createNewDeal(extracted, userId(session));
+    return await createNewDeal(extracted, userId(session), dealFile);
   } catch (err) {
     if (blobCleanup) await blobCleanup().catch(() => {});
     const errObj = err as { status?: number; message?: string; error?: unknown };
@@ -176,7 +188,7 @@ async function createContacts(contacts: ExtractedContact[]): Promise<string[]> {
   return contactIds;
 }
 
-async function createNewDeal(data: OMExtractedData, createdBy: string) {
+async function createNewDeal(data: OMExtractedData, createdBy: string, dealFile?: DealFile) {
   const p = data.property;
   const f = data.financials;
 
@@ -234,6 +246,7 @@ async function createNewDeal(data: OMExtractedData, createdBy: string) {
     grm: f.grm,
     rent_roll: data.rent_roll.length > 0 ? data.rent_roll.map((u) => ({ ...u, status: u.status || "occupied" })) : undefined,
     t12: data.t12.months.length > 0 ? data.t12 : undefined,
+    files: dealFile ? [dealFile] : undefined,
     source: "Broker" as Deal["source"],
     market_notes: data.market_notes,
     contact_ids: contactIds,
@@ -274,7 +287,7 @@ async function createNewDeal(data: OMExtractedData, createdBy: string) {
   return NextResponse.json({ deal, extracted: data }, { status: 201 });
 }
 
-async function updateExistingDeal(dealId: string, data: OMExtractedData, updatedBy: string, newContactIds: string[]) {
+async function updateExistingDeal(dealId: string, data: OMExtractedData, updatedBy: string, newContactIds: string[], dealFile?: DealFile) {
   const redis = getRedis();
   const existing = await redis.get<Deal>(`deal:${dealId}`);
   if (!existing) {
@@ -321,6 +334,7 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     rent_roll: data.rent_roll.length > 0 ? data.rent_roll.map((u) => ({ ...u, status: u.status || "occupied" })) : existing.rent_roll,
     t12: data.t12.months.length > 0 ? data.t12 : existing.t12,
     market_notes: data.market_notes || existing.market_notes,
+    files: dealFile ? [...(existing.files || []), dealFile] : existing.files,
     contact_ids: mergedContactIds,
     updated_at: now,
     last_activity_at: now,
