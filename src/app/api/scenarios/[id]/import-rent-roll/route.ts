@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { normalizeRentRoll } from "@/lib/import-normalize";
-import { fetchBlobFile } from "@/lib/blob-helpers";
+import { fetchBlobFile, persistDealFile, guessContentType } from "@/lib/blob-helpers";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -71,15 +71,20 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     const rentRoll = await normalizeRentRoll(buffer, actualFileName);
-    if (blobCleanup) await blobCleanup();
 
     if (rentRoll.length === 0) {
+      if (blobCleanup) await blobCleanup();
       return NextResponse.json({ error: "No units found in the uploaded file." }, { status: 422 });
     }
+
+    // Persist the source file to the deal, then clean up the temp upload blob.
+    const dealFile = await persistDealFile(buffer, actualFileName, "rent_roll", guessContentType(actualFileName), session.user.id);
+    if (blobCleanup) await blobCleanup();
 
     // Save rent roll to deal
     const now = new Date().toISOString();
     deal.rent_roll = rentRoll;
+    deal.files = [...(deal.files || []), dealFile];
     deal.updated_at = now;
     await redis.set(`deal:${scenario.deal_id}`, JSON.stringify(deal));
 

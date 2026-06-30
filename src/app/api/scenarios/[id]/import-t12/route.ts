@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { normalizeT12 } from "@/lib/import-normalize";
-import { fetchBlobFile } from "@/lib/blob-helpers";
+import { fetchBlobFile, persistDealFile, guessContentType } from "@/lib/blob-helpers";
 import { calculateUnderwriting, buildExpensesFromT12, sumT12Field, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -71,15 +71,20 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     const t12 = await normalizeT12(buffer, actualFileName);
-    if (blobCleanup) await blobCleanup();
 
     if (!t12.months || t12.months.length === 0) {
+      if (blobCleanup) await blobCleanup();
       return NextResponse.json({ error: "No T12 data found in the uploaded file." }, { status: 422 });
     }
+
+    // Persist the source file to the deal, then clean up the temp upload blob.
+    const dealFile = await persistDealFile(buffer, actualFileName, "t12", guessContentType(actualFileName), session.user.id);
+    if (blobCleanup) await blobCleanup();
 
     // Save T12 to deal
     const now = new Date().toISOString();
     deal.t12 = t12;
+    deal.files = [...(deal.files || []), dealFile];
     deal.updated_at = now;
     await redis.set(`deal:${scenario.deal_id}`, JSON.stringify(deal));
 

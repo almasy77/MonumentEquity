@@ -20,6 +20,7 @@ import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { ImportOMDialog } from "@/components/deals/import-om-dialog";
+import { DealFilesCard } from "@/components/deals/deal-files-card";
 import {
   ArrowLeft,
   Building2,
@@ -257,6 +258,9 @@ export default async function DealDetailPage({
         {/* Checklists */}
         <ChecklistPanel dealId={id} checklists={checklists} />
       </div>
+
+      {/* Files — source documents (OM / rent roll / T12 / manual uploads) */}
+      <DealFilesCard dealId={id} files={deal.files} />
 
       {/* Activity Log */}
       <Card className="bg-slate-900 border-slate-800">

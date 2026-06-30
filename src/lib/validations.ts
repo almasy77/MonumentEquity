@@ -106,6 +106,20 @@ export const t12StatementSchema = z.object({
 });
 export type T12Statement = z.infer<typeof t12StatementSchema>;
 
+// ─── Deal files (source documents persisted to Vercel Blob) ──
+export const DEAL_FILE_KINDS = ["offering_memo", "rent_roll", "t12", "other"] as const;
+export const dealFileSchema = z.object({
+  id: z.string(),
+  name: z.string(), // original filename
+  kind: z.enum(DEAL_FILE_KINDS),
+  url: z.string().url(), // Vercel Blob public URL
+  size: z.number().optional(), // bytes
+  content_type: z.string().optional(),
+  uploaded_at: z.string(),
+  uploaded_by: z.string().optional(),
+});
+export type DealFile = z.infer<typeof dealFileSchema>;
+
 // ─── Deal ───────────────────────────────────────────────────
 export const dealSchema = z.object({
   id: z.string().uuid(),
@@ -177,6 +191,9 @@ export const dealSchema = z.object({
 
   // Property photos
   photos: z.array(z.string()).optional(), // URL strings
+
+  // Source documents (OM / rent roll / T12 / manual uploads) persisted to Blob
+  files: z.array(dealFileSchema).optional(),
 
   // Pricing
   asking_price: z.number().positive(),
