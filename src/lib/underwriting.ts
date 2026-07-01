@@ -1877,13 +1877,13 @@ export function buildUnitStateSchedule(args: {
   const units: UnitTimeline[] = expanded.map((e) => ({
     unit_id: e.unit_id,
     row_index: e.row_index,
-    // Ramp ON: in_place = actual current rent (the ramp IS the migration).
-    // Ramp OFF: legacy basis semantics (unrenovated basis current|market).
-    in_place_rent: rampEnabled
-      ? e.current_rent
-      : inPlaceBasis === "market"
-      ? e.market_rent
-      : e.current_rent,
+    // In-place rent honors the pro-forma unrenovated basis in BOTH ramp states:
+    //   "current" → the actual in-place rent (with the ramp on, below-market
+    //               units then migrate up to market via the queue below);
+    //   "market"  → value every occupied unit at market rent — a stabilized
+    //               view that works even when market < current (e.g. modeling a
+    //               short-term-rental building underwritten as long-term).
+    in_place_rent: inPlaceBasis === "market" ? e.market_rent : e.current_rent,
     market_rent: e.market_rent,
     renovated_rent: (renoBasis === "market_plus_premium" ? e.market_rent : e.current_rent) + e.premium,
     states: new Array<UnitState>(totalMonths).fill("in_place"),
@@ -1912,36 +1912,41 @@ export function buildUnitStateSchedule(args: {
       }
     });
 
-    // Below-market occupied/mtm units → eligibility queue.
+    // Below-market occupied/mtm units → eligibility queue. Mark-up turns only
+    // apply under a CURRENT basis (the ramp migrates current → market). Under a
+    // MARKET basis every occupied unit is already valued at market, so there is
+    // no migration to schedule — the vacant lease-up above still runs.
     interface QueueItem { idx: number; eligible: number; gap: number }
     const queue: QueueItem[] = [];
-    const useLinear = ramp.mode !== "schedule" || !anyDetails;
-    const belowMarketIdxs = expanded
-      .map((e, i) => ({ e, i }))
-      .filter(({ e }) => e.status !== "vacant" && e.current_rent < e.market_rent);
+    if (inPlaceBasis === "current") {
+      const useLinear = ramp.mode !== "schedule" || !anyDetails;
+      const belowMarketIdxs = expanded
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.status !== "vacant" && e.current_rent < e.market_rent);
 
-    if (useLinear) {
-      // Linear mode GENERATED over the machine: spread eligibility evenly
-      // across the absorption window (deepest gap first), same pacing rules.
-      const span = Math.max(1, ramp.absorption_months);
-      const sorted = [...belowMarketIdxs].sort(
-        (a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent)
-      );
-      sorted.forEach(({ e, i }, k) => {
-        const eligible = Math.floor((k * span) / Math.max(1, sorted.length));
-        queue.push({ idx: i, eligible, gap: e.market_rent - e.current_rent });
-      });
-    } else {
-      for (const { e, i } of belowMarketIdxs) {
-        if (e.status === "occupied" && e.lease_end) {
-          const mi = monthIndexOf(e.lease_end);
-          queue.push({ idx: i, eligible: mi === null ? 0 : Math.max(0, mi + 1), gap: e.market_rent - e.current_rent });
-        } else {
-          queue.push({ idx: i, eligible: 0, gap: e.market_rent - e.current_rent });
+      if (useLinear) {
+        // Linear mode GENERATED over the machine: spread eligibility evenly
+        // across the absorption window (deepest gap first), same pacing rules.
+        const span = Math.max(1, ramp.absorption_months);
+        const sorted = [...belowMarketIdxs].sort(
+          (a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent)
+        );
+        sorted.forEach(({ e, i }, k) => {
+          const eligible = Math.floor((k * span) / Math.max(1, sorted.length));
+          queue.push({ idx: i, eligible, gap: e.market_rent - e.current_rent });
+        });
+      } else {
+        for (const { e, i } of belowMarketIdxs) {
+          if (e.status === "occupied" && e.lease_end) {
+            const mi = monthIndexOf(e.lease_end);
+            queue.push({ idx: i, eligible: mi === null ? 0 : Math.max(0, mi + 1), gap: e.market_rent - e.current_rent });
+          } else {
+            queue.push({ idx: i, eligible: 0, gap: e.market_rent - e.current_rent });
+          }
         }
       }
+      queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
     }
-    queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
 
     let qi = 0;
     const pending: QueueItem[] = [];
