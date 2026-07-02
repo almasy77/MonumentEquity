@@ -645,9 +645,9 @@ function buildAnnualSheet(
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow",
       formula: (c, prev) => (prev ? `${prev}${R.cumulative}+${c}${R.cashFlow}` : `${c}${R.cashFlow}`) },
     { label: "Cap Rate", key: "cap_rate", pct: true,
-      formula: (c) => `${c}${R.noi}/$B$${priceRow}` },
+      formula: (c) => `IFERROR(${c}${R.noi}/$B$${priceRow},0)` },
     { label: "Cash-on-Cash Return", key: "cash_on_cash", pct: true,
-      formula: (c) => `${c}${R.cashFlow}/$B$${equityRow}` },
+      formula: (c) => `IFERROR(${c}${R.cashFlow}/$B$${equityRow},0)` },
     { label: "% Marked-to-Market", key: "pct_marked_to_market", pct: true },
   ];
 
@@ -760,9 +760,11 @@ function buildReturnsSheet(
 
   // Deferred formulas (now that every referenced row number is known).
   irr.cell.value = { formula: `IFERROR(IRR(${vecRange}),"n/a")` } as ExcelJS.CellFormulaValue;
-  em.cell.value = { formula: `B${distCell.row}/B${equityRow}` } as ExcelJS.CellFormulaValue;
-  dscr.cell.value = { formula: `${noiY1}/-${dsY1}` } as ExcelJS.CellFormulaValue;
-  goingCap.cell.value = { formula: `${noiY1}/B${priceRow}` } as ExcelJS.CellFormulaValue;
+  // Guard denominators the engine also guards (all-cash → DS 0; zero equity /
+  // price) so degenerate deals show 0 like the app, not a #DIV/0! in the cell.
+  em.cell.value = { formula: `IFERROR(B${distCell.row}/B${equityRow},0)` } as ExcelJS.CellFormulaValue;
+  dscr.cell.value = { formula: `IFERROR(${noiY1}/-${dsY1},0)` } as ExcelJS.CellFormulaValue;
+  goingCap.cell.value = { formula: `IFERROR(${noiY1}/B${priceRow},0)` } as ExcelJS.CellFormulaValue;
   totalCFCell.cell.value = { formula: `SUM(${cfRange})` } as ExcelJS.CellFormulaValue;
   distCell.cell.value = { formula: `B${totalCFCell.row}+B${proceedsRow}+B${reserveRow}` } as ExcelJS.CellFormulaValue;
   profitCell.cell.value = { formula: `B${distCell.row}-B${equityRow}` } as ExcelJS.CellFormulaValue;

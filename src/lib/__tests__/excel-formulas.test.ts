@@ -20,6 +20,14 @@ function brydenInputs(): ScenarioInputs {
 
 const DEAL = { id: "x", address: "Test", city: "C", state: "OH", units: 12, asking_price: 1, source: "Broker" } as unknown as Deal;
 
+async function exportedWorkbook(inputs: ScenarioInputs, result: ReturnType<typeof calculateUnderwriting>): Promise<ExcelJS.Workbook> {
+  const buf = await generateExcelWorkbook(DEAL, "Base", inputs, result);
+  const wb = new ExcelJS.Workbook();
+  // Buffer generic skew between @types/node and exceljs — cast to load()'s param type.
+  await wb.xlsx.load(buf as unknown as Parameters<typeof wb.xlsx.load>[0]);
+  return wb;
+}
+
 // Value of a cell (driver cells hold raw numbers; formula cells have no cached result).
 const numAt = (ws: ExcelJS.Worksheet, r: number, c: number): number => {
   const v = ws.getRow(r).getCell(c).value;
@@ -30,8 +38,7 @@ describe("Excel export — live formulas reproduce the engine", () => {
   it("Annual Pro Forma subtotals / cumulative / cap / CoC tie out", async () => {
     const inputs = brydenInputs();
     const result = calculateUnderwriting(inputs);
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await generateExcelWorkbook(DEAL, "Base", inputs, result));
+    const wb = await exportedWorkbook(inputs, result);
     const A = wb.getWorksheet("Annual Pro Forma")!;
     const n = result.annual.length;
 
@@ -64,8 +71,7 @@ describe("Excel export — live formulas reproduce the engine", () => {
   it("Returns IRR / equity multiple / distributions tie out", async () => {
     const inputs = brydenInputs();
     const result = calculateUnderwriting(inputs);
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await generateExcelWorkbook(DEAL, "Base", inputs, result));
+    const wb = await exportedWorkbook(inputs, result);
     const R = wb.getWorksheet("Returns")!;
     const n = result.annual.length;
 
