@@ -109,6 +109,9 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       capex: updated.capex_assumptions,
       exit: updated.exit_assumptions,
       tax: updated.tax_assumptions,
+      // Include depreciation so the PUT response carries metrics.depreciation +
+      // the land-allocation reconciliation warning (matches GET / clone / export).
+      depreciation: updated.depreciation_assumptions || undefined,
     } as unknown as ScenarioInputs;
 
     const result = calculateUnderwriting(inputs);

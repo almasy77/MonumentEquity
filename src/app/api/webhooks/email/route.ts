@@ -16,11 +16,14 @@ import type { PendingListing } from "@/lib/validations";
  */
 export async function POST(req: Request) {
   const webhookSecret = process.env.POSTMARK_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const authHeader = req.headers.get("x-postmark-secret");
-    if (authHeader !== webhookSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  // Fail closed: without a configured secret this endpoint would accept
+  // unauthenticated writes to the review queue (and run paid AI extraction).
+  if (!webhookSecret) {
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+  }
+  const authHeader = req.headers.get("x-postmark-secret");
+  if (authHeader !== webhookSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
