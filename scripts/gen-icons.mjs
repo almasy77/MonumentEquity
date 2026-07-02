@@ -9,31 +9,28 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // ── Brand mark (512×512) ─────────────────────────────────────────────
-const NAVY = "#020617";
-const BG = "#0B1220";     // slightly lifted navy so the icon reads on dark tabs
-const BLUE = "#3B82F6";   // blue-500 (matches the in-app logo)
-const BLUE_DK = "#2563EB";
-const BLUE_LT = "#60A5FA";
-const BASE = "#93C5FD";
+// Monument Equity: a dark forest-green mountain summit on a cream field.
+const CREAM = "#F1ECDE";
+const GREEN = "#1E3A2D";
 
-// Window cutouts (navy) on the main tower — 3 rows × 2 cols, kept minimal so it
-// stays legible at 16px.
-const win = [];
-for (let r = 0; r < 3; r++) {
-  for (let c = 0; c < 2; c++) {
-    const x = 214 + c * 42;
-    const y = 168 + r * 56;
-    win.push(`<rect x="${x}" y="${y}" width="26" height="30" rx="5" fill="${NAVY}"/>`);
-  }
-}
+// Mountain silhouette: a short left foothill, a valley, then the main summit
+// with a characteristic stepped ledge on its left flank rising to the apex,
+// and a long slope down to the right. Kept bold so it reads at 16px.
+const mountain =
+  "M0,512 " +
+  "L0,410 " +
+  "L150,334 " +   // left foothill apex
+  "L214,388 " +   // valley
+  "L292,236 " +   // rise to the ledge
+  "L330,236 " +   // flat step / ledge
+  "L372,150 " +
+  "L392,108 " +   // summit apex
+  "L512,404 " +   // long right slope
+  "L512,512 Z";
 
 const svg = `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="112" fill="${BG}"/>
-  <rect x="120" y="224" width="82" height="176" rx="12" fill="${BLUE_DK}"/>
-  <rect x="310" y="184" width="82" height="216" rx="12" fill="${BLUE_LT}"/>
-  <rect x="190" y="120" width="132" height="280" rx="14" fill="${BLUE}"/>
-  ${win.join("\n  ")}
-  <rect x="96" y="388" width="320" height="26" rx="13" fill="${BASE}"/>
+  <rect width="512" height="512" fill="${CREAM}"/>
+  <path d="${mountain}" fill="${GREEN}"/>
 </svg>`;
 
 const svgBuf = Buffer.from(svg);
