@@ -8,8 +8,10 @@ type RouteContext = { params: Promise<{ dealId: string }> };
 // GET /api/export/[dealId]/pdf?scenario_id=xxx — returns a print-friendly HTML page
 export async function GET(req: NextRequest, ctx: RouteContext) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Export is admin-only, matching the xlsx / sidecar / csv export routes
+  // (a full financial print page is the same data exposure).
+  if (!session?.user || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { dealId } = await ctx.params;

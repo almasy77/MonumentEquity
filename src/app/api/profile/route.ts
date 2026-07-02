@@ -55,8 +55,11 @@ export async function PUT(req: NextRequest) {
     user.name = body.name.trim();
   }
 
-  // Merge default assumptions if provided
-  if (body.default_assumptions && typeof body.default_assumptions === "object") {
+  // Merge default assumptions if provided — ADMIN ONLY, matching the settings
+  // route's gate on the same field (a VA/viewer must not set scenario defaults
+  // via the profile endpoint). Silently ignored for non-admins so name / prefs
+  // in the same request still apply.
+  if (body.default_assumptions && typeof body.default_assumptions === "object" && session.user.role === "admin") {
     user.default_assumptions = {
       ...user.default_assumptions,
       ...body.default_assumptions,

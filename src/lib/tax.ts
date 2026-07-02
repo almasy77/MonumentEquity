@@ -274,11 +274,14 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     accumFed1245 += fed1245;
     accumFed1250 += fed1250;
 
-    // Financing amortization (remaining balance expensed in exit year on payoff)
+    // Financing amortization: straight-line over the loan term, capped at the fee
+    // (so a hold that outruns the loan term can't amortize past 100%), with the
+    // remaining balance expensed in the exit year on payoff.
     const isExitYear = y === holdYears;
+    const amortizedBefore = Math.min(ctx.originationFee, finAmortAnnual * (y - 1));
     const finAmort = isExitYear
-      ? Math.max(0, ctx.originationFee - finAmortAnnual * (y - 1))
-      : finAmortAnnual;
+      ? Math.max(0, ctx.originationFee - amortizedBefore)
+      : Math.max(0, Math.min(finAmortAnnual, ctx.originationFee - amortizedBefore));
 
     // Year-1 deductions: prepaids/prorations. The cost-seg study fee is a
     // separate deduction line (Year-1 or amortized) folded into taxable income
@@ -299,6 +302,7 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     // (which would defeat the EBL cap entirely).
     const nolOpening = nolCF;
     let fedTax = 0;
+    let niitBase = 0; // §1411 net investment income (set post-PAL in the positive branch)
     if (tiFed < 0) {
       const loss = -tiFed;
       if (repsOn) {
@@ -314,6 +318,9 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
       const palUsed = Math.min(palCFFed, ti);
       palCFFed -= palUsed;
       ti -= palUsed;
+      // §1411 net investment income for NIIT: rental income NET of passive losses,
+      // but BEFORE the NOL deduction (NOLs don't reduce NII).
+      niitBase = ti;
       // NOL: usable against ≤80% of taxable income — household W-2 (~$1.5M)
       // makes the limit non-binding, so the NOL releases in full (simplification).
       const nolUsed = Math.min(nolCF, ti);
@@ -346,8 +353,10 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
       stateTax = ti * stateRate;
     }
 
-    // NIIT: positive rental income, only when REPS is OFF (§4)
-    const niit = !repsOn && tiFed > 0 ? tiFed * tax.niit_rate : 0;
+    // NIIT: positive net investment income (after passive-loss offset), only when
+    // REPS is OFF (§4). Uses the post-PAL base, not raw taxable income, so income
+    // absorbed by released passive losses isn't taxed.
+    const niit = !repsOn && niitBase > 0 ? niitBase * tax.niit_rate : 0;
 
     const netTax = fedTax + stateTax + niit; // negative = net shield
     const propcoCF = a.cash_flow - netTax;

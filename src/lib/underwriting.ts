@@ -2148,11 +2148,15 @@ function buildSensitivityGrid(
       let exitVal = 0;
       if (result.exitNOI > 0) {
         if (sensExitReassess) {
-          const exitYearTax = reassessedAnnualTax(
-            adjustedInputs.expenses,
-            adjustedInputs.purchase.purchase_price,
-            adjustedInputs.exit.hold_period_years - 1,
-          ) ?? 0;
+          // Add the exit-year property tax back before dividing by (cap + rate).
+          // Must handle BOTH v2 (propertyTaxForMonthV2) and v1 (reassessedAnnualTax)
+          // the same way the simplified path SUBTRACTS it — otherwise a v2-only
+          // deal added back 0 while the denominator still carried the rate,
+          // understating exit value for every sensitivity cell.
+          const exitYearIdx = adjustedInputs.exit.hold_period_years - 1;
+          const exitYearTax = adjustedInputs.expenses.property_tax_v2?.enabled
+            ? propertyTaxForMonthV2(adjustedInputs.expenses.property_tax_v2, adjustedInputs.purchase.purchase_price, exitYearIdx * 12 + 6) * 12
+            : (reassessedAnnualTax(adjustedInputs.expenses, adjustedInputs.purchase.purchase_price, exitYearIdx) ?? 0);
           exitVal = (result.exitNOI + exitYearTax) / (adjustedInputs.exit.exit_cap_rate + sensReassess!.effective_tax_rate);
         } else {
           exitVal = result.exitNOI / adjustedInputs.exit.exit_cap_rate;
