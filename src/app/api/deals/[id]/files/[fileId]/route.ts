@@ -11,11 +11,10 @@ type RouteContext = { params: Promise<{ id: string; fileId: string }> };
 // delete the underlying Blob.
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.user.role === "viewer") {
-    return NextResponse.json({ error: "Read-only access" }, { status: 403 });
+  // Destructive delete of a source document + its blob — admin-only, matching
+  // DELETE /api/deals/[id] (a VA can upload/view files but not delete them).
+  if (!session?.user || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {

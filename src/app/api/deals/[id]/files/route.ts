@@ -40,6 +40,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       ? (kindRaw as DealFile["kind"])
       : "other";
 
+    // Restrict to the document/image types the app handles — the client accept=
+    // filter is bypassable via a direct API call, so enforce it server-side and
+    // keep arbitrary (e.g. .html/.svg) files off public blob URLs.
+    const ALLOWED = /\.(pdf|csv|xlsx|xls|png|jpe?g)$/i;
+    const okName = (n: string | null): n is string => !!n && ALLOWED.test(n);
+
     let buffer: ArrayBuffer;
     let fileName: string;
 
@@ -47,13 +53,19 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       if (!blobFileName) {
         return NextResponse.json({ error: "fileName is required with blobUrl" }, { status: 400 });
       }
-      const blob = await fetchBlobFile(blobUrl);
+      if (!okName(blobFileName)) {
+        return NextResponse.json({ error: "Unsupported file type. Use PDF, CSV, XLSX, or an image." }, { status: 400 });
+      }
+      const blob = await fetchBlobFile(blobUrl); // validates host + enforces the 25MB cap
       buffer = blob.buffer;
       blobCleanup = blob.cleanup;
       fileName = blobFileName;
     } else {
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      if (!okName(file.name)) {
+        return NextResponse.json({ error: "Unsupported file type. Use PDF, CSV, XLSX, or an image." }, { status: 400 });
       }
       if (file.size > 25 * 1024 * 1024) {
         return NextResponse.json({ error: "File too large. Maximum 25MB." }, { status: 400 });
