@@ -293,12 +293,17 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction;
 
     // ── Federal loss routing: REPS → §461(l) → NOL ──
+    // NOL carried INTO this year (from prior years) is release-eligible now via
+    // the one-year lag below. Capture it before this year's excess is added, so
+    // a fresh §461(l) overflow is NOT released in the same year it is created
+    // (which would defeat the EBL cap entirely).
+    const nolOpening = nolCF;
     let fedTax = 0;
     if (tiFed < 0) {
       const loss = -tiFed;
       if (repsOn) {
         const allowed = Math.min(loss, tax.ebl_cap_mfj);
-        nolCF += loss - allowed;
+        nolCF += loss - allowed; // this year's excess — waits until next year
         fedTax = -(allowed * fedRate); // shield against W-2 ordinary income
       } else {
         palCFFed += loss; // suspended — no current benefit
@@ -316,11 +321,16 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
       ti -= nolUsed;
       fedTax = ti * fedRate;
     }
-    // Release NOL against household W-2 the year AFTER it arises (80% of household
-    // TI >> NOL). Modeled as a shield in the following year.
-    if (nolCF > 0 && y > 1) {
-      fedTax -= nolCF * fedRate;
-      nolCF = 0;
+    // Release the PRIOR-year NOL against household W-2 the year AFTER it arises
+    // (80% of household TI >> NOL). Only the balance carried INTO this year is
+    // eligible; this year's fresh §461(l) excess (added above) waits until next
+    // year, so the EBL cap actually limits the current-year shield.
+    if (y > 1) {
+      const releasable = Math.min(nolOpening, nolCF);
+      if (releasable > 0) {
+        fedTax -= releasable * fedRate;
+        nolCF -= releasable;
+      }
     }
 
     // ── State loss routing (no EBL cap modeled — NY conformity out of scope) ──

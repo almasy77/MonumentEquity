@@ -9,7 +9,7 @@
 
 import ExcelJS from "exceljs";
 import type { Deal } from "./validations";
-import { applyCapexToggles } from "./underwriting";
+import { applyCapexToggles, resolveProformaBases } from "./underwriting";
 import type {
   ScenarioInputs,
   UnderwritingResult,
@@ -101,7 +101,7 @@ export async function generateExcelWorkbook(
   buildRentMatrixSheet(wb, result, inputs);
   buildReturnsSheet(wb, result);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
-  buildUnitMixSheet(wb, inputs.revenue.unit_mix);
+  buildUnitMixSheet(wb, inputs.revenue.unit_mix, resolveProformaBases(inputs.exit));
   buildCapexSheet(wb, inputs.capex);
   if (result.metrics.depreciation) {
     buildDepreciationSheet(wb, inputs, result.metrics);
@@ -753,16 +753,30 @@ function buildSensitivitySheet(
   }
 }
 
-function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenue"]["unit_mix"]) {
+function buildUnitMixSheet(
+  wb: ExcelJS.Workbook,
+  unitMix: ScenarioInputs["revenue"]["unit_mix"],
+  bases: { unrenovated: "current" | "market"; renovated: "current_plus_premium" | "market_plus_premium" },
+) {
   const ws = wb.addWorksheet("Unit Mix");
   ws.columns = [
     { width: 12 }, { width: 16 }, { width: 10 }, { width: 14 },
-    { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 },
+    { width: 14 }, { width: 16 }, { width: 14 }, { width: 18 },
   ];
+
+  // The pro-forma unrenovated basis drives which rent column feeds GPR: "market"
+  // uses Market Rent (col E), "current" uses Current Rent (col D). Keep this in
+  // sync with the engine so the Unit Mix "Annual GPR" ties to the pro forma
+  // (gross of ramp/vacancy, which the engine's state machine layers on).
+  const gprCol = bases.unrenovated === "market" ? "E" : "D";
+  const renoRentCol = bases.renovated === "market_plus_premium" ? "E" : "D";
+  const gprLabel = bases.unrenovated === "market"
+    ? "Annual GPR (@ Market)"
+    : "Annual GPR (@ Current)";
 
   const headerRow = ws.addRow([
     "Unit", "Unit Type", "Count", "Current Rent", "Market Rent",
-    "Reno Premium", "Renovated Rent", "Annual GPR",
+    "Reno Premium", "Renovated Rent", gprLabel,
   ]);
   styleHeaderRow(headerRow, 8);
 
@@ -778,10 +792,10 @@ function buildUnitMixSheet(wb: ExcelJS.Workbook, unitMix: ScenarioInputs["revenu
       u.renovated_rent_premium,
     ]);
 
-    // Renovated Rent = Market Rent + Premium (col E + F)
-    row.getCell(7).value = { formula: `E${rowNum}+F${rowNum}` } as ExcelJS.CellFormulaValue;
-    // Annual GPR = Count * Current Rent * 12 (col C * D * 12)
-    row.getCell(8).value = { formula: `C${rowNum}*D${rowNum}*12` } as ExcelJS.CellFormulaValue;
+    // Renovated Rent = (renovated-basis rent) + Premium, per the pro-forma renovated basis.
+    row.getCell(7).value = { formula: `${renoRentCol}${rowNum}+F${rowNum}` } as ExcelJS.CellFormulaValue;
+    // Annual GPR = Count × (unrenovated-basis rent) × 12, matching the engine's basis.
+    row.getCell(8).value = { formula: `C${rowNum}*${gprCol}${rowNum}*12` } as ExcelJS.CellFormulaValue;
 
     for (let c = 3; c <= 8; c++) {
       row.getCell(c).numFmt = c === 3 ? NUMBER_FMT : CURRENCY_FMT;
@@ -870,8 +884,9 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
     const rowNum = projStartRow + i;
     const row = ws.addRow([p.name, p.cost, p.start_month, p.duration_months]);
     row.getCell(2).numFmt = CURRENCY_FMT;
-    // Monthly cost = Cost / Duration (formula)
-    row.getCell(5).value = { formula: `B${rowNum}/D${rowNum}` } as ExcelJS.CellFormulaValue;
+    // Monthly cost = Cost / Duration (guard 0-month duration → the engine treats
+    // it as 1 month, so avoid a #DIV/0! in the cell).
+    row.getCell(5).value = { formula: `B${rowNum}/MAX(D${rowNum},1)` } as ExcelJS.CellFormulaValue;
     row.getCell(5).numFmt = CURRENCY_FMT;
     for (let c = 1; c <= 5; c++) {
       row.getCell(c).border = THIN_BORDER;
@@ -951,10 +966,14 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
           ? `funded $${Math.round(funded).toLocaleString()} → returned $${Math.round(m.return_of_operating_reserve).toLocaleString()} (incl. ${(yieldRate * 100).toFixed(1)}% yield)`
           : `funded $${Math.round(funded).toLocaleString()} returned in full (no yield)`,
       );
-      // Distributions tie-out: Σ CF + net proceeds + reserve return.
+      // Distributions tie-out: the independently-summed Σ CF + net proceeds +
+      // reserve return must equal the engine's total_equity + total_profit
+      // (total_distributions = total_equity + total_profit by construction).
       const cfSum = result.annual.reduce((s, a) => s + a.cash_flow, 0);
       const dist = cfSum + m.net_sale_proceeds + m.return_of_operating_reserve;
-      addValidationRow(ws, "Distributions = Σ CF + net proceeds + reserve return", true, `total $${Math.round(dist).toLocaleString()} (CF ${Math.round(cfSum).toLocaleString()} + proceeds ${Math.round(m.net_sale_proceeds).toLocaleString()} + reserve ${Math.round(m.return_of_operating_reserve).toLocaleString()})`);
+      const distExpected = m.total_equity + m.total_profit;
+      const distOk = Math.abs(dist - distExpected) < 1;
+      addValidationRow(ws, "Distributions = Σ CF + net proceeds + reserve return", distOk, `total $${Math.round(dist).toLocaleString()} vs equity+profit $${Math.round(distExpected).toLocaleString()} (CF ${Math.round(cfSum).toLocaleString()} + proceeds ${Math.round(m.net_sale_proceeds).toLocaleString()} + reserve ${Math.round(m.return_of_operating_reserve).toLocaleString()})`);
     }
   }
 
@@ -1182,7 +1201,7 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
     ["Monthly Pro Forma", "Cash flow built up monthly: GPR → EGI → OpEx → NOI → Debt → Reserves → CapEx → CF."],
     ["Annual Pro Forma", "Same waterfall summed by year, with Cap Rate and Cash-on-Cash by year."],
     ["Returns", "Equity waterfall, IRR/EM by hurdle, sources & uses."],
-    ["Sensitivity", "IRR / CoC under different exit cap and exit timing."],
+    ["Sensitivity", "IRR across purchase-price change (rows) × exit cap rate (columns)."],
     ["Unit Mix", "Per-unit-type rents (current, market, premium) and totals."],
     ["CapEx Schedule", "Per-unit renovation pacing, downtime, and project-level CapEx by month."],
     ["Depreciation", "Cost-seg breakdown if accelerated depreciation is configured."],
