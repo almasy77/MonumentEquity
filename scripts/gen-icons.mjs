@@ -8,29 +8,16 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// ── Brand mark (512×512) ─────────────────────────────────────────────
-// Monument Equity: a dark forest-green mountain summit on a cream field.
+// ── Brand mark ───────────────────────────────────────────────────────
+// Official Monument Equity favicon: a dark forest-green mountain polygon
+// (viewBox 0 0 32 32), placed on the brand cream field for the app icon set.
 const CREAM = "#F1ECDE";
-const GREEN = "#1E3A2D";
+const GREEN = "#1F3B2E";
+const MOUNTAIN = "5.76,32 5.76,24.96 9.6,23.68 11.52,16 14.72,14.72 16.64,9.6 19.84,8.32 22.4,10.24 24.96,16 26.88,21.12 26.88,32";
 
-// Mountain silhouette: a short left foothill, a valley, then the main summit
-// with a characteristic stepped ledge on its left flank rising to the apex,
-// and a long slope down to the right. Kept bold so it reads at 16px.
-const mountain =
-  "M0,512 " +
-  "L0,410 " +
-  "L150,334 " +   // left foothill apex
-  "L214,388 " +   // valley
-  "L292,236 " +   // rise to the ledge
-  "L330,236 " +   // flat step / ledge
-  "L372,150 " +
-  "L392,108 " +   // summit apex
-  "L512,404 " +   // long right slope
-  "L512,512 Z";
-
-const svg = `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="${CREAM}"/>
-  <path d="${mountain}" fill="${GREEN}"/>
+const svg = `<svg width="512" height="512" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" fill="${CREAM}"/>
+  <polygon points="${MOUNTAIN}" fill="${GREEN}"/>
 </svg>`;
 
 const svgBuf = Buffer.from(svg);
