@@ -1,14 +1,39 @@
 import { del, put } from "@vercel/blob";
 import type { DealFile } from "@/lib/validations";
 
+// Uploads land in the Vercel Blob store; only fetch from that host (block SSRF
+// to internal/arbitrary URLs), and never buffer more than the upload cap.
+const BLOB_HOST_SUFFIX = ".blob.vercel-storage.com";
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 export async function fetchBlobFile(
   blobUrl: string,
+  maxBytes: number = MAX_UPLOAD_BYTES,
 ): Promise<{ buffer: ArrayBuffer; cleanup: () => Promise<void> }> {
+  let url: URL;
+  try {
+    url = new URL(blobUrl);
+  } catch {
+    throw new Error("Invalid file URL");
+  }
+  if (url.protocol !== "https:" || !url.hostname.endsWith(BLOB_HOST_SUFFIX)) {
+    throw new Error("File URL must be a Vercel Blob URL");
+  }
+
   const response = await fetch(blobUrl);
   if (!response.ok) {
     throw new Error("Failed to fetch uploaded file");
   }
+  // Reject oversized bodies up front (declared length) and after buffering
+  // (guards a lying/absent content-length).
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > maxBytes) {
+    throw new Error("File too large. Maximum 25MB.");
+  }
   const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > maxBytes) {
+    throw new Error("File too large. Maximum 25MB.");
+  }
   return {
     buffer,
     cleanup: async () => {

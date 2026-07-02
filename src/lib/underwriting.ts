@@ -2137,7 +2137,10 @@ function buildSensitivityGrid(
       const result = calculateUnderwritingSimplified(adjustedInputs);
       // Equity off the DSCR/LTV-sized loan (Phase 4.1), not raw LTV proceeds.
       const adjustedOrigination = result.loanAmount * adjustedInputs.financing.origination_fee_rate;
-      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination + adjustedCapexReserve - result.loanAmount;
+      // Match the headline equity build (underwriting.ts total cost) — include the
+      // cost-seg study cash cost so sensitivity IRRs use the same t0 outflow.
+      const adjustedCostSeg = adjustedInputs.purchase.cost_seg_study_cost || 0;
+      const adjustedEquity = adjustedInputs.purchase.purchase_price + adjustedClosing + adjustedOrigination + adjustedCapexReserve + adjustedCostSeg - result.loanAmount;
       const sensReassess = adjustedInputs.expenses.property_tax_v2?.enabled
         ? adjustedInputs.expenses.property_tax_v2
         : adjustedInputs.expenses.tax_reassessment;

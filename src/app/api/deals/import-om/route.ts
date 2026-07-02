@@ -4,7 +4,7 @@ import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
 import { extractImageFromUrl } from "@/lib/ai-extract";
-import { fetchBlobFile, persistDealFile } from "@/lib/blob-helpers";
+import { fetchBlobFile, persistDealFile, deleteBlobUrl } from "@/lib/blob-helpers";
 import type { DealFile } from "@/lib/validations";
 import type { OMExtractedData, ExtractedContact } from "@/lib/om-extract";
 import type { Deal, Contact } from "@/lib/validations";
@@ -94,12 +94,17 @@ export async function POST(req: NextRequest) {
     );
     if (blobCleanup) await blobCleanup();
 
+    let resp: NextResponse;
     if (dealId) {
       const contactIds = await createContacts(extracted.contacts);
-      return await updateExistingDeal(dealId, extracted, userId(session), contactIds, dealFile);
+      resp = await updateExistingDeal(dealId, extracted, userId(session), contactIds, dealFile);
+    } else {
+      resp = await createNewDeal(extracted, userId(session), dealFile);
     }
-
-    return await createNewDeal(extracted, userId(session), dealFile);
+    // If the deal wasn't saved (e.g. 422 missing required fields), the persisted
+    // deal-scoped blob is never referenced — delete it so it doesn't leak.
+    if (resp.status >= 400) await deleteBlobUrl(dealFile.url);
+    return resp;
   } catch (err) {
     if (blobCleanup) await blobCleanup().catch(() => {});
     const errObj = err as { status?: number; message?: string; error?: unknown };

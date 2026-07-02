@@ -1142,7 +1142,15 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       const v = (subs[key] as number) || 0;
       if (v <= 0) continue;
       if (key === "utility_reimbursement") {
-        out.push({ label: "RUBS", kind: "rubs", rubs_recovery_pct: r.rubs?.recovery_pct ?? 0.8, rubs_basis: "utilities_total", recurring: true, source_note: r.rubs?.source_note });
+        if (r.rubs?.mode === "structured") {
+          // Structured RUBS was already driving this line (it replaced the manual
+          // subline in the engine) — carry over the recovery formula.
+          out.push({ label: "RUBS", kind: "rubs", rubs_recovery_pct: r.rubs.recovery_pct ?? 0.8, rubs_basis: "utilities_total", recurring: true, source_note: r.rubs.source_note });
+        } else {
+          // A hand-entered flat utility-reimbursement dollar — preserve the exact
+          // amount (do NOT re-price it as an 80% recovery formula).
+          out.push({ label: "Utility Reimbursement", kind: "flat", monthly_amount: v, recurring: true });
+        }
       } else {
         out.push({ label, kind: "flat", monthly_amount: v, recurring: true });
       }
