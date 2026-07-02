@@ -73,6 +73,18 @@ const PCT_FMT = '0.0%';
 const NUMBER_FMT = '#,##0';
 const MULT_FMT = '0.00"x"';
 
+// 1-indexed column number → spreadsheet column letters (1→A, 27→AA).
+function colName(n: number): string {
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+const PROFORMA = "'Annual Pro Forma'"; // cross-sheet ref prefix (quoted — name has a space)
+
 const THIN_BORDER: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: "FFD0D5DD" } },
   bottom: { style: "thin", color: { argb: "FFD0D5DD" } },
@@ -97,9 +109,9 @@ export async function generateExcelWorkbook(
   buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks, scenarioNotes);
   buildAssumptionsSheet(wb, inputs, result);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
-  buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years);
+  buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years, inputs.purchase.purchase_price, result.metrics.total_equity);
   buildRentMatrixSheet(wb, result, inputs);
-  buildReturnsSheet(wb, result);
+  buildReturnsSheet(wb, result, inputs.purchase.purchase_price);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix, resolveProformaBases(inputs.exit));
   buildCapexSheet(wb, inputs.capex);
@@ -566,6 +578,8 @@ function buildAnnualSheet(
   wb: ExcelJS.Workbook,
   annual: AnnualSummary[],
   holdYears: number,
+  purchasePrice: number,
+  totalEquity: number,
 ) {
   const ws = wb.addWorksheet("Annual Pro Forma");
 
@@ -577,109 +591,190 @@ function buildAnnualSheet(
   const headerRow = ws.addRow(headerLabels);
   styleHeaderRow(headerRow, headerLabels.length);
 
-  ws.getColumn(1).width = 28;
+  ws.getColumn(1).width = 30;
   for (let i = 2; i <= holdYears + 1; i++) {
     ws.getColumn(i).width = 16;
   }
 
-  const lineItems: Array<{
+  // Column letters for each year (year y, 0-based, lives in column y+2 → B, C, …)
+  const col = (y: number) => ws.getColumn(y + 2).letter;
+
+  // Rows the reviewer can trace: subtotals, cumulative, cap rate and CoC are LIVE
+  // FORMULAS off the driver rows (change any driver → they recompute). Drivers
+  // themselves (GPR, vacancy, opex, debt service, reserves, capex) stay as engine
+  // values — they come from the monthly unit-state machine / amortization. Note
+  // "Less:" rows are stored negative, so subtotals are simple sums.
+  // Sheet rows (1-based): header=1, then the items below start at row 2.
+  const R = {
+    gpr: 2, vacancy: 3, badDebt: 4, concessions: 5, otherIncome: 6,
+    egi: 7, opex: 8, noi: 9, debtService: 10, cfBeforeCapex: 11,
+    replacementReserve: 12, capitalReserve: 13, capex: 14, cashFlow: 15,
+    cumulative: 16, capRate: 17, cashOnCash: 18, pctMtm: 19,
+  };
+  // Scalars parked below the table so the cap-rate / CoC formulas have stable refs.
+  const priceRow = R.pctMtm + 2; // 21
+  const equityRow = R.pctMtm + 3; // 22
+
+  type Item = {
     label: string;
     key: keyof AnnualSummary;
     negative?: boolean;
     bold?: boolean;
     pct?: boolean;
-  }> = [
+    formula?: (c: string, prev: string | null) => string;
+  };
+  const lineItems: Item[] = [
     { label: "Gross Potential Rent", key: "gpr" },
     { label: "Less: Vacancy", key: "vacancy_loss", negative: true },
     { label: "Less: Bad Debt", key: "bad_debt", negative: true },
     { label: "Less: Concessions", key: "concessions", negative: true },
     { label: "Plus: Other Income", key: "other_income" },
-    { label: "Effective Gross Income", key: "egi", bold: true },
+    { label: "Effective Gross Income", key: "egi", bold: true,
+      formula: (c) => `${c}${R.gpr}+${c}${R.vacancy}+${c}${R.badDebt}+${c}${R.concessions}+${c}${R.otherIncome}` },
     { label: "Less: Operating Expenses", key: "total_opex", negative: true },
-    { label: "Net Operating Income", key: "noi", bold: true },
+    { label: "Net Operating Income", key: "noi", bold: true,
+      formula: (c) => `${c}${R.egi}+${c}${R.opex}` },
     { label: "Less: Debt Service", key: "debt_service", negative: true },
-    { label: "Cash Flow before CapEx & Reserves", key: "cash_flow_before_capex_and_reserves", bold: true },
+    { label: "Cash Flow before CapEx & Reserves", key: "cash_flow_before_capex_and_reserves", bold: true,
+      formula: (c) => `${c}${R.noi}+${c}${R.debtService}` },
     { label: "Less: Replacement Reserve", key: "reserves", negative: true },
     { label: "Less: Capital Reserve", key: "capital_reserve", negative: true },
     { label: "Less: CapEx (Named Projects)", key: "capex", negative: true },
-    { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true },
-    { label: "Cumulative Cash Flow", key: "cumulative_cash_flow" },
-    { label: "Cap Rate", key: "cap_rate", pct: true },
-    { label: "Cash-on-Cash Return", key: "cash_on_cash", pct: true },
+    { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true,
+      formula: (c) => `${c}${R.cfBeforeCapex}+${c}${R.replacementReserve}+${c}${R.capitalReserve}+${c}${R.capex}` },
+    { label: "Cumulative Cash Flow", key: "cumulative_cash_flow",
+      formula: (c, prev) => (prev ? `${prev}${R.cumulative}+${c}${R.cashFlow}` : `${c}${R.cashFlow}`) },
+    { label: "Cap Rate", key: "cap_rate", pct: true,
+      formula: (c) => `IFERROR(${c}${R.noi}/$B$${priceRow},0)` },
+    { label: "Cash-on-Cash Return", key: "cash_on_cash", pct: true,
+      formula: (c) => `IFERROR(${c}${R.cashFlow}/$B$${equityRow},0)` },
     { label: "% Marked-to-Market", key: "pct_marked_to_market", pct: true },
   ];
 
   for (const item of lineItems) {
-    const rowData: Array<string | number> = [item.label];
-
-    for (let y = 0; y < holdYears; y++) {
-      const yearData = annual[y];
-      if (yearData) {
-        const val = yearData[item.key] as number;
-        rowData.push(item.negative ? -val : val);
-      } else {
-        rowData.push(0);
-      }
-    }
-
-    const row = ws.addRow(rowData);
+    const row = ws.addRow([item.label]);
     row.getCell(1).font = item.bold ? BOLD_FONT : NORMAL_FONT;
 
-    for (let i = 2; i <= holdYears + 1; i++) {
-      const cell = row.getCell(i);
+    for (let y = 0; y < holdYears; y++) {
+      const cell = row.getCell(y + 2);
+      if (item.formula) {
+        const prev = y > 0 ? col(y - 1) : null;
+        cell.value = { formula: item.formula(col(y), prev) } as ExcelJS.CellFormulaValue;
+      } else {
+        const val = (annual[y]?.[item.key] as number) ?? 0;
+        cell.value = item.negative ? -val : val;
+      }
       cell.numFmt = item.pct ? PCT_FMT : CURRENCY_FMT;
       cell.font = item.bold ? BOLD_FONT : NORMAL_FONT;
       cell.border = THIN_BORDER;
     }
 
     if (item.bold) {
-      for (let i = 1; i <= holdYears + 1; i++) {
-        row.getCell(i).fill = LIGHT_FILL;
-      }
+      for (let i = 1; i <= holdYears + 1; i++) row.getCell(i).fill = LIGHT_FILL;
     }
+  }
+
+  // Basis scalars for the cap-rate / CoC formulas.
+  ws.addRow([]);
+  const priceR = ws.addRow(["Purchase Price (cap-rate basis)", purchasePrice]);
+  priceR.getCell(2).numFmt = CURRENCY_FMT;
+  const equityR = ws.addRow(["Total Equity (cash-on-cash basis)", totalEquity]);
+  equityR.getCell(2).numFmt = CURRENCY_FMT;
+  for (const r of [priceR, equityR]) {
+    r.getCell(1).font = { ...NORMAL_FONT, italic: true };
+    r.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: "FF64748B" } };
   }
 }
 
 function buildReturnsSheet(
   wb: ExcelJS.Workbook,
   result: UnderwritingResult,
+  purchasePrice: number,
 ) {
   const ws = wb.addWorksheet("Returns");
-  ws.columns = [{ width: 28 }, { width: 18 }];
   const m = result.metrics;
+  const n = result.annual.length; // hold years
+  ws.columns = [{ width: 30 }, { width: 16 }];
 
-  const totalCF = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-  const totalDistributions = totalCF + m.net_sale_proceeds + m.return_of_operating_reserve;
-  const equityMultiple = m.total_equity > 0 ? totalDistributions / m.total_equity : 0;
+  // Annual Pro Forma cross-sheet refs (year y, 0-based → column y+2).
+  const cfRef = (y: number) => `${PROFORMA}!${colName(y + 2)}15`; // Cash Flow row
+  const cfRange = `${PROFORMA}!B15:${colName(n + 1)}15`;
+  const noiY1 = `${PROFORMA}!B9`;
+  const dsY1 = `${PROFORMA}!B10`; // stored negative
+
+  // Row-numbered so the metric formulas can reference the summary/vector cells.
+  const val = (label: string, value: number, fmt: string) => {
+    const r = ws.addRow([label, value]);
+    r.getCell(2).numFmt = fmt;
+    r.getCell(2).border = THIN_BORDER;
+    return r.number;
+  };
+  const formulaCell = (label: string, fmt: string) => {
+    const r = ws.addRow([label]);
+    const c = r.getCell(2);
+    c.numFmt = fmt;
+    c.border = THIN_BORDER;
+    return { row: r.number, cell: c };
+  };
 
   addSectionHeader(ws, "Return Metrics", 2);
-
-  addMetricRow(ws, "IRR", m.irr, PCT_FMT);
-  addMetricRow(ws, "Equity Multiple", equityMultiple, MULT_FMT);
-  addMetricRow(ws, "Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT);
-  addMetricRow(ws, "Year 1 DSCR", m.year1_dscr, '0.00');
-  addMetricRow(ws, "Going-In Cap Rate", m.going_in_cap, PCT_FMT);
-  addMetricRow(ws, "Stabilized Cap Rate", m.stabilized_cap, PCT_FMT);
+  const irr = formulaCell("IRR", PCT_FMT);
+  const em = formulaCell("Equity Multiple", MULT_FMT);
+  val("Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT);
+  const dscr = formulaCell("Year 1 DSCR", "0.00");
+  const goingCap = formulaCell("Going-In Cap Rate", PCT_FMT);
+  val("Stabilized Cap Rate", m.stabilized_cap, PCT_FMT);
   ws.addRow([]);
 
   addSectionHeader(ws, "Cash Flow Summary", 2);
-
-  addMetricRow(ws, "Total Equity Invested", m.total_equity, CURRENCY_FMT);
-  addMetricRow(ws, "Total Cash Flow", totalCF, CURRENCY_FMT);
-  addMetricRow(ws, "Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
-  if (m.return_of_operating_reserve > 0) {
-    addMetricRow(ws, "Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
-  }
-  addMetricRow(ws, "Total Distributions", totalDistributions, CURRENCY_FMT);
-  addMetricRow(ws, "Total Profit", m.total_profit, CURRENCY_FMT);
-
+  const equityRow = val("Total Equity Invested", m.total_equity, CURRENCY_FMT);
+  const totalCFCell = formulaCell("Total Cash Flow", CURRENCY_FMT);
+  const proceedsRow = val("Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
+  const reserveRow = val("Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
+  const distCell = formulaCell("Total Distributions", CURRENCY_FMT);
+  const profitCell = formulaCell("Total Profit", CURRENCY_FMT);
+  ws.addRow([]);
+  const priceRow = val("Purchase Price (cap-rate basis)", purchasePrice, CURRENCY_FMT);
   ws.addRow([]);
 
+  // Equity cash-flow vector that IRR runs on: −equity at t0, then each year's
+  // Cash Flow (Before Taxes) from the Annual Pro Forma, with net sale proceeds +
+  // operating-reserve return added to the final year.
+  addSectionHeader(ws, "Equity Cash Flows (IRR basis)", n + 2);
+  const labels = ["", "t0"];
+  for (let y = 1; y <= n; y++) labels.push(`Yr ${y}`);
+  const labelRow = ws.addRow(labels);
+  labelRow.eachCell((c) => { c.font = { ...NORMAL_FONT, italic: true, color: { argb: "FF64748B" } }; });
+
+  const vec: (string | { formula: string })[] = ["Equity CF", { formula: `-B${equityRow}` }];
+  for (let y = 0; y < n; y++) {
+    vec.push({ formula: y === n - 1 ? `${cfRef(y)}+B${proceedsRow}+B${reserveRow}` : cfRef(y) });
+  }
+  const vecRow = ws.addRow(vec);
+  vecRow.getCell(1).font = NORMAL_FONT;
+  for (let i = 2; i <= n + 2; i++) {
+    vecRow.getCell(i).numFmt = CURRENCY_FMT;
+    vecRow.getCell(i).border = THIN_BORDER;
+  }
+  const vecRange = `B${vecRow.number}:${colName(n + 2)}${vecRow.number}`;
+
+  // Deferred formulas (now that every referenced row number is known).
+  irr.cell.value = { formula: `IFERROR(IRR(${vecRange}),"n/a")` } as ExcelJS.CellFormulaValue;
+  // Guard denominators the engine also guards (all-cash → DS 0; zero equity /
+  // price) so degenerate deals show 0 like the app, not a #DIV/0! in the cell.
+  em.cell.value = { formula: `IFERROR(B${distCell.row}/B${equityRow},0)` } as ExcelJS.CellFormulaValue;
+  dscr.cell.value = { formula: `IFERROR(${noiY1}/-${dsY1},0)` } as ExcelJS.CellFormulaValue;
+  goingCap.cell.value = { formula: `IFERROR(${noiY1}/B${priceRow},0)` } as ExcelJS.CellFormulaValue;
+  totalCFCell.cell.value = { formula: `SUM(${cfRange})` } as ExcelJS.CellFormulaValue;
+  distCell.cell.value = { formula: `B${totalCFCell.row}+B${proceedsRow}+B${reserveRow}` } as ExcelJS.CellFormulaValue;
+  profitCell.cell.value = { formula: `B${distCell.row}-B${equityRow}` } as ExcelJS.CellFormulaValue;
+
+  ws.addRow([]);
   addSectionHeader(ws, "Annual Cash-on-Cash", 2);
-  for (const a of result.annual) {
-    const row = ws.addRow([`Year ${a.year}`]);
+  for (let y = 0; y < n; y++) {
+    const row = ws.addRow([`Year ${result.annual[y].year}`]);
     row.getCell(1).font = NORMAL_FONT;
-    row.getCell(2).value = a.cash_on_cash;
+    row.getCell(2).value = { formula: `${PROFORMA}!${colName(y + 2)}18` } as ExcelJS.CellFormulaValue; // CoC row
     row.getCell(2).numFmt = PCT_FMT;
     row.getCell(2).border = THIN_BORDER;
   }
