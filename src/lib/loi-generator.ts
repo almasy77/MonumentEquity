@@ -230,19 +230,19 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     // 3. Due Diligence Period
     heading("3. Due Diligence Period"),
     p([
-      n(`Buyer shall have a period of ${daysText(ddDays)} days (the "Due Diligence Period") commencing on the later of (i) the Effective Date and (ii) Buyer's receipt of all Seller deliverables listed in Section 9. Buyer shall have a one-time right, exercisable by written notice prior to expiration, to extend the Due Diligence Period by an additional fifteen (15) days. During the Due Diligence Period, Buyer may conduct physical inspections, environmental and engineering assessments, title and survey review, financial and operational review, lease audits, and any other investigations Buyer deems necessary. Buyer may terminate the PSA for any reason during the Due Diligence Period, in which case the Deposit shall be returned to Buyer in full.`),
+      n(`Buyer shall have a period of ${daysText(ddDays)} days (the "Due Diligence Period") commencing on the later of (i) the Effective Date and (ii) Buyer's receipt of all Seller deliverables listed in Section 9. Buyer shall have a one-time right, exercisable by written notice prior to expiration, to extend the Due Diligence Period by an additional fifteen (15) days. During the Due Diligence Period, Buyer may conduct physical inspections, environmental and engineering assessments, title and survey review, financial and operational review, lease audits, and any other investigations Buyer deems necessary. Seller shall provide Buyer and its agents, lenders, inspectors, and consultants reasonable access to the Property, upon reasonable prior notice, throughout the Due Diligence Period, including access to units and building systems and, subject to applicable law and existing leases, the right to interview tenants and the property manager. Buyer may terminate the PSA for any reason during the Due Diligence Period, in which case the Deposit shall be returned to Buyer in full.`),
     ], 200),
 
     // 4. Financing Contingency
     heading("4. Financing Contingency"),
     p([
-      n(`Buyer's obligation to close shall be contingent upon Buyer obtaining acquisition financing on commercially reasonable terms, including a loan-to-value ratio of approximately 65–75% and customary multifamily underwriting terms. Buyer shall use commercially reasonable efforts to secure a loan commitment within ${daysText(financingDays)} days of the Effective Date. If Buyer is unable to obtain a binding loan commitment by such date, Buyer may terminate the PSA and the Deposit shall be returned in full.`),
+      n(`Buyer's obligation to close shall be contingent upon Buyer obtaining acquisition financing on commercially reasonable terms, including a loan-to-value ratio of approximately 65–75% and customary multifamily underwriting terms. Buyer shall use commercially reasonable efforts to secure a loan commitment within ${daysText(financingDays)} days of the Effective Date. If Buyer is unable to obtain a binding loan commitment by such date, Buyer may terminate the PSA and the Deposit shall be returned in full. The Financing Contingency shall remain in effect through Closing, and if, despite Buyer's commercially reasonable efforts, Buyer's committed financing fails to fund for any reason other than Buyer's default, Buyer may terminate the PSA and the Deposit shall be returned to Buyer in full.`),
     ], 200),
 
     // 5. Closing Timeline
     heading("5. Closing Timeline"),
     p([
-      n(`Closing shall occur within ${daysText(closingDays)} days after the later of (i) expiration of the Due Diligence Period and (ii) satisfaction or waiver of the Financing Contingency. Closing shall take place at the offices of a mutually-agreed, licensed title company.`),
+      n(`Closing shall occur within ${daysText(closingDays)} days after the later of (i) expiration of the Due Diligence Period and (ii) satisfaction or waiver of the Financing Contingency. Closing shall take place at the offices of a mutually-agreed, licensed title company. Buyer shall have the right to extend the Closing date by one or more successive periods of thirty (30) days each by releasing to the title company, for each such extension, an additional amount equal to one-quarter of one percent (0.25%) of the purchase price, which additional deposit shall be applied to the purchase price at Closing and shall be in addition to the Deposit, which Buyer shall maintain in full at all times.`),
     ], 200),
 
     // 6. Exclusivity / No-Shop
@@ -254,7 +254,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     // 7. Assignment
     heading("7. Assignment"),
     p([
-      n(`Buyer may, at or prior to Closing, assign its rights and obligations under this LOI and the resulting PSA to any entity controlled by, controlling, or under common control with ${buyer}, including without limitation a single-purpose entity formed for the acquisition in any jurisdiction selected by Buyer, without Seller's consent. Such assignment shall not relieve Buyer of its obligations until Closing.`),
+      n(`Buyer may, at or prior to Closing, assign its rights and obligations under this LOI and the resulting PSA to a partnership, corporation, or other party, including without limitation a single-purpose entity formed for the acquisition in any jurisdiction selected by Buyer, without Seller's consent, and any such assignee shall have all of the benefits, rights, privileges, covenants, conditions, and obligations of Buyer under this LOI and the PSA. Upon such assignment and the assignee's written assumption of Buyer's obligations, Buyer shall be released from any further liability hereunder.`),
     ], 200),
 
     // 8. Conditions Precedent to Closing
@@ -267,22 +267,32 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     bullet("No material adverse change in the physical, financial, or legal condition of the Property between the Effective Date and Closing"),
     bullet("Continued accuracy of Seller's representations and warranties as of Closing"),
     bullet("Receipt of a satisfactory Phase I Environmental Site Assessment and, if recommended, Phase II"),
+    bullet("Delivery of all units in rent-ready condition at Closing, meaning each unit is clean and free of debris, with all appliances, plumbing, electrical, HVAC, and other building systems in good working order, and no unit uninhabitable or under repair, except as disclosed to and accepted by Buyer in writing"),
     ...incentiveCondition,
-    spacer(),
+    p([n("Notwithstanding anything to the contrary, Closing shall not occur, and Buyer shall have no obligation to close, until all contingencies and conditions precedent set forth in this LOI and the PSA have been satisfied or waived in writing by Buyer.")], 200),
 
     // 9. Seller Deliverables During Due Diligence
     heading("9. Seller Deliverables During Due Diligence"),
     p([n("Within five (5) business days of the Effective Date, Seller shall deliver to Buyer the following:")]),
     bullet("Trailing 12-month (T12) operating statements and trailing 3 years of annual operating statements"),
-    bullet("Current rent roll, certified by Seller, including lease terms, deposits, concessions, and delinquencies"),
+    bullet("Current rent roll, certified by Seller, setting forth for each unit the rental rate, security deposit, lease term, concessions, unit type, and lease commencement and expiration dates, together with a payment history for each tenant for the trailing six (6) months (including any late payments and amounts currently owed) and identification of any evictions in progress"),
     bullet("Copies of all existing leases, lease amendments, addenda, and rental applications"),
-    bullet("Property tax bills and insurance policies for the trailing 3 years"),
+    bullet("Property tax bills for the trailing 3 years, and all insurance policies for the trailing 3 years together with insurance carrier contact information"),
     bullet("Capital expenditure history (trailing 5 years) and pending work orders"),
-    bullet("All service contracts, vendor agreements, warranties, and equipment leases"),
+    bullet("All service contracts, vendor agreements, and equipment leases, each showing the contract term, monthly cost, scope of work performed, and any termination penalty, including without limitation contracts for pest control, trash removal, landscaping, janitorial service, parking lot sweeping, snow removal, and security"),
     bullet("Existing environmental reports, surveys, title policies, appraisals, and inspection reports"),
     bullet("Utility bills for the trailing 12 months"),
-    bullet("Schedule of personal property included in the sale"),
+    bullet("A written inventory of all furnishings and personal property in, on, or used in the normal operation and maintenance of the Property, identifying any personal property that will not convey"),
     bullet("Any pending litigation, code violations, or governmental notices affecting the Property"),
+    bullet("Trailing two (2) years' profit and loss statements or summary of operating expenses"),
+    bullet("Operating bank statements for the trailing two (2) years"),
+    bullet("Schedule E from Seller's federal tax returns for the trailing two (2) years"),
+    bullet("Current property management agreement"),
+    bullet("As-built surveys showing any improvements to the Property"),
+    bullet("Owner's title insurance binder or policy"),
+    bullet("All notes, trust deeds, mortgages, and other documents relating to title to, or liens or debts against, the Property, together with a current title insurance commitment"),
+    bullet("A statement or payoff letter from each current lender showing the outstanding balance and terms of each mortgage or loan encumbering the Property"),
+    bullet("Copies of all warranties for appliances, equipment, utilities, roof, paving, pool, and similar items"),
     ...incentiveDeliverables,
     ...rubsDeliverable,
     ...incomeRestrictedDD,
@@ -290,9 +300,9 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
 
     // 10. Operating Covenants During Contract
     heading("10. Operating Covenants During Contract"),
-    p([n("From the Effective Date through Closing, Seller shall operate the Property in the ordinary course consistent with past practice and shall not, without Buyer's prior written consent (not to be unreasonably withheld):")]),
-    bullet("Enter into, modify, terminate, or extend any lease for a term greater than 12 months or at below-market rents"),
-    bullet("Enter into any new service contract not terminable on 30 days' notice without penalty"),
+    p([n("From the Effective Date through Closing, Seller shall operate the Property in the ordinary course consistent with past practice and shall not, without Buyer's prior written consent (which consent may be granted or withheld in Buyer's sole and absolute discretion as to any lease, rental agreement, or service contract, and which shall otherwise not be unreasonably withheld):")]),
+    bullet("Enter into, modify, terminate, extend, or renew any lease, rental agreement, or tenancy"),
+    bullet("Enter into, modify, extend, or terminate any service contract, vendor agreement, or equipment lease"),
     bullet("Undertake any non-emergency capital expenditures or material alterations"),
     bullet("Apply or refund tenant security deposits other than in the ordinary course"),
     bullet("Encumber the Property with any new lien, mortgage, easement, or restriction"),
@@ -310,7 +320,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
 
     // 12. Title and Survey Review
     heading("12. Title and Survey Review"),
-    p([n("Seller shall deliver a current title commitment and underlying exception documents within five (5) business days of the Effective Date. Buyer shall have ten (10) business days from receipt of the later of the title commitment or the survey to deliver written objections to Seller. Seller shall have ten (10) business days to notify Buyer in writing whether Seller will cure such objections. If Seller declines or fails to cure, Buyer may (i) waive the objection and proceed, or (ii) terminate the PSA and receive a full refund of the Deposit.")], 200),
+    p([n("Seller shall deliver a current title commitment and underlying exception documents within five (5) business days of the Effective Date. Buyer shall have ten (10) business days from receipt of the later of the title commitment or the survey to deliver written objections to Seller. Seller shall have ten (10) business days to notify Buyer in writing whether Seller will cure such objections. If Seller declines or fails to cure, Buyer may (i) waive the objection and proceed, or (ii) terminate the PSA and receive a full refund of the Deposit. Notwithstanding the foregoing, Seller shall cure and remove, at or prior to Closing and at Seller's sole expense, all mortgages, deeds of trust, mechanic's and materialmen's liens, judgment liens, delinquent taxes, and other monetary liens or encumbrances of an ascertainable amount (collectively, \"Mandatory Cure Items\"), whether or not Buyer objects to them.")], 200),
 
     // 13. Wire Fraud Prevention
     heading("13. Wire Fraud Prevention and Closing Funds Protocol"),
@@ -341,20 +351,24 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     ...proofOfFunds,
     spacer(),
 
-    // 16. Non-Binding Nature
-    heading("16. Non-Binding Nature"),
-    p([n("This Letter of Intent is a non-binding expression of interest and does not constitute a contract or agreement to purchase. Neither party shall have any legal obligation arising from this LOI, except for the Exclusivity (Section 6) and Confidentiality (Section 17) provisions, which shall be binding upon execution. A binding obligation to purchase or sell shall arise only upon the execution of a mutually acceptable PSA.")], 200),
+    // 16. Absence of Violations
+    heading("16. Absence of Violations"),
+    p([n("To the best of Seller's knowledge, no part of the Property is in violation of any applicable code, health, or safety regulation, and the Property is not the subject of any governmental or judicial proceeding. Seller is not aware of any structural defects or adverse geological or environmental conditions affecting the Property or its value. In the event Buyer discovers, whether during or after the Due Diligence Period, that any such violation, proceeding, defect, or condition exists and is material to the transaction, Buyer may, at its election, terminate the PSA and receive a full refund of the Deposit or negotiate an adjustment to the terms of the transaction.")], 200),
 
-    // 17. Confidentiality
-    heading("17. Confidentiality"),
+    // 17. Non-Binding Nature
+    heading("17. Non-Binding Nature"),
+    p([n("This Letter of Intent is a non-binding expression of interest and does not constitute a contract or agreement to purchase. Neither party shall have any legal obligation arising from this LOI, except for the Exclusivity (Section 6) and Confidentiality (Section 18) provisions, which shall be binding upon execution. A binding obligation to purchase or sell shall arise only upon the execution of a mutually acceptable PSA.")], 200),
+
+    // 18. Confidentiality
+    heading("18. Confidentiality"),
     p([n("Both parties agree to maintain the confidentiality of this LOI and the terms contained herein. Neither party shall disclose the existence or terms of this LOI to any third party without the prior written consent of the other party, except as required by law or to their respective advisors, lenders, attorneys, accountants, prospective investors, and lenders, each of whom shall be bound by equivalent confidentiality obligations.")], 200),
 
-    // 18. Governing Law
-    heading("18. Governing Law"),
+    // 19. Governing Law
+    heading("19. Governing Law"),
     p([n(`This LOI and the resulting PSA shall be governed by and construed in accordance with the laws of the State of ${state}, without regard to its conflicts of law principles.`)], 200),
 
-    // 19. LOI Expiration
-    heading("19. LOI Expiration"),
+    // 20. LOI Expiration
+    heading("20. LOI Expiration"),
     p([
       n(`This Letter of Intent shall expire at 5:00 p.m. Eastern Time on `),
       b(expDate),
