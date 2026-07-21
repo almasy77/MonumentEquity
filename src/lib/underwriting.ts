@@ -602,6 +602,20 @@ export interface ExitAssumptions {
   proforma_rent_basis?: RentBasis;
   proforma_unrenovated_basis?: UnrenovatedBasis;
   proforma_renovated_basis?: RenovatedBasis;
+
+  // ── Cash-out refinance (item 2) — single-owner, no capital-return split ──
+  // A mid-hold refi closes at the END of refi_year; the new loan governs debt
+  // service from the next month through the eventual sale. All optional and
+  // backwards-compatible: refi_enabled=false reproduces the no-refi output.
+  refi_enabled?: boolean;
+  refi_year?: number; // 1..hold-1; refi closes at end of this year
+  refi_cap_rate?: number; // used to value the property at refi (trailing-year NOI / cap)
+  refi_ltv?: number; // new loan = refinanced value × refi_ltv
+  refi_interest_rate?: number; // annual, new loan
+  refi_amortization_years?: number; // new loan amortization
+  refi_io_months?: number; // new loan interest-only months (from the refi)
+  refi_cost_rate?: number; // refi closing costs as % of the new loan
+  refi_prepayment_penalty_rate?: number; // penalty as % of the old-loan payoff balance
 }
 
 /**
@@ -860,6 +874,25 @@ export function calculateUnderwriting(
   const monthlyDS = calculateMonthlyPayment(loanAmount, monthlyRate, amortMonths);
   const monthlyIO = loanAmount * monthlyRate; // interest-only payment
 
+  // ── Cash-out refinance (item 2) ── resolve the refi if enabled and valid
+  // (year in [1, hold-1], positive cap). Closes at the END of refi_year; the new
+  // loan governs debt service from the next month. Null → no-refi path (output
+  // identical to before this feature).
+  const refi = (exit.refi_enabled && (exit.refi_year ?? 0) >= 1 &&
+    (exit.refi_year ?? 0) < exit.hold_period_years && (exit.refi_cap_rate ?? 0) > 0)
+    ? {
+        year: exit.refi_year as number,
+        refiMonth: (exit.refi_year as number) * 12,
+        capRate: exit.refi_cap_rate as number,
+        ltv: exit.refi_ltv ?? financing.ltv,
+        monthlyRate: (exit.refi_interest_rate ?? financing.interest_rate) / 12,
+        amortMonths: (exit.refi_amortization_years ?? financing.amortization_years) * 12,
+        ioMonths: exit.refi_io_months ?? 0,
+        costRate: exit.refi_cost_rate ?? 0,
+        prepayRate: exit.refi_prepayment_penalty_rate ?? 0,
+      }
+    : null;
+
   // ── Total units ──
   const totalUnits = revenue.unit_mix.reduce((sum, u) => sum + u.count, 0);
 
@@ -891,6 +924,16 @@ export function calculateUnderwriting(
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
   let amortBalance = loanAmount; // running balance for the interest/principal split
+  // Mutable loan state — the refi (if any) swaps these mid-hold.
+  let curRate = monthlyRate;
+  let curDS = monthlyDS;
+  let curIO = monthlyIO;
+  let ioEndMonth = financing.io_period_months; // absolute month IO ends
+  // Refi outputs (0 when no refi).
+  let refiNetProceeds = 0;
+  let refiNewLoanAmount = 0;
+  let refiPrepayPenalty = 0;
+  let refiCost = 0;
   // Per-month non-recurring other income (line-item model). Received in-period
   // but excluded from the stabilized NOI that drives exit value.
   const nonRecurringOtherByMonth: number[] = [];
@@ -991,11 +1034,31 @@ export function calculateUnderwriting(
 
     const noi = egi - monthlyOpex;
 
+    // ── Refi close (item 2): swap to the new loan at the start of the month
+    // after refi_year ends. Value on the trailing refi_year NOI (the 12 months
+    // just computed), pay off the old loan, reset amortization to the new loan. ──
+    if (refi && m === refi.refiMonth + 1) {
+      let refiYearNOI = 0;
+      for (let i = refi.refiMonth - 12; i < refi.refiMonth; i++) refiYearNOI += monthly[i].noi;
+      const refinancedValue = refi.capRate > 0 ? refiYearNOI / refi.capRate : 0;
+      refiNewLoanAmount = refinancedValue * refi.ltv;
+      // Old-loan payoff at the refi — closed-form, same basis as the exit payoff.
+      const oldBalance = calculateLoanBalance(loanAmount, monthlyRate, amortMonths, refi.refiMonth, financing.io_period_months);
+      refiPrepayPenalty = oldBalance * refi.prepayRate;
+      refiCost = refiNewLoanAmount * refi.costRate;
+      refiNetProceeds = refiNewLoanAmount - oldBalance - refiPrepayPenalty - refiCost;
+      amortBalance = refiNewLoanAmount;
+      curRate = refi.monthlyRate;
+      curDS = calculateMonthlyPayment(refiNewLoanAmount, curRate, refi.amortMonths);
+      curIO = refiNewLoanAmount * curRate;
+      ioEndMonth = refi.refiMonth + refi.ioMonths;
+    }
+
     // Debt service (IO period vs amortizing), split into interest and principal.
     // Only INTEREST is tax-deductible — the tax layer consumes this split.
-    const ds = m <= financing.io_period_months ? monthlyIO : monthlyDS;
-    const interestPaid = amortBalance * monthlyRate;
-    const principalPaid = m <= financing.io_period_months ? 0 : Math.max(0, ds - interestPaid);
+    const ds = m <= ioEndMonth ? curIO : curDS;
+    const interestPaid = amortBalance * curRate;
+    const principalPaid = m <= ioEndMonth ? 0 : Math.max(0, ds - interestPaid);
     amortBalance = Math.max(0, amortBalance - principalPaid);
 
     // CapEx for this month (named projects — dated lumps)
@@ -1125,14 +1188,17 @@ export function calculateUnderwriting(
   }
   const sellingCosts = exitValue * exit.selling_cost_rate;
 
-  // Outstanding loan balance at exit
-  const loanBalance = calculateLoanBalance(
-    loanAmount,
-    monthlyRate,
-    amortMonths,
-    totalMonths,
-    financing.io_period_months
-  );
+  // Outstanding loan balance at exit — the NEW loan when refinanced, over the
+  // months elapsed since the refi; otherwise the original loan (unchanged path).
+  const loanBalance = refi
+    ? calculateLoanBalance(refiNewLoanAmount, refi.monthlyRate, refi.amortMonths, totalMonths - refi.refiMonth, refi.ioMonths)
+    : calculateLoanBalance(
+        loanAmount,
+        monthlyRate,
+        amortMonths,
+        totalMonths,
+        financing.io_period_months
+      );
 
   const netSaleProceeds = exitValue - sellingCosts - loanBalance;
   // Return of the operating reserve at exit (operating-reserve-return spec):
@@ -1142,7 +1208,9 @@ export function calculateUnderwriting(
   // sale proceeds, so the waterfall stays auditable.
   const operatingReserveYield = purchase.operating_reserve_yield_rate ?? 0;
   const returnOfOperatingReserve = capexReserve * Math.pow(1 + operatingReserveYield, exit.hold_period_years);
-  const totalDistributions = cumulativeCF + netSaleProceeds + returnOfOperatingReserve;
+  // Refi cash-out is a distribution too (0 when no refi) — keep equity multiple
+  // and total profit consistent with the IRR, which already counts it.
+  const totalDistributions = cumulativeCF + refiNetProceeds + netSaleProceeds + returnOfOperatingReserve;
   const totalProfit = totalDistributions - totalEquity;
 
   // ── Metrics ──
@@ -1161,6 +1229,9 @@ export function calculateUnderwriting(
       irrFlows.push(annual[y].cash_flow);
     }
   }
+  // Refi cash-out proceeds land in the refi year — a dated distribution (like the
+  // sale proceeds), not folded into operating cash flow.
+  if (refi) irrFlows[refi.year] += refiNetProceeds;
   const irr = calculateAnnualXIRR(irrFlows);
 
   const equityMultiple = totalEquity > 0 ? totalDistributions / totalEquity : 0;
@@ -1420,6 +1491,15 @@ export function calculateUnderwriting(
         exitValue,
         sellingCosts,
         originationFee,
+        refi: refi
+          ? {
+              year: refi.year,
+              netProceeds: refiNetProceeds,
+              prepayPenalty: refiPrepayPenalty,
+              cost: refiCost,
+              loanTermYears: exit.refi_amortization_years ?? financing.amortization_years,
+            }
+          : undefined,
       })
     : undefined;
 
