@@ -28,7 +28,7 @@
  *    (11.5/12 first year); capex vintages use half-year.
  */
 
-import { calculateIRR } from "./irr";
+import { calculateAnnualXIRR } from "./irr";
 import type { ScenarioInputs, AnnualSummary, ClosingCostBreakdown } from "./underwriting";
 
 // ─── Inputs (TAX_TREATMENT_SPEC §8) ──────────────────────────
@@ -403,8 +403,8 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
 
   return {
     years,
-    after_tax_irr_propco: calculateIRR(flowsPropco),
-    after_tax_irr_household: calculateIRR(flowsHousehold),
+    after_tax_irr_propco: calculateAnnualXIRR(flowsPropco),
+    after_tax_irr_household: calculateAnnualXIRR(flowsHousehold),
     year1_federal_shield: y1 && y1.federal_tax < 0 ? -y1.federal_tax : 0,
     year1_state_shield: y1 && y1.state_tax < 0 ? -y1.state_tax : 0,
     cost_seg_fee_deduction_total: costSegFeeDeductedTotal,
