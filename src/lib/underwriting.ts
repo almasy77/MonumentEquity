@@ -5,7 +5,7 @@
  * Pure functions — no side effects, fully testable.
  */
 
-import { calculateIRR } from "./irr";
+import { calculateAnnualXIRR } from "./irr";
 import { computeTaxLayer, TAX_DEFAULTS } from "./tax";
 import type { TaxAssumptions, TaxResult } from "./tax";
 
@@ -1161,7 +1161,7 @@ export function calculateUnderwriting(
       irrFlows.push(annual[y].cash_flow);
     }
   }
-  const irr = calculateIRR(irrFlows);
+  const irr = calculateAnnualXIRR(irrFlows);
 
   const equityMultiple = totalEquity > 0 ? totalDistributions / totalEquity : 0;
   const avgCoC =
@@ -2180,7 +2180,7 @@ function buildSensitivityGrid(
       grid.push({
         purchase_price_delta: priceDelta,
         exit_cap_rate: inputs.exit.exit_cap_rate + capDelta,
-        irr: calculateIRR(irrFlows),
+        irr: calculateAnnualXIRR(irrFlows),
       });
     }
   }

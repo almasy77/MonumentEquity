@@ -120,6 +120,21 @@ export function calculateXIRR(
   return null;
 }
 
+// Year length used by calculateXIRR's day-count. Exposed so annual flows can be
+// dated on exact 1-year spacing (years_i = i exactly).
+export const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+/**
+ * IRR for a plain annual cash-flow array [t0, t1, …, tN] via the dated XIRR
+ * engine, with each flow placed on exact 1-year spacing. Numerically identical
+ * to calculateIRR for annual flows, but routes through calculateXIRR so callers
+ * can later interleave genuinely dated events (e.g. a mid-hold refinance) by
+ * building {amount, date}[] directly and calling calculateXIRR.
+ */
+export function calculateAnnualXIRR(flows: number[]): number | null {
+  return calculateXIRR(flows.map((amount, i) => ({ amount, date: new Date(i * MS_PER_YEAR) })));
+}
+
 /**
  * Calculate NPV at a given discount rate.
  */
