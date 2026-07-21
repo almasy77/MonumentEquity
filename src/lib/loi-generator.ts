@@ -102,6 +102,9 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     : (purchase.earnest_money_max ? Math.min(emComputed, purchase.earnest_money_max) : emComputed);
   const ddDays = purchase.due_diligence_days || 45;
   const closingDays = purchase.closing_days || 60;
+  // Exclusivity / no-shop window (§6): its own period, NOT tied to the DD days.
+  // Default 60 so the no-shop covers DD plus PSA negotiation.
+  const exclusivityDays = purchase.exclusivity_days || 60;
   // Financing-contingency window (item 3): independent of DD; defaulted by loan
   // type (agency runs long: appraisal + Phase I + PCA + agency underwriting).
   const fin = (scenario?.financing_assumptions ?? {}) as Partial<FinancingAssumptions>;
@@ -248,7 +251,7 @@ export async function generateLOI(data: LOIData): Promise<Buffer> {
     // 6. Exclusivity / No-Shop
     heading("6. Exclusivity / No-Shop"),
     p([
-      n(`From the Effective Date through the earlier of (i) ${daysText(ddDays)} days thereafter or (ii) execution of the PSA, Seller agrees that neither Seller nor any of its affiliates, agents, or representatives shall directly or indirectly solicit, initiate, encourage, negotiate, or accept any offer, inquiry, or proposal from any third party regarding the sale, transfer, refinancing, or encumbrance of the Property. Seller shall promptly notify Buyer of any such unsolicited inquiry.`),
+      n(`From the Effective Date through the earlier of (i) ${daysText(exclusivityDays)} days thereafter or (ii) execution of the PSA, Seller agrees that neither Seller nor any of its affiliates, agents, or representatives shall directly or indirectly solicit, initiate, encourage, negotiate, or accept any offer, inquiry, or proposal from any third party regarding the sale, transfer, refinancing, or encumbrance of the Property. Seller shall promptly notify Buyer of any such unsolicited inquiry.`),
     ], 200),
 
     // 7. Assignment

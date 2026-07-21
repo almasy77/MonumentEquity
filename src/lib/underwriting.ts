@@ -50,6 +50,7 @@ export interface PurchaseAssumptions {
   loi_expiration?: string;
   due_diligence_days?: number;
   closing_days?: number;
+  exclusivity_days?: number; // LOI §6 no-shop window; default 60 (decoupled from DD)
   buyer_entity?: string;
   // LOI earnest-money sizing (loi-template-fixes). When earnest_money is left 0,
   // the LOI computes clamp(price × pct, min, max). An explicit earnest_money

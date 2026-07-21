@@ -129,6 +129,18 @@ describe("LOI — revised template clauses", () => {
     expect(t).toContain("Mandatory Cure Items");
   });
 
+  it("§6 exclusivity defaults to 60 days, decoupled from the DD period", async () => {
+    // DD is 30 here; exclusivity must still be 60 (not tied to DD).
+    const t = await loiText({ purchase: { due_diligence_days: 30 } });
+    expect(t).toContain("thirty (30) days"); // DD period
+    expect(t).toContain("earlier of (i) sixty (60) days thereafter"); // exclusivity
+  });
+
+  it("§6 exclusivity honors an explicit override", async () => {
+    const t = await loiText({ purchase: { exclusivity_days: 90 } as Partial<PurchaseAssumptions> });
+    expect(t).toContain("earlier of (i) ninety (90) days thereafter");
+  });
+
   it("inserts §16 Absence of Violations and renumbers 17–20 with the corrected cross-reference", async () => {
     const t = await loiText({});
     expect(t).toContain("16. Absence of Violations");
