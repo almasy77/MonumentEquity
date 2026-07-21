@@ -105,3 +105,53 @@ describe("LOI — item 5/6: polish", () => {
     expect(t).toContain("[Month, Day/Year]");
   });
 });
+
+describe("LOI — revised template clauses", () => {
+  it("adds the new / expanded standard clauses", async () => {
+    const t = (await loiText({})).replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
+    // §3 access, §4 financing-through-closing, §5 closing extension
+    expect(t).toContain("reasonable access to the Property, upon reasonable prior notice");
+    expect(t).toContain("Financing Contingency shall remain in effect through Closing");
+    expect(t).toContain("successive periods of thirty (30) days each by releasing");
+    // §7 broadened assignment + release
+    expect(t).toContain("to a partnership, corporation, or other party");
+    expect(t).toContain("Buyer shall be released from any further liability");
+    // §8 rent-ready + notwithstanding
+    expect(t).toContain("all units in rent-ready condition at Closing");
+    expect(t).toContain("Buyer shall have no obligation to close, until all contingencies");
+    // §9 expanded deliverables
+    expect(t).toContain("Operating bank statements for the trailing two (2) years");
+    expect(t).toContain("Schedule E from Seller's federal tax returns");
+    expect(t).toContain("payoff letter from each current lender");
+    // §10 sole-discretion consent
+    expect(t).toContain("sole and absolute discretion as to any lease");
+    // §12 mandatory cure items
+    expect(t).toContain("Mandatory Cure Items");
+  });
+
+  it("§6 exclusivity defaults to 60 days, decoupled from the DD period", async () => {
+    // DD is 30 here; exclusivity must still be 60 (not tied to DD).
+    const t = await loiText({ purchase: { due_diligence_days: 30 } });
+    expect(t).toContain("thirty (30) days"); // DD period
+    expect(t).toContain("earlier of (i) sixty (60) days thereafter"); // exclusivity
+  });
+
+  it("§6 exclusivity honors an explicit override", async () => {
+    const t = await loiText({ purchase: { exclusivity_days: 90 } as Partial<PurchaseAssumptions> });
+    expect(t).toContain("earlier of (i) ninety (90) days thereafter");
+  });
+
+  it("inserts §16 Absence of Violations and renumbers 17–20 with the corrected cross-reference", async () => {
+    const t = await loiText({});
+    expect(t).toContain("16. Absence of Violations");
+    expect(t).toContain("17. Non-Binding Nature");
+    expect(t).toContain("18. Confidentiality");
+    expect(t).toContain("19. Governing Law");
+    expect(t).toContain("20. LOI Expiration");
+    // Non-Binding now points at Confidentiality's new section number.
+    expect(t).toContain("Confidentiality (Section 18)");
+    // No stale numbering left behind.
+    expect(t).not.toContain("16. Non-Binding");
+    expect(t).not.toContain("19. LOI Expiration ");
+  });
+});
