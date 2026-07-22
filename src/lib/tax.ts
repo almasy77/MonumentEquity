@@ -152,6 +152,17 @@ export interface TaxLayerContext {
   exitValue: number;
   sellingCosts: number;
   originationFee: number;
+  // Cash-out refinance (item 2), if any. Proceeds are non-taxable debt (added to
+  // after-tax cash flow, not income); the prepay penalty is deductible in the
+  // refi year; the refi cost amortizes over the new loan term. Post-refi interest
+  // is already reflected in ctx.annual[].interest_paid.
+  refi?: {
+    year: number;
+    netProceeds: number;
+    prepayPenalty: number;
+    cost: number;
+    loanTermYears: number;
+  };
 }
 
 export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): TaxResult {
@@ -220,6 +231,9 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
   // ── Financing-cost amortization ──
   const loanTermYears = Math.max(1, financing.loan_term_years || financing.amortization_years || 30);
   const finAmortAnnual = ctx.originationFee / loanTermYears;
+  // Refi cost amortizes straight-line over the new loan term (same treatment as
+  // the origination fee); prepay penalty is a one-time deduction in the refi year.
+  const refiCostAnnual = ctx.refi ? ctx.refi.cost / Math.max(1, ctx.refi.loanTermYears) : 0;
 
   // ── Per-year schedules & tax flow ──
   const years: TaxYearRow[] = [];
@@ -291,9 +305,20 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
     costSegFeeDeductedTotal += costSegFeeDed;
     const capexExpDeduction = capexExpensed;
 
-    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − study fee − expensed repairs
-    const tiFed = a.noi - a.interest_paid - fedDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction;
-    const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction;
+    // Refi deductions (item 2): prepay penalty in the refi year + refi-cost
+    // amortization from the refi year onward (remainder expensed at exit).
+    let refiDed = 0;
+    if (ctx.refi && y >= ctx.refi.year) {
+      if (y === ctx.refi.year) refiDed += ctx.refi.prepayPenalty;
+      const amortizedBeforeRefi = Math.min(ctx.refi.cost, refiCostAnnual * (y - ctx.refi.year));
+      refiDed += isExitYear
+        ? Math.max(0, ctx.refi.cost - amortizedBeforeRefi)
+        : Math.max(0, Math.min(refiCostAnnual, ctx.refi.cost - amortizedBeforeRefi));
+    }
+
+    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − study fee − expensed repairs − refi deductions
+    const tiFed = a.noi - a.interest_paid - fedDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
+    const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
 
     // ── Federal loss routing: REPS → §461(l) → NOL ──
     // NOL carried INTO this year (from prior years) is release-eligible now via
@@ -394,6 +419,13 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
   // After-tax IRRs: equity out, after-tax CFs, exit proceeds (pre-tax per 1031) in final year.
   // Exit proceeds + return of the operating reserve (return of capital —
   // non-taxable) land in the final period of both after-tax IRRs.
+  // Refi cash-out proceeds — non-taxable debt — land in the refi year of both
+  // after-tax IRRs (the tax benefit of the prepay/refi-cost deductions is already
+  // inside atcf via reduced tax; here we add the cash itself).
+  if (ctx.refi) {
+    atcfPropco[ctx.refi.year - 1] += ctx.refi.netProceeds;
+    atcfHousehold[ctx.refi.year - 1] += ctx.refi.netProceeds;
+  }
   const flowsPropco = [-ctx.totalEquity, ...atcfPropco];
   flowsPropco[flowsPropco.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
   const flowsHousehold = [-ctx.totalEquity, ...atcfHousehold];
