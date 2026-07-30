@@ -54,7 +54,6 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
   const insPerUnit = (exp.insurance_per_unit as number | undefined) ?? (units && ox ? ox.insurance / units : undefined);
   const mgmtRate = exp.management_fee_rate as number | undefined;
   const rmPerUnit = exp.repairs_maintenance_per_unit as number | undefined;
-  const resPerUnit = exp.reserves_per_unit as number | undefined;
 
   const rows: Row[] = ox
     ? [

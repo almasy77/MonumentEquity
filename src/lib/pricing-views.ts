@@ -58,10 +58,19 @@ function positive(n: number | undefined | null): n is number {
   return typeof n === "number" && isFinite(n) && n > 0;
 }
 
+export interface PricingViewsOptions {
+  // Method keys to omit entirely (dropped from both the rows and the range). Used
+  // by the seller one-pager to hide methods that aren't ready to defend, e.g. the
+  // stabilized-NOI cap when the stabilized pro forma isn't fully built out.
+  exclude?: string[];
+}
+
 export function computePricingViews(
   ctx: PricingViewContext,
   inputs: PricingViewInputs,
+  opts?: PricingViewsOptions,
 ): PricingViewsResult {
+  const exclude = new Set(opts?.exclude ?? []);
   const units = positive(ctx.units) ? ctx.units : null;
   const perUnit = (v: number | null): number | null => (v !== null && units ? v / units : null);
 
@@ -126,14 +135,22 @@ export function computePricingViews(
       : row("grm", "Gross rent multiplier", null, "GRM × gross rent", "enter a market GRM"),
   );
 
-  // ── Price per SF (only when SF known) ──
-  if (positive(ctx.squareFootage)) {
-    rows.push(
-      positive(inputs.price_per_sf)
-        ? row("ppsf", "Price per SF", inputs.price_per_sf! * ctx.squareFootage!, `${usd(inputs.price_per_sf!)} × ${ctx.squareFootage!.toLocaleString()} SF`)
-        : row("ppsf", "Price per SF", null, "$/SF × SF", "enter a comp $/SF"),
-    );
-  }
+  // ── Price per SF ── always shown (like the other methods): when either the
+  // building SF or the comp $/SF is missing, the row prompts for what's needed
+  // rather than silently disappearing.
+  rows.push(
+    positive(inputs.price_per_sf) && positive(ctx.squareFootage)
+      ? row("ppsf", "Price per SF", inputs.price_per_sf! * ctx.squareFootage!, `${usd(inputs.price_per_sf!)} × ${ctx.squareFootage!.toLocaleString()} SF`)
+      : row(
+          "ppsf",
+          "Price per SF",
+          null,
+          "$/SF × SF",
+          !positive(ctx.squareFootage)
+            ? (positive(inputs.price_per_sf) ? "need the building SF" : "need the building SF and a comp $/SF")
+            : "enter a comp $/SF",
+        ),
+  );
 
   // ── Assessed-value anchor ──
   rows.push(
@@ -148,8 +165,12 @@ export function computePricingViews(
         ),
   );
 
+  // Drop any excluded methods before building the range so a hidden method never
+  // widens or shifts the supported range.
+  const visibleRows = exclude.size ? rows.filter((r) => !exclude.has(r.key)) : rows;
+
   // ── Range across the methods that produced a value ──
-  const values = rows.map((r) => r.impliedValue).filter((v): v is number => v !== null).sort((a, b) => a - b);
+  const values = visibleRows.map((r) => r.impliedValue).filter((v): v is number => v !== null).sort((a, b) => a - b);
   let range: PricingViewsResult["range"] = null;
   if (values.length > 0) {
     const mid =
@@ -160,7 +181,7 @@ export function computePricingViews(
   }
 
   return {
-    rows,
+    rows: visibleRows,
     range,
     asking: positive(ctx.askingPrice) ? ctx.askingPrice! : null,
     offer: positive(ctx.offerPrice) ? ctx.offerPrice! : null,

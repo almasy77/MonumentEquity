@@ -45,6 +45,9 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
       offerPrice: offer,
     },
     (scenario.pricing_views ?? {}) as PricingViewInputs,
+    // The stabilized-NOI cap method leans on a fully built-out stabilized pro
+    // forma; hide it from the seller-facing doc rather than defend a soft number.
+    { exclude: ["cap_my_stab"] },
   );
 
   const rows = views.rows
