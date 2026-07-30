@@ -2163,9 +2163,45 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 )}
               </div>
               <PctField label="Bad Debt" value={r.bad_debt_rate} onChange={(v) => { setR({ ...r, bad_debt_rate: v }); markDirty(); }} />
-              <PctField label="Concessions" value={r.concessions_rate ?? 0} onChange={(v) => { setR({ ...r, concessions_rate: v }); markDirty(); }} />
               <div>
-                <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => { setE({ ...e, turnover_rate: v }); markDirty(); }} />
+                {/* Direct edit clears the free-months helper so the hint can't go stale. */}
+                <PctField label="Concessions" value={r.concessions_rate ?? 0} onChange={(v) => { setR({ ...r, concessions_rate: v, concession_free_months: undefined }); markDirty(); }} />
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">or</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={r.concession_free_months ?? ""}
+                    placeholder="0"
+                    onChange={(ev) => {
+                      const months = parseFloat(ev.target.value);
+                      const turnover = e.turnover_rate ?? 0.5;
+                      if (!isFinite(months) || months <= 0) {
+                        setR({ ...r, concession_free_months: undefined });
+                      } else {
+                        // Amortized over a 12-mo lease: rate = turnover × months ÷ 12.
+                        setR({ ...r, concession_free_months: months, concessions_rate: (turnover * months) / 12 });
+                      }
+                      markDirty();
+                    }}
+                    className="w-12 h-6 bg-slate-800 border border-slate-700 rounded px-1.5 text-[11px] text-white outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-500">mo free/lease</span>
+                </div>
+                {r.concession_free_months ? (
+                  <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                    {r.concession_free_months} mo × {((e.turnover_rate ?? 0.5) * 100).toFixed(0)}% turnover ÷ 12 = {((r.concessions_rate ?? 0) * 100).toFixed(2)}%
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => {
+                  setE({ ...e, turnover_rate: v });
+                  // Keep a free-months-derived concession rate in sync when turnover changes.
+                  if (r.concession_free_months) setR({ ...r, concessions_rate: (v * r.concession_free_months) / 12 });
+                  markDirty();
+                }} />
                 {r.rent_ramp?.enabled && (
                   <p className="text-[10px] text-slate-500 mt-0.5">drives turn cost; ramp turns are costed separately</p>
                 )}
@@ -2403,38 +2439,45 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                     mo 1 = first month · ≈ yr {Math.floor((phaseInMonth - 1) / 12) + 1}, mo {((phaseInMonth - 1) % 12) + 1}
                                   </p>
                                 </div>
-                                <div className="flex items-end pb-1">
-                                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                                <div>
+                                  <Label className="text-xs text-slate-400">At Exit</Label>
+                                  <label className="mt-1 h-9 flex items-center gap-1.5 px-2.5 rounded border border-slate-700 bg-slate-800/50 text-[11px] text-slate-300 cursor-pointer">
                                     <input
                                       type="checkbox"
                                       checked={tr.apply_at_exit ?? true}
                                       onChange={(ev) => updateTr({ apply_at_exit: ev.target.checked })}
                                       className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
                                     />
-                                    Apply at exit
+                                    Reassess at sale
                                   </label>
                                 </div>
                               </div>
 
                               {/* Auto-computed: property value → assessed value → property taxes */}
-                              <div className="grid grid-cols-3 gap-3">
-                                {[
-                                  { label: "Property Value", val: fmtCurrency(marketValue), hint: "auto — purchase price" },
-                                  { label: "Assessed Value", val: fmtCurrency(assessedValue), hint: `${(ratio * 100).toFixed(0)}% × market` },
-                                  { label: "Property Taxes / yr", val: fmtCurrency(annualTax), hint: `assessed × ${(rateDecimal * 100).toFixed(3)}%`, accent: true },
-                                ].map((c) => (
-                                  <div key={c.label}>
-                                    <Label className="text-xs text-slate-400">{c.label}</Label>
-                                    <div className={`h-9 flex items-center px-2.5 rounded border border-slate-700 bg-slate-800/50 tabular-nums text-sm ${c.accent ? "text-emerald-300 font-semibold" : "text-slate-200"}`}>
-                                      {c.val}
+                              <div className="pt-2.5 mt-0.5 border-t border-slate-800">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Computed</span>
+                                  <span className="text-[10px] text-slate-600">purchase price → assessed value → tax bill</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-3">
+                                  {[
+                                    { label: "Property Value", val: fmtCurrency(marketValue), hint: "auto — purchase price" },
+                                    { label: "Assessed Value", val: fmtCurrency(assessedValue), hint: `${(ratio * 100).toFixed(0)}% × market` },
+                                    { label: "Property Taxes / yr", val: fmtCurrency(annualTax), hint: `assessed × ${(rateDecimal * 100).toFixed(3)}%`, accent: true },
+                                  ].map((c) => (
+                                    <div key={c.label}>
+                                      <Label className="text-xs text-slate-400">{c.label}</Label>
+                                      <div className={`h-9 flex items-center px-2.5 rounded border border-slate-700 bg-slate-800/50 tabular-nums text-sm ${c.accent ? "text-emerald-300 font-semibold" : "text-slate-200"}`}>
+                                        {c.val}
+                                      </div>
+                                      <p className="text-[10px] text-slate-500 mt-0.5">{c.hint}</p>
                                     </div>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">{c.hint}</p>
-                                  </div>
-                                ))}
+                                  ))}
+                                </div>
                               </div>
 
-                              <p className="text-[10px] text-slate-500">
-                                Enter the county mill rate (÷1000) or the equivalent %, and the assessment ratio (assessed ÷ market). Property Value auto-fills from the purchase price; Assessed Value and Property Taxes compute from them. Effective rate on market = {(effOnMarket * 100).toFixed(3)}%. From the phase-in month the reassessed bill applies (escalated; mid-year switch pro-rated); at exit, value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
+                              <p className="text-[10px] text-slate-500 leading-relaxed">
+                                Effective rate on market <span className="tabular-nums text-slate-400">{(effOnMarket * 100).toFixed(3)}%</span>. From the phase-in month the reassessed bill applies (escalated; mid-year switch pro-rated). At exit, value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
                               </p>
                             </>
                           );

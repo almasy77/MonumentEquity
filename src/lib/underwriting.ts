@@ -160,7 +160,10 @@ export interface RevenueAssumptions {
   other_income?: OtherIncomeAssumptions; // itemized line items; supersedes rubs + flat when present
   vacancy_rate: number;
   bad_debt_rate: number;
-  concessions_rate: number;
+  concessions_rate: number; // the value the engine bills (Less: Concessions = GPR × this)
+  concession_free_months?: number; // UI convenience only: months free per new lease. The
+  // form derives concessions_rate from it (× turnover ÷ 12, amortized over a 12-mo lease);
+  // the engine ignores this field and reads concessions_rate directly.
   rent_growth_rate: number; // annual
   rent_ramp?: RentRampAssumptions; // optional; absent = no ramp (legacy behavior)
 }
@@ -708,7 +711,9 @@ export interface MonthlyRow {
   capital_reserve: number; // capital-events bucket spread evenly over the hold (Phase 4.3)
   // Cash Flow before CapEx = NOI - debt service - reserves - capital reserve
   cash_flow_before_capex: number;
-  capex: number; // named projects (dated lumps)
+  capex: number; // TOTAL modeled CapEx = per-unit renovations + named (dated) projects
+  capex_renovation?: number; // per-unit interior renovation spend (units_to_renovate × per_unit_cost, paced)
+  capex_projects?: number; // named/dated capital projects only
   // Cash Flow = NOI - debt service - reserves - capex
   cash_flow: number;
   cumulative_cash_flow: number;
@@ -738,7 +743,9 @@ export interface AnnualSummary {
   reserves: number;
   capital_reserve: number;
   cash_flow_before_capex: number;
-  capex: number;
+  capex: number; // TOTAL modeled CapEx = per-unit renovations + named (dated) projects
+  capex_renovation?: number; // per-unit interior renovation spend only
+  capex_projects?: number; // named/dated capital projects only
   cash_flow: number;
   cumulative_cash_flow: number;
   cap_rate: number; // annual NOI / purchase_price
@@ -786,6 +793,8 @@ export interface DealMetrics {
   exit_noi: number;
   net_sale_proceeds: number;
   return_of_operating_reserve: number; // recoverable operating reserve returned at exit
+  refi_net_proceeds: number; // mid-hold cash-out refi proceeds (0 when no refi); a distribution in refi_year
+  refi_year?: number; // 1-based hold year the refi cash-out lands in (undefined when no refi)
   total_profit: number;
 }
 
@@ -1068,8 +1077,9 @@ export function calculateUnderwriting(
     const principalPaid = m <= ioEndMonth ? 0 : Math.max(0, ds - interestPaid);
     amortBalance = Math.max(0, amortBalance - principalPaid);
 
-    // CapEx for this month (named projects — dated lumps)
-    const monthCapex = calculateMonthCapex(capex, m);
+    // CapEx for this month = per-unit renovations + named (dated) projects
+    const monthCapexBd = calculateMonthCapexBreakdown(capex, m);
+    const monthCapex = monthCapexBd.total;
     // Capital reserve (Phase 4.3): the capital-events bucket spread EVENLY over
     // the full hold, so the whole amount lands inside the hold (flat — not
     // escalated; it's a fixed pool, not a per-period operating cost).
@@ -1103,6 +1113,8 @@ export function calculateUnderwriting(
       capital_reserve: monthlyCapitalReserve,
       cash_flow_before_capex: cashFlowBeforeCapex,
       capex: monthCapex,
+      capex_renovation: monthCapexBd.renovation,
+      capex_projects: monthCapexBd.projects,
       cash_flow: cashFlow,
       cumulative_cash_flow: cumulativeCF,
       cap_rate: periodCapRate,
@@ -1153,6 +1165,8 @@ export function calculateUnderwriting(
       capital_reserve: sum((r) => r.capital_reserve),
       cash_flow_before_capex: sum((r) => r.cash_flow_before_capex),
       capex: sum((r) => r.capex),
+      capex_renovation: sum((r) => r.capex_renovation ?? 0),
+      capex_projects: sum((r) => r.capex_projects ?? 0),
       cash_flow: annualCF,
       cumulative_cash_flow: annualCumulativeCF,
       cap_rate: purchase.purchase_price > 0 ? annualNOI / purchase.purchase_price : 0,
@@ -1305,6 +1319,8 @@ export function calculateUnderwriting(
     exit_noi: lastYearNOI,
     net_sale_proceeds: netSaleProceeds,
     return_of_operating_reserve: returnOfOperatingReserve,
+    refi_net_proceeds: refiNetProceeds,
+    refi_year: refi ? refi.year : undefined,
     total_profit: totalProfit,
   };
 
@@ -1973,7 +1989,15 @@ export function buildUnitStateSchedule(args: {
     //               short-term-rental building underwritten as long-term).
     in_place_rent: inPlaceBasis === "market" ? e.market_rent : e.current_rent,
     market_rent: e.market_rent,
-    renovated_rent: (renoBasis === "market_plus_premium" ? e.market_rent : e.current_rent) + e.premium,
+    // Renovated rent = base + premium. Under the "market_plus_premium" basis the
+    // base is always market. Under "current_plus_premium" the base is the in-place
+    // rent — EXCEPT for vacant units, which bill $0 today: using current there
+    // would collapse renovated rent to the premium alone and understate stabilized
+    // GPR, so vacant units fall back to market rent as the base.
+    renovated_rent:
+      (renoBasis === "market_plus_premium" || e.status === "vacant" || (e.current_rent ?? 0) <= 0
+        ? e.market_rent
+        : e.current_rent) + e.premium,
     states: new Array<UnitState>(totalMonths).fill("in_place"),
   }));
 
@@ -2152,8 +2176,15 @@ export function applyCapexToggles(capex: CapexAssumptions): CapexAssumptions {
   };
 }
 
-function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
-  let total = 0;
+// Split modeled CapEx for a given month into its two economically distinct
+// components so the pro forma can label them separately:
+//   renovation — per-unit interior renovation spend (units_to_renovate paced)
+//   projects   — named/dated capital projects (roof, paving, systems, …)
+function calculateMonthCapexBreakdown(
+  capex: CapexAssumptions,
+  month: number,
+): { renovation: number; projects: number; total: number } {
+  let renovation = 0;
 
   // Per-unit renovations: spread cost evenly across renovation window
   const upm = getUnitsPerMonth(capex);
@@ -2170,21 +2201,26 @@ function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
       capex.units_to_renovate
     );
     const unitsThisMonth = totalRenovatedAfter - totalRenovatedBefore;
-    total += unitsThisMonth * capex.per_unit_cost;
+    renovation += unitsThisMonth * capex.per_unit_cost;
   }
 
-  // Project-based CapEx
+  // Project-based (named/dated) CapEx
+  let projects = 0;
   for (const project of capex.projects) {
     const duration = project.duration_months || 1; // guard against zero
     if (
       month >= project.start_month &&
       month < project.start_month + duration
     ) {
-      total += project.cost / duration;
+      projects += project.cost / duration;
     }
   }
 
-  return total;
+  return { renovation, projects, total: renovation + projects };
+}
+
+function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
+  return calculateMonthCapexBreakdown(capex, month).total;
 }
 
 function buildSensitivityGrid(

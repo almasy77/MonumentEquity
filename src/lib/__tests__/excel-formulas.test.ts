@@ -34,6 +34,19 @@ const numAt = (ws: ExcelJS.Worksheet, r: number, c: number): number => {
   return typeof v === "number" ? v : 0;
 };
 
+// First value cell (col 2) on a row whose label (col 1) starts with `prefix`.
+const valueForLabel = (ws: ExcelJS.Worksheet, prefix: string): number | null => {
+  let out: number | null = null;
+  ws.eachRow((row) => {
+    const label = row.getCell(1).value;
+    if (out === null && typeof label === "string" && label.startsWith(prefix)) {
+      const v = row.getCell(2).value;
+      out = typeof v === "number" ? v : null;
+    }
+  });
+  return out;
+};
+
 describe("Excel export — live formulas reproduce the engine", () => {
   it("Annual Pro Forma subtotals / cumulative / cap / CoC tie out", async () => {
     const inputs = brydenInputs();
@@ -42,20 +55,22 @@ describe("Excel export — live formulas reproduce the engine", () => {
     const A = wb.getWorksheet("Annual Pro Forma")!;
     const n = result.annual.length;
 
-    const price = numAt(A, 21, 2);
-    const equity = numAt(A, 22, 2);
+    const price = numAt(A, 22, 2);
+    const equity = numAt(A, 23, 2);
     expect(price).toBeCloseTo(inputs.purchase.purchase_price, 2);
     expect(equity).toBeCloseTo(result.metrics.total_equity, 2);
 
     let cumPrev = 0;
     for (let y = 0; y < n; y++) {
       const c = y + 2;
+      // CapEx is split into two rows: 14 = per-unit renovations, 15 = named projects.
       const gpr = numAt(A, 2, c), vac = numAt(A, 3, c), bad = numAt(A, 4, c),
         conc = numAt(A, 5, c), oth = numAt(A, 6, c), opex = numAt(A, 8, c),
-        ds = numAt(A, 10, c), rr = numAt(A, 12, c), cr = numAt(A, 13, c), cx = numAt(A, 14, c);
+        ds = numAt(A, 10, c), rr = numAt(A, 12, c), cr = numAt(A, 13, c),
+        cxReno = numAt(A, 14, c), cxProj = numAt(A, 15, c);
       const egi = gpr + vac + bad + conc + oth;      // "Less:" rows stored negative
       const noi = egi + opex;
-      const cf = noi + ds + rr + cr + cx;
+      const cf = noi + ds + rr + cr + cxReno + cxProj;
       const cum = cumPrev + cf; cumPrev = cum;
 
       const a = result.annual[y];
@@ -99,5 +114,82 @@ describe("Excel export — live formulas reproduce the engine", () => {
     expect(dist / equity).toBeCloseTo(result.metrics.equity_multiple, 6);
     // Distributions tie to equity + profit (the Validation-sheet identity).
     expect(dist).toBeCloseTo(result.metrics.total_equity + result.metrics.total_profit, 2);
+  });
+
+  it("Refi cash-out flows into the Returns IRR vector, distributions, and equity multiple", async () => {
+    // Enable a mid-hold cash-out refi (year 2, low cap → value up → cash-out).
+    const inputs = brydenInputs();
+    inputs.exit = { ...inputs.exit, refi_enabled: true, refi_year: 2, refi_cap_rate: 0.05, refi_ltv: 0.75 };
+    const result = calculateUnderwriting(inputs);
+    const m = result.metrics;
+    const n = result.annual.length;
+
+    // The scenario actually produces a cash-out (else the test proves nothing).
+    expect(m.refi_net_proceeds).toBeGreaterThan(0);
+    expect(m.refi_year).toBe(2);
+
+    // The engine folds the cash-out into the refi year; reconstruct the SAME vector
+    // the export now builds and confirm it reproduces the engine IRR / EM.
+    const vec = [-m.total_equity];
+    for (let y = 0; y < n; y++) {
+      let cf = result.annual[y].cash_flow;
+      if (y === n - 1) cf += m.net_sale_proceeds + m.return_of_operating_reserve;
+      if (m.refi_year === y + 1) cf += m.refi_net_proceeds; // refi_year is 1-based
+      vec.push(cf);
+    }
+    const irr = calculateIRR(vec);
+    expect(irr as number).toBeCloseTo(m.irr as number, 8);
+    const distWithRefi = result.annual.reduce((s, a) => s + a.cash_flow, 0) + m.refi_net_proceeds + m.net_sale_proceeds + m.return_of_operating_reserve;
+    expect(distWithRefi / m.total_equity).toBeCloseTo(m.equity_multiple, 6);
+
+    // The Returns sheet exposes the cash-out as its own line at the refi value.
+    const wb = await exportedWorkbook(inputs, result);
+    const R = wb.getWorksheet("Returns")!;
+    let refiVal: number | null = null;
+    R.eachRow((row) => {
+      const label = row.getCell(1).value;
+      if (typeof label === "string" && label.startsWith("Refi Cash-Out")) refiVal = Number(row.getCell(2).value);
+    });
+    expect(refiVal).not.toBeNull();
+    expect(refiVal as unknown as number).toBeCloseTo(m.refi_net_proceeds, 2);
+  });
+
+  it("Assumptions Utilities & Contract Services show the engine's effective figure when sublines are itemized (Bugs 1 & 4)", async () => {
+    // When utilities/services are itemized into sublines, the engine sums the
+    // sublines and IGNORES the flat aggregate. Give both a deliberately-wrong
+    // aggregate and assert the Assumptions tab displays the engine's effective
+    // Year-1 figure (ties to the Pro Forma), never the stale aggregate.
+    const inputs = brydenInputs();
+    inputs.expenses.utilities_per_unit = 5000; // absurd stale aggregate ($/unit/yr)
+    inputs.expenses.contract_services = 999_999; // absurd stale aggregate ($/yr)
+    inputs.expenses.opex_inputs = {
+      ...(inputs.expenses.opex_inputs ?? {}),
+      utilities_sublines: {
+        electric: { value: 500, mode: "per_unit_annual" },
+        water_sewer: { value: 300, mode: "per_unit_annual" },
+      },
+      services_sublines: {
+        landscaping: { value: 1200, mode: "total_annual" },
+        pest_control: { value: 800, mode: "total_annual" },
+      },
+    } as unknown as ScenarioInputs["expenses"]["opex_inputs"];
+
+    const result = calculateUnderwriting(inputs);
+    const y1 = result.annual[0].opex_breakdown;
+    const wb = await exportedWorkbook(inputs, result);
+    const A = wb.getWorksheet("Assumptions")!;
+
+    // The engine bills the sublines sum (Year 1: no escalation), NOT the aggregate.
+    const units = inputs.revenue.unit_mix.reduce((s, u) => s + u.count, 0);
+    expect(y1.utilities).toBeCloseTo(800 * units, 0); // (500+300)/unit
+    expect(y1.contract_services).toBeCloseTo(2000, 0); // 1200+800 total
+
+    const utilShown = valueForLabel(A, "Utilities");
+    const svcShown = valueForLabel(A, "Contract Services");
+    expect(utilShown).toBeCloseTo(Math.round(y1.utilities), 0);
+    expect(svcShown).toBeCloseTo(Math.round(y1.contract_services), 0);
+    // And decidedly NOT the stale aggregates.
+    expect(utilShown).not.toBeCloseTo(5000 * units, 0);
+    expect(svcShown).not.toBeCloseTo(999_999, 0);
   });
 });

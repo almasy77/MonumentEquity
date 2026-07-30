@@ -46,7 +46,10 @@ export function computeReconciliationChecks(
   // (a) Method-aware exit reconciliation
   const method = exitMethodFor(inputs);
   if (method === "explicit_price") {
-    checks.push({ id: "a", name: "Exit reconciliation (explicit price)", pass: true, detail: `Sale price input ${fmt$(m.exit_value)}` });
+    // Informational, not a tie-out: an explicit sale price is a direct input, so
+    // there is nothing to reconcile — labeled as such so a green banner isn't
+    // read as having validated the exit value.
+    checks.push({ id: "a", name: "Exit basis — explicit sale price (informational, not reconciled)", pass: true, detail: `Sale price input ${fmt$(m.exit_value)}` });
   } else if (method === "tax_loaded") {
     const rate = exitEffectiveTaxRate(inputs);
     // m.exit_noi is the STABILIZED last-year NOI (non-recurring other income
@@ -92,7 +95,7 @@ export function computeReconciliationChecks(
     const bid = inputs.purchase.bid_price ?? deal.bid_price;
     const equal = !bid || Math.abs(bid - inputs.purchase.purchase_price) < 1;
     checks.push({
-      id: "d", name: "Bid price vs modeled price", pass: true,
+      id: "d", name: "Bid vs modeled price (informational)", pass: true,
       detail: equal ? "bid = purchase price (or no bid set)" : `bid ${fmt$(bid!)} ≠ modeled ${fmt$(inputs.purchase.purchase_price)} — labeled "(not the modeled price)" on Summary`,
     });
   }

@@ -544,6 +544,21 @@ export function UnderwritingClient({
             >
               <FileText className="h-3 w-3 mr-1" /> Price Rationale
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                window.open(
+                  `/api/export/${deal.id}/operating-onepager?scenario_id=${activeId}`,
+                  "_blank",
+                  "noopener"
+                );
+              }}
+              className="border-slate-700 text-amber-400 hover:bg-amber-900/20"
+              title="One-page operating summary — how each cost estimate (taxes, insurance, etc.) is derived, for the seller"
+            >
+              <FileText className="h-3 w-3 mr-1" /> Operating Summary
+            </Button>
             <a
               href={`/api/export/${deal.id}/sidecar?scenario_id=${activeId}`}
               download

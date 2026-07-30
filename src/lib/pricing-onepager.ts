@@ -45,6 +45,9 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
       offerPrice: offer,
     },
     (scenario.pricing_views ?? {}) as PricingViewInputs,
+    // The stabilized-NOI cap method leans on a fully built-out stabilized pro
+    // forma; hide it from the seller-facing doc rather than defend a soft number.
+    { exclude: ["cap_my_stab"] },
   );
 
   const rows = views.rows
@@ -60,10 +63,24 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
     .join("");
 
   const range = views.range;
-  const pos = (v: number | null) =>
-    v === null || !range || range.high === range.low ? null : Math.max(0, Math.min(100, ((v - range.low) / (range.high - range.low)) * 100));
-  const offerPos = pos(views.offer);
-  const askPos = pos(views.asking);
+  // Extend the scale to include the offer + asking so nothing clamps to the edge;
+  // the "supported range" (methods low..high) is drawn as a band inside it.
+  let scaleMin = 0, scaleMax = 0, bandL = 0, bandW = 0;
+  let offerPos: number | null = null, askPos: number | null = null;
+  if (range) {
+    const pts = [range.low, range.high, views.offer, views.asking].filter((v): v is number => v !== null);
+    scaleMin = Math.min(...pts);
+    scaleMax = Math.max(...pts);
+    const span = scaleMax - scaleMin || 1;
+    const pct = (v: number) => ((v - scaleMin) / span) * 100;
+    bandL = pct(range.low);
+    bandW = Math.max(0, pct(range.high) - bandL);
+    offerPos = views.offer !== null ? pct(views.offer) : null;
+    askPos = views.asking !== null ? pct(views.asking) : null;
+  }
+  const offerNote = range && views.offer !== null
+    ? (views.offer < range.low ? " · below the supported range" : views.offer > range.high ? " · above the supported range" : " · within the supported range")
+    : "";
 
   const addr = `${deal.address}, ${deal.city}, ${deal.state} ${d.zip ?? ""}`.trim();
   const sub = [deal.units ? `${deal.units} units` : null, d.year_built ? `Built ${d.year_built}` : null, d.square_footage ? `${Number(d.square_footage).toLocaleString()} SF` : null]
@@ -96,14 +113,20 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
   td.basis { color:var(--muted); font-size:12px; }
   td.num { font-family:'DM Mono',monospace; text-align:right; }
   td.muted { color:var(--muted); }
-  .rangewrap { margin:18px 0 6px; }
-  .bar { position:relative; height:10px; border-radius:5px; background:linear-gradient(90deg,#cde3d3,#e9e2cf,#f0dcc4); }
-  .tick { position:absolute; top:-5px; width:2px; height:20px; border-radius:2px; }
-  .tick.offer { background:var(--green); }
-  .tick.ask { background:#b45309; }
-  .rangelabels { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:8px; }
-  .rangelabels .offer { color:var(--green); font-weight:700; }
-  .rangelabels .ask { color:#b45309; font-weight:700; }
+  .rangewrap { margin:22px 0 6px; }
+  .track { position:relative; height:12px; border-radius:6px; background:#efe9db; }
+  .band { position:absolute; top:0; height:12px; border-radius:6px; background:linear-gradient(90deg,#cde3d3,#bcd8c4); }
+  .mk { position:absolute; top:-4px; width:3px; height:20px; border-radius:2px; }
+  .mk-offer { background:var(--green); }
+  .mk-ask { background:#b45309; }
+  .ends { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:9px; }
+  .legend { display:flex; gap:22px; margin-top:12px; font-size:12px; }
+  .lg { display:flex; align-items:center; gap:6px; }
+  .lg-offer { color:var(--green); font-weight:700; }
+  .lg-ask { color:#b45309; font-weight:700; }
+  .sw { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .sw-offer { background:var(--green); }
+  .sw-ask { background:#b45309; }
   footer { margin-top:34px; border-top:1px solid var(--line); padding-top:12px; font-size:10px; color:var(--muted); display:flex; justify-content:space-between; }
   @media print { .page { padding:24px; } @page { margin:12mm; } }
 </style></head>
@@ -122,7 +145,7 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
   </div>
 
   <h2>How we arrived at our offer</h2>
-  <p class="lead">We evaluate price several independent ways rather than a single headline number. The methods below reflect current market conditions and the property's in-place performance; our offer sits within the range they support.</p>
+  <p class="lead">We evaluate price several independent ways rather than a single headline number. The methods below reflect current market conditions and the property's in-place performance; our offer is shown against the range they support.</p>
 
   ${rows
       ? `<table><thead><tr><th>Method</th><th>Basis</th><th style="text-align:right">Implied Price</th><th style="text-align:right">$/Unit</th></tr></thead><tbody>${rows}</tbody></table>`
@@ -130,15 +153,19 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
 
   ${range
       ? `<div class="rangewrap">
-      <div class="bar">
-        ${offerPos !== null ? `<div class="tick offer" style="left:${offerPos}%"></div>` : ""}
-        ${askPos !== null ? `<div class="tick ask" style="left:${askPos}%"></div>` : ""}
+      <div class="track">
+        <div class="band" style="left:${bandL}%;width:${bandW}%"></div>
+        ${offerPos !== null ? `<div class="mk mk-offer" style="left:${offerPos}%"></div>` : ""}
+        ${askPos !== null ? `<div class="mk mk-ask" style="left:${askPos}%"></div>` : ""}
       </div>
-      <div class="rangelabels">
-        <span>${usd(range.low)}</span>
-        ${views.offer !== null ? `<span class="offer">Our offer ${usd(views.offer)}</span>` : ""}
-        ${views.asking !== null ? `<span class="ask">Asking ${usd(views.asking)}</span>` : ""}
-        <span>${usd(range.high)}</span>
+      <div class="ends">
+        <span>${usd(scaleMin)}</span>
+        <span>Supported range ${usd(range.low)} – ${usd(range.high)}</span>
+        <span>${usd(scaleMax)}</span>
+      </div>
+      <div class="legend">
+        ${views.offer !== null ? `<span class="lg lg-offer"><span class="sw sw-offer"></span>Our offer ${usd(views.offer)}${offerNote}</span>` : ""}
+        ${views.asking !== null ? `<span class="lg lg-ask"><span class="sw sw-ask"></span>Asking ${usd(views.asking)}</span>` : ""}
       </div>
     </div>`
       : ""}

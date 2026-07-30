@@ -74,8 +74,26 @@ describe("computePricingViews", () => {
     expect(r.range!.high).toBeCloseTo(83_000 / 0.065, 0);
   });
 
-  it("omits the $/SF row when square footage is unknown", () => {
+  it("always shows the $/SF row, prompting for the building SF when it's unknown", () => {
     const r = computePricingViews({ ...CTX, squareFootage: undefined }, { price_per_sf: 175 });
-    expect(r.rows.find((x) => x.key === "ppsf")).toBeUndefined();
+    const ppsf = r.rows.find((x) => x.key === "ppsf");
+    expect(ppsf).toBeDefined();
+    expect(ppsf!.impliedValue).toBeNull();
+    expect(ppsf!.missing).toMatch(/building SF/);
+  });
+
+  it("computes $/SF when both the comp and the building SF are present", () => {
+    const r = computePricingViews(CTX, { price_per_sf: 175 });
+    expect(valueOf(r.rows, "ppsf")).toBeCloseTo(175 * 8_000, 2);
+  });
+
+  it("excludes a method entirely (rows and range) when asked", () => {
+    const full = computePricingViews(CTX, { target_cap: 0.065 });
+    const excl = computePricingViews(CTX, { target_cap: 0.065 }, { exclude: ["cap_my_stab"] });
+    // The stabilized-NOI cap method is gone from the rows...
+    expect(full.rows.find((x) => x.key === "cap_my_stab")).toBeDefined();
+    expect(excl.rows.find((x) => x.key === "cap_my_stab")).toBeUndefined();
+    // ...and no longer contributes to the range (its $83k/6.5% high is dropped).
+    expect(excl.range!.high).toBeLessThan(full.range!.high);
   });
 });

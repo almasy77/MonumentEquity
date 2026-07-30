@@ -122,6 +122,28 @@ describe("known bugs (flip it.fails → it as phases land)", () => {
     expect(r.warnings.some((w) => w.includes("Vacant @ Acquisition"))).toBe(true);
   });
 
+  it("Bug 2: vacant units' renovated rent uses market base, not premium-only (current+premium basis)", () => {
+    // Under the "current_plus_premium" renovated basis, a vacant unit bills $0
+    // current rent — the base must fall back to market rent so renovated rent is
+    // market + premium (1000 + 150 = 1150), NOT the premium alone (150).
+    const inputs = perUnitInputs({ vacantCount: 2 });
+    inputs.exit.proforma_renovated_basis = "current_plus_premium";
+    const r = calculateUnderwriting(inputs);
+    const units = r.unit_schedule.units;
+    const vacants = units.filter((u) => u.in_place_rent === 0);
+    expect(vacants).toHaveLength(2);
+    for (const v of vacants) {
+      expect(v.renovated_rent).toBe(1150); // market 1000 + premium 150 (was 150 pre-fix)
+    }
+    // Occupied units keep their in-place base under this basis (700 + 150 = 850) —
+    // the fix must NOT bump occupied units up to market.
+    const occupied = units.filter((u) => u.in_place_rent === 700);
+    expect(occupied.length).toBeGreaterThan(0);
+    for (const o of occupied) {
+      expect(o.renovated_rent).toBe(850);
+    }
+  });
+
   it("modeled loan respects min(LTV loan, DSCR-sized loan)", () => {
     // Price high enough that the DSCR-sized loan binds below the LTV loan
     // (Phase 4 sizing: loan = min(LTV proceeds, DSCR proceeds @ floor)).
