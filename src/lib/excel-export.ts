@@ -641,8 +641,8 @@ function buildAnnualSheet(
     cashFlow: 16, cumulative: 17, capRate: 18, cashOnCash: 19, pctMtm: 20,
   };
   // Scalars parked below the table so the cap-rate / CoC formulas have stable refs.
-  const priceRow = R.pctMtm + 2; // 21
-  const equityRow = R.pctMtm + 3; // 22
+  const priceRow = R.pctMtm + 2; // 22
+  const equityRow = R.pctMtm + 3; // 23
 
   type Item = {
     label: string;
