@@ -51,9 +51,14 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
     }
   }
 
-  const insPerUnit = (exp.insurance_per_unit as number | undefined) ?? (units && ox ? ox.insurance / units : undefined);
-  const mgmtRate = exp.management_fee_rate as number | undefined;
-  const rmPerUnit = exp.repairs_maintenance_per_unit as number | undefined;
+  // Basis notes derive from the ENGINE's actually-billed figure (ox.*), NOT the
+  // legacy input fields (management_fee_rate / *_per_unit). Those legacy fields go
+  // stale the moment an expense is entered through the structured opex line, which
+  // made the note contradict the billed column (e.g. "8.5% of EGI" next to a figure
+  // that is exactly 8% of EGI). Deriving from the bill keeps them consistent.
+  const insPerUnit = units && ox && ox.insurance > 0 ? ox.insurance / units : undefined;
+  const mgmtRate = ox && a0.egi > 0 && ox.management_fees > 0 ? ox.management_fees / a0.egi : undefined;
+  const rmPerUnit = units && ox && ox.repairs_maintenance > 0 ? ox.repairs_maintenance / units : undefined;
 
   const rows: Row[] = ox
     ? [
