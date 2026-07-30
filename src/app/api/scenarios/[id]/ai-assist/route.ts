@@ -88,7 +88,10 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
       model: "claude-sonnet-4-5-20250929",
-      max_tokens: 16000,
+      // The response is a single JSON assumptions object (well under 8k tokens).
+      // 16k risked a slow non-streaming generation exceeding the 60s function
+      // limit, which returned a non-JSON platform error page to the client.
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [
         {
