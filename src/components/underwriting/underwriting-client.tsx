@@ -529,6 +529,21 @@ export function UnderwritingClient({
             >
               <Download className="h-3 w-3 mr-1" /> Export Excel
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                window.open(
+                  `/api/export/${deal.id}/pricing-onepager?scenario_id=${activeId}`,
+                  "_blank",
+                  "noopener"
+                );
+              }}
+              className="border-slate-700 text-amber-400 hover:bg-amber-900/20"
+              title="One-page seller-facing price rationale (print to PDF)"
+            >
+              <FileText className="h-3 w-3 mr-1" /> Price Rationale
+            </Button>
             <a
               href={`/api/export/${deal.id}/sidecar?scenario_id=${activeId}`}
               download
