@@ -374,7 +374,13 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   addSectionHeader(ws, "Revenue Assumptions", 5);
   addInputRow(ws, "Vacancy Rate", inputs.revenue.vacancy_rate, PCT_FMT);
   addInputRow(ws, "Bad Debt Rate", inputs.revenue.bad_debt_rate, PCT_FMT);
-  addInputRow(ws, "Concessions Rate", inputs.revenue.concessions_rate, PCT_FMT);
+  {
+    const cy = inputs.revenue.concession_years ?? 1;
+    const cyLabel = (inputs.revenue.concessions_rate ?? 0) > 0
+      ? `Concessions Rate (Yr 1${cy > 1 ? `–${cy}` : ""} only)`
+      : "Concessions Rate";
+    addInputRow(ws, cyLabel, inputs.revenue.concessions_rate, PCT_FMT);
+  }
   addInputRow(ws, "Rent Growth Rate (Annual)", inputs.revenue.rent_growth_rate, PCT_FMT);
   addInputRow(ws, "Other Income (Monthly)", inputs.revenue.other_income_monthly, CURRENCY_FMT);
   ws.addRow([]);

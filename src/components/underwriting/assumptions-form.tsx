@@ -2189,6 +2189,24 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   />
                   <span className="text-[10px] text-slate-500">mo free/lease</span>
                 </div>
+                {/* Concession applies for the first N operating years (default 1). Set to
+                    the hold length for an ongoing/perpetual concession. */}
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">applies for</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={r.concession_years ?? 1}
+                    onChange={(ev) => {
+                      const yrs = parseInt(ev.target.value, 10);
+                      setR({ ...r, concession_years: isFinite(yrs) && yrs >= 1 ? yrs : 1 });
+                      markDirty();
+                    }}
+                    className="w-12 h-6 bg-slate-800 border border-slate-700 rounded px-1.5 text-[11px] text-white outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-500">yr(s), then $0</span>
+                </div>
                 {r.concession_free_months ? (
                   <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
                     {r.concession_free_months} mo × {((e.turnover_rate ?? 0.5) * 100).toFixed(0)}% turnover ÷ 12 = {((r.concessions_rate ?? 0) * 100).toFixed(2)}%
