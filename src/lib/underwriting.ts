@@ -790,6 +790,8 @@ export interface DealMetrics {
   exit_noi: number;
   net_sale_proceeds: number;
   return_of_operating_reserve: number; // recoverable operating reserve returned at exit
+  refi_net_proceeds: number; // mid-hold cash-out refi proceeds (0 when no refi); a distribution in refi_year
+  refi_year?: number; // 1-based hold year the refi cash-out lands in (undefined when no refi)
   total_profit: number;
 }
 
@@ -1314,6 +1316,8 @@ export function calculateUnderwriting(
     exit_noi: lastYearNOI,
     net_sale_proceeds: netSaleProceeds,
     return_of_operating_reserve: returnOfOperatingReserve,
+    refi_net_proceeds: refiNetProceeds,
+    refi_year: refi ? refi.year : undefined,
     total_profit: totalProfit,
   };
 

@@ -114,7 +114,7 @@ export async function generateExcelWorkbook(
   buildReturnsSheet(wb, result, inputs.purchase.purchase_price);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix, resolveProformaBases(inputs.exit));
-  buildCapexSheet(wb, inputs.capex, deal.year_built);
+  buildCapexSheet(wb, inputs.capex, deal.year_built, inputs.exit.hold_period_years * 12, result.annual.reduce((s, a) => s + (a.capex_renovation ?? 0), 0));
   if (result.metrics.depreciation) {
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
@@ -223,12 +223,11 @@ function buildSummarySheet(
     hdrRow.getCell(3).border = THIN_BORDER;
   }
 
-  const totalCF = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-  const totalDistributions = totalCF + m.net_sale_proceeds + m.return_of_operating_reserve;
-  const equityMultiple = m.total_equity > 0 ? totalDistributions / m.total_equity : 0;
-
   addLabelValueWithHurdle(ws, "IRR", m.irr ?? 0, PCT_FMT, 0.15, true);
-  addLabelValueWithHurdle(ws, "Equity Multiple", equityMultiple, MULT_FMT, 2.0, true);
+  // Use the engine's equity multiple (single source of truth) so it stays consistent
+  // with IRR / Total Profit — a mid-hold refi cash-out is a distribution the engine
+  // counts, and recomputing here from CF+sale only would drop it.
+  addLabelValueWithHurdle(ws, "Equity Multiple", m.equity_multiple, MULT_FMT, 2.0, true);
   addLabelValueWithHurdle(ws, "Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT, 0.08, true);
   addLabelValueWithHurdle(ws, "Year 1 DSCR", m.year1_dscr, '0.00', 1.25, true);
   addLabelValue(ws, "Going-In Cap Rate", m.going_in_cap, PCT_FMT);
@@ -477,7 +476,16 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   addInputRow(ws, opexLabel("Turnover Cost", oix?.turnover, "$/unit/yr"), opexValue(oix?.turnover, inputs.expenses.turnover_cost_per_unit), opexFmt(oix?.turnover));
   addInputRow(ws, "Turnover Rate", inputs.expenses.turnover_rate ?? 0.50, PCT_FMT);
   addInputRow(ws, opexLabel("Insurance", oix?.insurance, "$/unit/yr"), opexValue(oix?.insurance, inputs.expenses.insurance_per_unit), opexFmt(oix?.insurance));
-  addInputRow(ws, opexLabel("Property Tax", oix?.property_tax, "$/yr"), opexValue(oix?.property_tax, inputs.expenses.property_tax_total), opexFmt(oix?.property_tax));
+  // When reassessment is enabled the engine bills the REASSESSED figure and ignores
+  // the entered (seller's) bill — show the engine's effective Year-1 tax so this row
+  // ties to the Pro Forma, and label the seller's bill separately for reference.
+  const reassessOn = !!(inputs.expenses.property_tax_v2?.enabled || inputs.expenses.tax_reassessment?.enabled);
+  if (reassessOn && y1opex) {
+    addInputRow(ws, "Property Tax ($/yr, reassessed — engine bill)", Math.round(y1opex.property_tax), CURRENCY_FMT);
+    addInputRow(ws, "Seller's Current Bill ($/yr, reference only)", opexValue(oix?.property_tax, inputs.expenses.property_tax_total), CURRENCY_FMT);
+  } else {
+    addInputRow(ws, opexLabel("Property Tax", oix?.property_tax, "$/yr"), opexValue(oix?.property_tax, inputs.expenses.property_tax_total), opexFmt(oix?.property_tax));
+  }
   addInputRow(ws, "Tax Escalation Rate", inputs.expenses.tax_escalation_rate, PCT_FMT);
   addInputRow(ws, "Expense Escalation Rate", inputs.expenses.expense_escalation_rate || 0, PCT_FMT);
   if (utilitiesItemized && y1opex) {
@@ -753,6 +761,11 @@ function buildReturnsSheet(
   const totalCFCell = formulaCell("Total Cash Flow", CURRENCY_FMT);
   const proceedsRow = val("Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
   const reserveRow = val("Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
+  // Mid-hold cash-out refi is a distribution in refi_year (0 when no refi). Show it
+  // as its own line so the IRR vector and Total Distributions include it AND the
+  // reader can see why the exit-year sale payoff reflects a larger (refinanced) loan.
+  const hasRefi = (m.refi_net_proceeds ?? 0) !== 0 && !!m.refi_year;
+  const refiRow = hasRefi ? val(`Refi Cash-Out (Yr ${m.refi_year})`, m.refi_net_proceeds, CURRENCY_FMT) : null;
   const distCell = formulaCell("Total Distributions", CURRENCY_FMT);
   const profitCell = formulaCell("Total Profit", CURRENCY_FMT);
   ws.addRow([]);
@@ -770,7 +783,10 @@ function buildReturnsSheet(
 
   const vec: (string | { formula: string })[] = ["Equity CF", { formula: `-B${equityRow}` }];
   for (let y = 0; y < n; y++) {
-    vec.push({ formula: y === n - 1 ? `${cfRef(y)}+B${proceedsRow}+B${reserveRow}` : cfRef(y) });
+    const parts = [cfRef(y)];
+    if (y === n - 1) parts.push(`B${proceedsRow}`, `B${reserveRow}`);
+    if (refiRow && m.refi_year === y + 1) parts.push(`B${refiRow}`); // refi_year is 1-based
+    vec.push({ formula: parts.join("+") });
   }
   const vecRow = ws.addRow(vec);
   vecRow.getCell(1).font = NORMAL_FONT;
@@ -788,7 +804,7 @@ function buildReturnsSheet(
   dscr.cell.value = { formula: `IFERROR(${noiY1}/-${dsY1},0)` } as ExcelJS.CellFormulaValue;
   goingCap.cell.value = { formula: `IFERROR(${noiY1}/B${priceRow},0)` } as ExcelJS.CellFormulaValue;
   totalCFCell.cell.value = { formula: `SUM(${cfRange})` } as ExcelJS.CellFormulaValue;
-  distCell.cell.value = { formula: `B${totalCFCell.row}+B${proceedsRow}+B${reserveRow}` } as ExcelJS.CellFormulaValue;
+  distCell.cell.value = { formula: `B${totalCFCell.row}+B${proceedsRow}+B${reserveRow}${refiRow ? `+B${refiRow}` : ""}` } as ExcelJS.CellFormulaValue;
   profitCell.cell.value = { formula: `B${distCell.row}-B${equityRow}` } as ExcelJS.CellFormulaValue;
 
   ws.addRow([]);
@@ -943,7 +959,7 @@ function buildUnitMixSheet(
   }
 }
 
-function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"], yearBuilt?: number) {
+function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"], yearBuilt?: number, holdMonths?: number, bookedRenovation?: number) {
   // Document the MODELED capex — disabled per-unit / named projects are excluded
   // (matches the engine), so the sheet totals tie to the headline numbers.
   const capex = applyCapexToggles(rawCapex);
@@ -965,12 +981,28 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
   if (capex.renovation_downtime_enabled) {
     ws.addRow(["Renovation Downtime", `${capex.renovation_downtime_months || 1} mo/unit`]);
   }
-  // Total per-unit CapEx (formula)
-  const row5 = ws.addRow(["Total Per-Unit CapEx"]);
+  // Total per-unit CapEx (formula = full budget = cost/unit × units)
+  const row5 = ws.addRow(["Total Per-Unit CapEx (full budget)"]);
   row5.getCell(1).font = BOLD_FONT;
   row5.getCell(2).value = { formula: "B2*B3" } as ExcelJS.CellFormulaValue;
   row5.getCell(2).numFmt = CURRENCY_FMT;
   row5.getCell(2).font = BOLD_FONT;
+
+  // If the renovation window runs past the hold, only the portion paced INSIDE the
+  // hold is actually booked in the pro forma — surface the booked amount and the
+  // shortfall so the full budget above isn't mistaken for what the model spent.
+  const endMonth = capex.renovation_end_month || capex.renovation_start_month || 1;
+  const fullBudget = (capex.per_unit_cost || 0) * (capex.units_to_renovate || 0);
+  if (holdMonths && endMonth > holdMonths && bookedRenovation !== undefined && bookedRenovation < fullBudget - 1) {
+    const bookedRow = ws.addRow(["Booked within hold (paced)", Math.round(bookedRenovation)]);
+    bookedRow.getCell(2).numFmt = CURRENCY_FMT;
+    const warn = ws.addRow([
+      `Renovation window ends month ${endMonth}, past the ${holdMonths}-month hold — only $${Math.round(bookedRenovation).toLocaleString()} of the $${Math.round(fullBudget).toLocaleString()} budget is booked in the pro forma; the rest falls after exit.`,
+    ]);
+    ws.mergeCells(warn.number, 1, warn.number, 5);
+    warn.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: "FFB8860B" } };
+    warn.getCell(1).alignment = { wrapText: true, vertical: "top" };
+  }
 
   ws.addRow([]);
 
@@ -1102,14 +1134,18 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
           ? `funded $${Math.round(funded).toLocaleString()} → returned $${Math.round(m.return_of_operating_reserve).toLocaleString()} (incl. ${(yieldRate * 100).toFixed(1)}% yield)`
           : `funded $${Math.round(funded).toLocaleString()} returned in full (no yield)`,
       );
-      // Distributions tie-out: the independently-summed Σ CF + net proceeds +
-      // reserve return must equal the engine's total_equity + total_profit
-      // (total_distributions = total_equity + total_profit by construction).
+      // Distributions tie-out: the independently-summed Σ CF + refi cash-out + net
+      // proceeds + reserve return must equal the engine's total_equity + total_profit
+      // (total_distributions = total_equity + total_profit by construction). The refi
+      // term is required or this FALSE-FAILS on refi deals (engine counts it, this sum
+      // must too).
       const cfSum = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-      const dist = cfSum + m.net_sale_proceeds + m.return_of_operating_reserve;
+      const refiCashOut = m.refi_net_proceeds ?? 0;
+      const dist = cfSum + refiCashOut + m.net_sale_proceeds + m.return_of_operating_reserve;
       const distExpected = m.total_equity + m.total_profit;
       const distOk = Math.abs(dist - distExpected) < 1;
-      addValidationRow(ws, "Distributions = Σ CF + net proceeds + reserve return", distOk, `total $${Math.round(dist).toLocaleString()} vs equity+profit $${Math.round(distExpected).toLocaleString()} (CF ${Math.round(cfSum).toLocaleString()} + proceeds ${Math.round(m.net_sale_proceeds).toLocaleString()} + reserve ${Math.round(m.return_of_operating_reserve).toLocaleString()})`);
+      const refiNote = refiCashOut !== 0 ? ` + refi ${Math.round(refiCashOut).toLocaleString()}` : "";
+      addValidationRow(ws, "Distributions = Σ CF + refi + net proceeds + reserve return", distOk, `total $${Math.round(dist).toLocaleString()} vs equity+profit $${Math.round(distExpected).toLocaleString()} (CF ${Math.round(cfSum).toLocaleString()}${refiNote} + proceeds ${Math.round(m.net_sale_proceeds).toLocaleString()} + reserve ${Math.round(m.return_of_operating_reserve).toLocaleString()})`);
     }
   }
 
@@ -1177,8 +1213,13 @@ function buildDepreciationSheet(
   addLabelValue(ws, "Depreciable Basis", metrics.purchase_price * dep.improvement_pct, CURRENCY_FMT);
   ws.addRow([]);
 
-  // Schedule headers
-  const headerLabels = ["Year", "Straight-Line (27.5 yr)", "Accelerated (Cost Seg)", "Difference"];
+  // Schedule headers. NOTE: the "Accelerated" column is a SIMPLIFIED estimate
+  // (flat bonus % on the whole improvement basis, full-year SL) used for this
+  // side-by-side illustration only — it does NOT drive returns. The detailed
+  // cost-segregation schedule (5/15-yr buckets, bonus %, half-year/mid-month
+  // conventions) that actually feeds after-tax cash flow lives on the "Tax
+  // (After-Tax)" sheet, so the two figures will not match by design.
+  const headerLabels = ["Year", "Straight-Line (27.5 yr)", "Accelerated (bonus estimate)", "Difference"];
   const headerRow = ws.addRow(headerLabels);
   styleHeaderRow(headerRow, 4);
 
@@ -1215,6 +1256,16 @@ function buildDepreciationSheet(
   }
   for (let c = 2; c <= 4; c++) {
     totRow.getCell(c).numFmt = CURRENCY_FMT;
+  }
+
+  if (inputs.tax) {
+    ws.addRow([]);
+    const note = ws.addRow([
+      "The Accelerated column is a simplified bonus estimate for illustration. The detailed cost-segregation schedule that drives after-tax returns is on the 'Tax (After-Tax)' sheet; the two won't match by design.",
+    ]);
+    ws.mergeCells(note.number, 1, note.number, 4);
+    note.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: "FF64748B" } };
+    note.getCell(1).alignment = { wrapText: true, vertical: "top" };
   }
 }
 
