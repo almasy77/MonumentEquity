@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import type { Deal, Scenario } from "@/lib/validations";
 import type { UnderwritingResult } from "@/lib/underwriting";
 import { computePricingViews, type PricingViewInputs } from "@/lib/pricing-views";
+import { solvePriceForIRR } from "@/lib/price-solve";
+import { scenarioToInputs } from "@/lib/scenario-inputs";
 
 const usd = (n: number | null) =>
   n === null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
@@ -106,6 +108,13 @@ export function PricingViewsCard({
     );
   }, [deal, result, scenario, inputs]);
 
+  // Reverse-solve: highest price at which the deal still hits the target IRR.
+  const solved = useMemo(() => {
+    const t = inputs.target_irr;
+    if (!(typeof t === "number" && isFinite(t) && t > 0)) return { target: null as number | null, price: null as number | null };
+    return { target: t, price: solvePriceForIRR(scenarioToInputs(scenario), t) };
+  }, [scenario, inputs.target_irr]);
+
   const marker = (v: number | null) => {
     if (v === null || !views.range) return null;
     const { low, high } = views.range;
@@ -143,6 +152,22 @@ export function PricingViewsCard({
           <Field label="Market GRM" kind="num" value={inputs.grm} onCommit={setField("grm")} />
           <Field label="Comp $/SF" kind="usd" value={inputs.price_per_sf} onCommit={setField("price_per_sf")} />
           <Field label="Assessment ratio" kind="pct" value={inputs.assessment_ratio} onCommit={setField("assessment_ratio")} />
+          <Field label="Target IRR (max-price solve)" kind="pct" value={inputs.target_irr} onCommit={setField("target_irr")} />
+        </div>
+
+        {/* Reverse-solve: buyer's max price for the target IRR */}
+        <div className="rounded-md bg-blue-950/30 ring-1 ring-blue-500/30 px-3 py-2 flex items-center justify-between gap-3">
+          <span className="text-xs text-slate-300">
+            Buyer&apos;s max{solved.target !== null ? ` at ${(solved.target * 100).toFixed(1)}% IRR` : ""}
+            <span className="text-slate-500"> — highest price the deal still clears your target</span>
+          </span>
+          <span className="text-sm font-bold tabular-nums text-blue-300">
+            {solved.target === null
+              ? <span className="text-slate-500 font-normal">set a target IRR</span>
+              : solved.price === null
+                ? <span className="text-amber-400 font-normal">out of range</span>
+                : usd(solved.price)}
+          </span>
         </div>
 
         {/* Methods table */}

@@ -16,6 +16,7 @@ export interface PricingViewInputs {
   grm?: number; // gross rent multiplier
   price_per_sf?: number; // comp $/SF
   assessment_ratio?: number; // assessed value ÷ market value (e.g. 0.35)
+  target_irr?: number; // reverse-solve: the max price at which the deal hits this IRR
 }
 
 export interface PricingViewContext {
