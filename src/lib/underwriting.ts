@@ -164,6 +164,10 @@ export interface RevenueAssumptions {
   concession_free_months?: number; // UI convenience only: months free per new lease. The
   // form derives concessions_rate from it (× turnover ÷ 12, amortized over a 12-mo lease);
   // the engine ignores this field and reads concessions_rate directly.
+  concession_years?: number; // number of operating years the concession applies (1..N). A
+  // lease-up incentive ("first month free") is transitional, so this defaults to 1 (Year 1
+  // only) and is excluded from the stabilized exit value. Set it to the hold length to model
+  // an ongoing/perpetual concession on turnover.
   rent_growth_rate: number; // annual
   rent_ramp?: RentRampAssumptions; // optional; absent = no ramp (legacy behavior)
 }
@@ -965,7 +969,11 @@ export function calculateUnderwriting(
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
-    const concessions = gpr * revenue.concessions_rate;
+    // Concessions are a transitional lease-up incentive ("first month free"), applied
+    // only in operating years 1..concession_years (default 1 = Year 1). yearIndex is
+    // 0-based, so year N is index N-1 → active while yearIndex < concession_years.
+    const concessionYears = revenue.concession_years ?? 1;
+    const concessions = yearIndex < concessionYears ? gpr * revenue.concessions_rate : 0;
     // Physical occupancy from the unit-state schedule — offline and vacant
     // units don't reimburse. Shared by both RUBS computations below.
     const occupiedUnitsThisMonth = unitSchedule.units.reduce((c, u) => {
@@ -2388,7 +2396,10 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     }
     annualGPR *= yearGrowth;
 
-    let annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate);
+    // Concessions apply only in operating years 1..concession_years (default 1) — see
+    // the main loop. Mirror that gating here so the sensitivity grid ties to the engine.
+    const concActive = y < (revenue.concession_years ?? 1);
+    let annualEGI = annualGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - (concActive ? revenue.concessions_rate : 0));
     if (hasOtherIncomeLineItems(revenue)) {
       const oiCtx = { totalUnits, annualEgi: annualEGI, annualGpr: annualGPR, escalation: expEscalationFor(expenses, y) };
       const resolveBasis = makeUtilityBasisResolverAnnual(expenses, oiCtx);
@@ -2476,7 +2487,10 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   }
   exitGPR *= lastYearGrowth;
 
-  let exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - revenue.concessions_rate);
+  // Exit is stabilized: the concession only loads the exit value if the concession
+  // window still covers the final operating year (i.e. concession_years >= hold).
+  const exitConcActive = (exit.hold_period_years - 1) < (revenue.concession_years ?? 1);
+  let exitEGI = exitGPR * (1 - revenue.vacancy_rate - revenue.bad_debt_rate - (exitConcActive ? revenue.concessions_rate : 0));
   if (hasOtherIncomeLineItems(revenue)) {
     // Exit uses the STABILIZED figure — non-recurring line items excluded.
     const exitOiCtx = { totalUnits, annualEgi: exitEGI, annualGpr: exitGPR, escalation: expEscalationFor(expenses, exit.hold_period_years - 1) };

@@ -100,9 +100,13 @@ export function computeReconciliationChecks(
     });
   }
 
-  // (e) Loan ≤ min(LTV loan, DSCR-sized loan @ 1.25)
+  // (e) Loan sizing — mirror the engine EXACTLY: DSCR sizing only applies when
+  // size_to_dscr !== false, and the floor is financing.dscr_floor (default 1.25).
+  // (Hardcoding 1.25 / always applying DSCR false-FAILed deals with a lower floor
+  // or DSCR sizing turned off.)
   {
-    const TARGET_DSCR = 1.25;
+    const floor = inputs.financing.dscr_floor ?? 1.25;
+    const dscrSizing = inputs.financing.size_to_dscr !== false;
     const ltvLoan = inputs.purchase.purchase_price * inputs.financing.ltv;
     const monthlyRate = inputs.financing.interest_rate / 12;
     const n = inputs.financing.amortization_years * 12;
@@ -110,15 +114,16 @@ export function computeReconciliationChecks(
       ? (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
       : 1 / Math.max(1, n);
     const noi1 = result.annual[0]?.noi ?? 0;
-    const dscrLoan = noi1 / TARGET_DSCR / 12 / pmtFactor;
-    const maxLoan = Math.min(ltvLoan, dscrLoan);
+    const dscrLoan = noi1 > 0 ? noi1 / floor / 12 / pmtFactor : 0;
+    const maxLoan = dscrSizing ? Math.min(ltvLoan, dscrLoan) : ltvLoan;
     const pass = m.loan_amount <= maxLoan + 1;
     const extraEquity = pass ? 0 : m.loan_amount - maxLoan;
+    const label = dscrSizing ? `Loan within min(LTV, DSCR ${floor}x)` : "Loan within LTV (DSCR sizing off)";
     checks.push({
-      id: "e", name: `Loan within min(LTV, DSCR ${TARGET_DSCR}x)`, pass,
+      id: "e", name: label, pass,
       detail: pass
-        ? `loan ${fmt$(m.loan_amount)} ≤ min(LTV ${fmt$(ltvLoan)}, DSCR ${fmt$(dscrLoan)})`
-        : `loan ${fmt$(m.loan_amount)} exceeds DSCR-sized ${fmt$(dscrLoan)} — requires ${fmt$(extraEquity)} extra equity`,
+        ? (dscrSizing ? `loan ${fmt$(m.loan_amount)} ≤ min(LTV ${fmt$(ltvLoan)}, DSCR ${fmt$(dscrLoan)})` : `loan ${fmt$(m.loan_amount)} ≤ LTV ${fmt$(ltvLoan)}`)
+        : `loan ${fmt$(m.loan_amount)} exceeds sized ${fmt$(maxLoan)} — requires ${fmt$(extraEquity)} extra equity`,
     });
   }
 
@@ -152,20 +157,38 @@ export function computeReconciliationChecks(
     checks.push({ id: "h", name: "Unit mix count = deal units", pass, detail: `${mixCount} in mix vs ${deal.units} on deal` });
   }
 
-  // (i) Net sale proceeds reconciliation — payoff recomputed INDEPENDENTLY
-  // from the amortization schedule (not implied from the identity itself).
+  // (i) Net sale proceeds reconciliation — payoff recomputed INDEPENDENTLY from the
+  // amortization schedule (not implied from the identity itself). Skipped for a
+  // mid-hold cash-out refi: the engine pays off the REFINANCED loan at exit, which
+  // this original-loan recompute can't reproduce without duplicating the refi sizing
+  // — recomputing from the original loan here false-FAILed every refi deal.
   {
-    const totalMonths = inputs.exit.hold_period_years * 12;
-    const payoff = calculateLoanBalance(
-      m.loan_amount,
-      inputs.financing.interest_rate / 12,
-      inputs.financing.amortization_years * 12,
-      totalMonths,
-      inputs.financing.io_period_months,
+    const refiActive = !!(
+      inputs.exit.refi_enabled &&
+      (inputs.exit.refi_year ?? 0) >= 1 &&
+      (inputs.exit.refi_year ?? 0) < inputs.exit.hold_period_years &&
+      (inputs.exit.refi_cap_rate ?? 0) > 0
     );
-    const expected = m.exit_value * (1 - inputs.exit.selling_cost_rate) - payoff;
-    const diff = Math.abs(m.net_sale_proceeds - expected);
-    checks.push({ id: "i", name: "Net sale proceeds = exit − selling costs − payoff", pass: diff < 1, detail: `recomputed ${fmt$(expected)} vs model ${fmt$(m.net_sale_proceeds)} (payoff ${fmt$(payoff)})` });
+    if (refiActive) {
+      checks.push({
+        id: "i",
+        name: "Net sale proceeds reconciliation (informational — refinanced deal)",
+        pass: true,
+        detail: "exit pays off the refinanced loan; the refi folding is validated by the Distributions tie-out",
+      });
+    } else {
+      const totalMonths = inputs.exit.hold_period_years * 12;
+      const payoff = calculateLoanBalance(
+        m.loan_amount,
+        inputs.financing.interest_rate / 12,
+        inputs.financing.amortization_years * 12,
+        totalMonths,
+        inputs.financing.io_period_months,
+      );
+      const expected = m.exit_value * (1 - inputs.exit.selling_cost_rate) - payoff;
+      const diff = Math.abs(m.net_sale_proceeds - expected);
+      checks.push({ id: "i", name: "Net sale proceeds = exit − selling costs − payoff", pass: diff < 1, detail: `recomputed ${fmt$(expected)} vs model ${fmt$(m.net_sale_proceeds)} (payoff ${fmt$(payoff)})` });
+    }
   }
 
   return checks;
