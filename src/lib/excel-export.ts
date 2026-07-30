@@ -1602,15 +1602,40 @@ function buildTaxSheet(
   addMetricRow(ws, "PropCo After-Tax IRR (standalone)", tax.after_tax_irr_propco, PCT_FMT);
   addLabelValue(ws, "Year-1 Federal Shield", tax.year1_federal_shield, CURRENCY_FMT);
   addLabelValue(ws, "Year-1 NY Shield", tax.year1_state_shield, CURRENCY_FMT);
-  addLabelValue(ws, "Deferred Gain at Exit (memo)", tax.deferred_gain_memo.deferred_gain, CURRENCY_FMT);
-  addLabelValue(ws, "  — Accumulated Federal Depreciation", tax.deferred_gain_memo.accumulated_federal_depreciation, CURRENCY_FMT);
-  addLabelValue(ws, "  — §1250 share (building + land impr.)", tax.deferred_gain_memo.sec1250_depreciation, CURRENCY_FMT);
-  addLabelValue(ws, "  — §1245 share (personal property)", tax.deferred_gain_memo.sec1245_depreciation, CURRENCY_FMT);
-  addLabelValue(ws, "Adjusted Basis at Exit", tax.deferred_gain_memo.adjusted_basis_at_exit, CURRENCY_FMT);
-  if (tax.pal_carryforward_at_exit > 0) {
-    addLabelValue(ws, "Suspended PALs at Exit (NOT released by 1031)", tax.pal_carryforward_at_exit, CURRENCY_FMT);
+  // 1031 exit → deferred-gain memo (taxes deferred, not eliminated).
+  if (assumptions.exit_via_1031) {
+    addLabelValue(ws, "Deferred Gain at Exit (memo)", tax.deferred_gain_memo.deferred_gain, CURRENCY_FMT);
+    addLabelValue(ws, "  — Accumulated Federal Depreciation", tax.deferred_gain_memo.accumulated_federal_depreciation, CURRENCY_FMT);
+    addLabelValue(ws, "  — §1250 share (building + land impr.)", tax.deferred_gain_memo.sec1250_depreciation, CURRENCY_FMT);
+    addLabelValue(ws, "  — §1245 share (personal property)", tax.deferred_gain_memo.sec1245_depreciation, CURRENCY_FMT);
+    addLabelValue(ws, "Adjusted Basis at Exit", tax.deferred_gain_memo.adjusted_basis_at_exit, CURRENCY_FMT);
+    if (tax.pal_carryforward_at_exit > 0) {
+      addLabelValue(ws, "Suspended PALs at Exit (NOT released by 1031)", tax.pal_carryforward_at_exit, CURRENCY_FMT);
+    }
   }
   ws.addRow([]);
+
+  // Taxable sale → full exit-tax waterfall (only present when exit_via_1031 is off).
+  if (tax.exit_tax) {
+    const et = tax.exit_tax;
+    const ltcgRate = assumptions.federal_ltcg_rate ?? 0.2;
+    const sec1250Rate = assumptions.sec1250_recapture_rate ?? 0.25;
+    addSectionHeader(ws, "Taxable Sale — Exit Tax (no 1031 deferral)", 10);
+    addLabelValue(ws, "Adjusted Basis at Exit", tax.deferred_gain_memo.adjusted_basis_at_exit, CURRENCY_FMT);
+    addLabelValue(ws, "Total Gain (sale price − selling costs − basis)", et.total_gain, CURRENCY_FMT);
+    addLabelValue(ws, `  — §1245 Ordinary Recapture @ ${(assumptions.federal_ordinary_rate * 100).toFixed(1)}%`, et.sec1245_recapture, CURRENCY_FMT);
+    addLabelValue(ws, `  — Unrecaptured §1250 Gain @ ${(sec1250Rate * 100).toFixed(1)}%`, et.sec1250_unrecaptured, CURRENCY_FMT);
+    addLabelValue(ws, `  — Long-Term Capital Gain @ ${(ltcgRate * 100).toFixed(1)}%`, et.ltcg_gain, CURRENCY_FMT);
+    if (et.pal_released > 0) {
+      addLabelValue(ws, "Suspended PAL Released Against Gain", -et.pal_released, CURRENCY_FMT);
+    }
+    addLabelValue(ws, `NIIT @ ${(assumptions.niit_rate * 100).toFixed(1)}% (post-PAL cap-gain base)`, et.niit, CURRENCY_FMT);
+    addLabelValue(ws, "Federal Exit Tax", et.federal_tax, CURRENCY_FMT);
+    addLabelValue(ws, "State/Local Exit Tax", et.state_tax, CURRENCY_FMT);
+    addLabelValue(ws, "Total Exit Tax", et.total_exit_tax, CURRENCY_FMT);
+    addLabelValue(ws, "After-Tax Net Sale Proceeds", et.after_tax_net_sale_proceeds, CURRENCY_FMT);
+    ws.addRow([]);
+  }
 
   addSectionHeader(ws, "Assumptions", 10);
   addInputRow(ws, "Federal Ordinary Rate", assumptions.federal_ordinary_rate, PCT_FMT);

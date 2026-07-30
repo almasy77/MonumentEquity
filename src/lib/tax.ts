@@ -58,6 +58,10 @@ export interface TaxAssumptions {
   // exit
   exit_via_1031: boolean; // true → no gain/recapture tax modeled
   personal_property_worthless_at_exit: boolean; // true
+  // Taxable-exit rates (only used when exit_via_1031 === false). Optional +
+  // defaulted for backwards compatibility (older saved scenarios omit them).
+  federal_ltcg_rate?: number; // long-term capital-gains rate on the residual gain, default 0.20
+  sec1250_recapture_rate?: number; // unrecaptured §1250 gain rate, default 0.25
   // cost-seg study fee tax treatment (the fee itself lives in uses-of-funds as
   // purchase.cost_seg_study_cost). expense_year1 = §162 professional fee
   // deducted in full in Year 1 (default); capitalize_amortize = 15-yr SL.
@@ -82,6 +86,8 @@ export const TAX_DEFAULTS: TaxAssumptions = {
   ebl_cap_mfj: 512_000,
   exit_via_1031: true,
   personal_property_worthless_at_exit: true,
+  federal_ltcg_rate: 0.2,
+  sec1250_recapture_rate: 0.25,
   cost_seg_fee_tax_treatment: "expense_year1",
 };
 
@@ -112,6 +118,24 @@ export interface DeferredGainMemo {
   adjusted_basis_at_exit: number;
 }
 
+/**
+ * Fully-taxable exit (exit_via_1031 === false). Recapture + capital-gain
+ * waterfall computed at sale. Populated ONLY on the taxable path; undefined
+ * when the exit is a 1031 (where deferred_gain_memo carries the memo instead).
+ */
+export interface ExitTax {
+  total_gain: number; // max(0, exitValue − sellingCosts − adjustedBasis)
+  sec1245_recapture: number; // ordinary recapture on 5-yr personal property (before PAL offset)
+  sec1250_unrecaptured: number; // unrecaptured §1250 gain, taxed at 25% (before PAL offset)
+  ltcg_gain: number; // residual long-term capital gain, taxed at 20% (before PAL offset)
+  pal_released: number; // suspended passive losses applied against the gain at disposition
+  niit: number; // 3.8% on the post-PAL §1250 + LTCG bases (only when exit-year REPS is OFF)
+  state_tax: number; // state tax on the post-PAL taxable gain (taxed as ordinary)
+  federal_tax: number; // §1245 + §1250 + LTCG + NIIT federal components
+  total_exit_tax: number; // federal_tax + state_tax, floored at 0
+  after_tax_net_sale_proceeds: number; // ctx.netSaleProceeds − total_exit_tax
+}
+
 export interface TaxResult {
   years: TaxYearRow[];
   after_tax_irr_propco: number | null;
@@ -122,6 +146,9 @@ export interface TaxResult {
   cost_seg_fee_shield: number; // memo: that deduction × combined ordinary rate (gate-open reference)
   pal_carryforward_at_exit: number; // NOT released by the 1031 — deferred value
   deferred_gain_memo: DeferredGainMemo;
+  // Populated only on the fully-taxable exit path (exit_via_1031 === false);
+  // undefined on the 1031 path, which keeps deferred_gain_memo as its exit story.
+  exit_tax?: ExitTax;
   // Realized value of the depreciation deductions = tax with depreciation minus
   // tax without it, per year. Respects REPS/§461(l)/PAL usability (suspended
   // years contribute ~0). Undefined only in the internal suppressed run.
@@ -431,12 +458,109 @@ export function computeTaxLayer(
     });
   }
 
-  // ── Exit (§7): 1031 — NO gain/recapture tax. Memo only. ──
+  // ── Exit (§7) ──
   const capitalizedCapex = vintages.reduce((s, v) => s + v.c5 + v.c275, 0);
   const adjustedBasis = totalCostBasis + capitalizedCapex - accumFedDep;
   const deferredGain = Math.max(0, ctx.exitValue - ctx.sellingCosts - adjustedBasis);
 
-  // After-tax IRRs: equity out, after-tax CFs, exit proceeds (pre-tax per 1031) in final year.
+  // Fully-taxable exit (exit_via_1031 === false): model depreciation recapture +
+  // capital gains + NIIT + state. On the 1031 path this whole block is skipped and
+  // exitTax stays undefined — the exit proceeds land pre-tax exactly as before, so
+  // the 1031 output is byte-identical to the prior behavior.
+  let exitTax: ExitTax | undefined;
+  // Default: pre-tax proceeds (the 1031 treatment). Overwritten below on the taxable path.
+  let exitNetSaleProceeds = ctx.netSaleProceeds;
+  if (!tax.exit_via_1031) {
+    const ltcgRate = tax.federal_ltcg_rate ?? 0.2;
+    const sec1250Rate = tax.sec1250_recapture_rate ?? 0.25;
+
+    // 1. Total gain over the depreciation-adjusted basis, net of selling costs.
+    const totalGain = Math.max(0, ctx.exitValue - ctx.sellingCosts - adjustedBasis);
+
+    // 2. §1245 ordinary recapture on 5-yr personal property. If the personal
+    //    property is assumed worthless at sale, it is treated as sold for $0 →
+    //    no §1245 recapture. Otherwise recapture the lesser of accumulated 5-yr
+    //    depreciation and the total gain, taxed at the ordinary rate.
+    const sec1245Recapture = tax.personal_property_worthless_at_exit
+      ? 0
+      : Math.min(accumFed1245, totalGain);
+
+    // 3. Unrecaptured §1250 gain (real property depreciation): the lesser of
+    //    accumulated 27.5-yr + 15-yr depreciation and the gain remaining after
+    //    §1245, taxed at the §1250 recapture rate (25%).
+    const unrecap1250 = Math.min(accumFed1250, Math.max(0, totalGain - sec1245Recapture));
+
+    // 4. Residual long-term capital gain, taxed at the LTCG rate (20%).
+    const ltcgGain = Math.max(0, totalGain - sec1245Recapture - unrecap1250);
+
+    // 5. PAL release. A fully-taxable disposition frees the suspended passive
+    //    losses. They are applied against the taxable gain BEFORE tax, in the
+    //    order that maximizes the benefit to the taxpayer: ordinary §1245 first
+    //    (highest rate), then §1250 (25%), then LTCG (20%). Each taxed base is
+    //    reduced accordingly and floored at 0.
+    //    Simplification (documented): only the portion of suspended PAL up to the
+    //    gain is credited here. Any PAL beyond the gain would, in reality, release
+    //    as an ordinary deduction usable against other income (e.g. W-2); we do
+    //    NOT credit that excess, which keeps the exit tax conservatively ≥ 0 and
+    //    avoids importing a household-income assumption into the sale year.
+    let palRemaining = palCFFed;
+    const palVs1245 = Math.min(palRemaining, sec1245Recapture);
+    palRemaining -= palVs1245;
+    const taxed1245 = sec1245Recapture - palVs1245;
+
+    const palVs1250 = Math.min(palRemaining, unrecap1250);
+    palRemaining -= palVs1250;
+    const taxed1250 = unrecap1250 - palVs1250;
+
+    const palVsLtcg = Math.min(palRemaining, ltcgGain);
+    palRemaining -= palVsLtcg;
+    const taxedLtcg = ltcgGain - palVsLtcg;
+
+    const palReleased = palCFFed - palRemaining; // amount actually applied to the gain
+
+    // 6. NIIT (3.8%) on the capital-gain portions remaining after PAL offset —
+    //    the §1250 + LTCG bases, NOT the §1245 ordinary portion. Gated the SAME
+    //    way operating NIIT is gated in this file: it applies only when REPS is
+    //    OFF (§1411 net investment income). We mirror that using the exit-year
+    //    REPS status. Assumption (documented): a REPS-material-participation exit
+    //    year shields the gain from NIIT, consistent with the operating treatment.
+    const exitReps = repsForYear(holdYears);
+    const niitExitBase = taxed1250 + taxedLtcg;
+    const niitExit = !exitReps && niitExitBase > 0 ? niitExitBase * tax.niit_rate : 0;
+
+    // 7. State tax. Most states (incl. NY/NYC) tax the whole gain as ordinary
+    //    income with no preferential capital-gains rate, so we apply the ordinary
+    //    state rate to the full post-PAL taxable gain. Simplification (documented):
+    //    state bonus/§1250 conformity nuances are not separately modeled here.
+    const postPalGain = taxed1245 + taxed1250 + taxedLtcg;
+    const stateExitTax = postPalGain * stateRate;
+
+    // 8. Assemble. Each component is non-negative, so the sum is ≥ 0; we still
+    //    floor to be explicit (the excess-PAL ordinary benefit above is not
+    //    credited, so nothing here can drive the total negative).
+    const federalExitTax = taxed1245 * fedRate + taxed1250 * sec1250Rate + taxedLtcg * ltcgRate + niitExit;
+    const totalExitTax = Math.max(0, federalExitTax + stateExitTax);
+
+    // 9. After-tax net sale proceeds feed the after-tax IRR final period.
+    exitNetSaleProceeds = ctx.netSaleProceeds - totalExitTax;
+
+    exitTax = {
+      total_gain: totalGain,
+      sec1245_recapture: sec1245Recapture,
+      sec1250_unrecaptured: unrecap1250,
+      ltcg_gain: ltcgGain,
+      pal_released: palReleased,
+      niit: niitExit,
+      state_tax: stateExitTax,
+      federal_tax: federalExitTax,
+      total_exit_tax: totalExitTax,
+      after_tax_net_sale_proceeds: exitNetSaleProceeds,
+    };
+  }
+
+  // After-tax IRRs: equity out, after-tax CFs, exit proceeds in the final year.
+  // 1031 path → pre-tax proceeds (exitNetSaleProceeds === ctx.netSaleProceeds).
+  // Taxable path → after-tax proceeds (net of the exit tax computed above).
   // Exit proceeds + return of the operating reserve (return of capital —
   // non-taxable) land in the final period of both after-tax IRRs.
   // Refi cash-out proceeds — non-taxable debt — land in the refi year of both
@@ -447,9 +571,9 @@ export function computeTaxLayer(
     atcfHousehold[ctx.refi.year - 1] += ctx.refi.netProceeds;
   }
   const flowsPropco = [-ctx.totalEquity, ...atcfPropco];
-  flowsPropco[flowsPropco.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
+  flowsPropco[flowsPropco.length - 1] += exitNetSaleProceeds + ctx.returnOfOperatingReserve;
   const flowsHousehold = [-ctx.totalEquity, ...atcfHousehold];
-  flowsHousehold[flowsHousehold.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
+  flowsHousehold[flowsHousehold.length - 1] += exitNetSaleProceeds + ctx.returnOfOperatingReserve;
 
   // ── Realized depreciation shield ── re-run with depreciation zeroed and take
   // the per-year tax delta. One level of recursion only (the suppressed run does
@@ -492,5 +616,6 @@ export function computeTaxLayer(
       sec1245_depreciation: accumFed1245,
       adjusted_basis_at_exit: adjustedBasis,
     },
+    exit_tax: exitTax, // undefined on the 1031 path; the taxable-exit breakdown otherwise
   };
 }
