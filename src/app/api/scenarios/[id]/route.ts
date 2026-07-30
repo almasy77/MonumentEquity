@@ -96,6 +96,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       tax_assumptions: body.tax_assumptions !== undefined
         ? body.tax_assumptions
         : (existing as Record<string, unknown>).tax_assumptions,
+      pricing_views: body.pricing_views ?? (existing as Record<string, unknown>).pricing_views,
       version: existing.version + 1,
       updated_at: now,
     };

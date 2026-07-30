@@ -386,6 +386,7 @@ export const scenarioSchema = z.object({
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),
   depreciation_assumptions: z.record(z.string(), z.unknown()).default({}),
   tax_assumptions: z.record(z.string(), z.unknown()).nullish(), // TAX_TREATMENT_SPEC — absent/null = tax layer off
+  pricing_views: z.record(z.string(), z.unknown()).optional(), // Pricing Views market inputs (CAGR, caps, $/unit, GRM, $/SF)
 
   monthly_pro_forma: z.unknown().optional(),
   calculated_metrics: z
