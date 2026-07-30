@@ -114,7 +114,7 @@ export async function generateExcelWorkbook(
   buildReturnsSheet(wb, result, inputs.purchase.purchase_price);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
   buildUnitMixSheet(wb, inputs.revenue.unit_mix, resolveProformaBases(inputs.exit));
-  buildCapexSheet(wb, inputs.capex);
+  buildCapexSheet(wb, inputs.capex, deal.year_built);
   if (result.metrics.depreciation) {
     buildDepreciationSheet(wb, inputs, result.metrics);
   }
@@ -459,6 +459,18 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   }
 
   const oix = inputs.expenses.opex_inputs;
+
+  // Utilities and Contract Services can be itemized into sublines; when they are,
+  // the engine sums the sublines and IGNORES the flat aggregate input. Displaying
+  // the (now-stale) aggregate here is what let the Assumptions tab disagree with the
+  // Pro Forma. When sublines drive a line, show the engine's effective Year-1 total
+  // (the same figure the Pro Forma bills) so the two tabs always tie.
+  const y1opex = result.annual[0]?.opex_breakdown;
+  const hasSublines = (subs?: Record<string, OpexInput | undefined>): boolean =>
+    !!subs && Object.values(subs).some((s) => s && isFinite(s.value) && s.value !== 0);
+  const utilitiesItemized = hasSublines(oix?.utilities_sublines as Record<string, OpexInput | undefined> | undefined);
+  const servicesItemized = hasSublines(oix?.services_sublines as Record<string, OpexInput | undefined> | undefined);
+
   addInputRow(ws, opexLabel("Management Fee", oix?.management_fees, "% EGI"), opexValue(oix?.management_fees, inputs.expenses.management_fee_rate), opexFmt(oix?.management_fees));
   addInputRow(ws, opexLabel("Payroll", oix?.payroll, "$/yr"), opexValue(oix?.payroll, inputs.expenses.payroll_annual), opexFmt(oix?.payroll));
   addInputRow(ws, opexLabel("R&M", oix?.repairs_maintenance, "$/unit/yr"), opexValue(oix?.repairs_maintenance, inputs.expenses.repairs_maintenance_per_unit), opexFmt(oix?.repairs_maintenance));
@@ -468,9 +480,17 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   addInputRow(ws, opexLabel("Property Tax", oix?.property_tax, "$/yr"), opexValue(oix?.property_tax, inputs.expenses.property_tax_total), opexFmt(oix?.property_tax));
   addInputRow(ws, "Tax Escalation Rate", inputs.expenses.tax_escalation_rate, PCT_FMT);
   addInputRow(ws, "Expense Escalation Rate", inputs.expenses.expense_escalation_rate || 0, PCT_FMT);
-  addInputRow(ws, opexLabel("Utilities", oix?.utilities, "$/unit/yr"), opexValue(oix?.utilities, inputs.expenses.utilities_per_unit), opexFmt(oix?.utilities));
+  if (utilitiesItemized && y1opex) {
+    addInputRow(ws, "Utilities ($/yr, itemized sublines)", Math.round(y1opex.utilities), CURRENCY_FMT);
+  } else {
+    addInputRow(ws, opexLabel("Utilities", oix?.utilities, "$/unit/yr"), opexValue(oix?.utilities, inputs.expenses.utilities_per_unit), opexFmt(oix?.utilities));
+  }
   addInputRow(ws, opexLabel("Admin/Legal/Marketing", oix?.admin_legal_marketing, "$/yr"), opexValue(oix?.admin_legal_marketing, inputs.expenses.admin_legal_marketing), opexFmt(oix?.admin_legal_marketing));
-  addInputRow(ws, opexLabel("Contract Services", oix?.contract_services, "$/yr"), opexValue(oix?.contract_services, inputs.expenses.contract_services), opexFmt(oix?.contract_services));
+  if (servicesItemized && y1opex) {
+    addInputRow(ws, "Contract Services ($/yr, itemized sublines)", Math.round(y1opex.contract_services), CURRENCY_FMT);
+  } else {
+    addInputRow(ws, opexLabel("Contract Services", oix?.contract_services, "$/yr"), opexValue(oix?.contract_services, inputs.expenses.contract_services), opexFmt(oix?.contract_services));
+  }
   addInputRow(ws, opexLabel("Replacement Reserve", oix?.reserves, "$/unit/yr"), opexValue(oix?.reserves, inputs.expenses.reserves_per_unit), opexFmt(oix?.reserves));
   ws.addRow([]);
 
@@ -528,7 +548,8 @@ function buildMonthlySheet(
     { label: "Cash Flow before CapEx & Reserves", getValue: r => r.cash_flow_before_capex_and_reserves, bold: true },
     { label: "Less: Replacement Reserve", getValue: r => r.reserves, negative: true },
     { label: "Less: Capital Reserve", getValue: r => r.capital_reserve, negative: true },
-    { label: "Less: CapEx (Named Projects)", getValue: r => r.capex, negative: true },
+    { label: "Less: CapEx — Per-Unit Renovations", getValue: r => r.capex_renovation ?? 0, negative: true },
+    { label: "Less: CapEx — Named Projects", getValue: r => r.capex_projects ?? 0, negative: true },
     { label: "Cash Flow (Before Taxes)", getValue: r => r.cash_flow, bold: true },
     { label: "Cumulative Cash Flow", getValue: r => r.cumulative_cash_flow },
   ];
@@ -608,8 +629,8 @@ function buildAnnualSheet(
   const R = {
     gpr: 2, vacancy: 3, badDebt: 4, concessions: 5, otherIncome: 6,
     egi: 7, opex: 8, noi: 9, debtService: 10, cfBeforeCapex: 11,
-    replacementReserve: 12, capitalReserve: 13, capex: 14, cashFlow: 15,
-    cumulative: 16, capRate: 17, cashOnCash: 18, pctMtm: 19,
+    replacementReserve: 12, capitalReserve: 13, capexRenovation: 14, capexProjects: 15,
+    cashFlow: 16, cumulative: 17, capRate: 18, cashOnCash: 19, pctMtm: 20,
   };
   // Scalars parked below the table so the cap-rate / CoC formulas have stable refs.
   const priceRow = R.pctMtm + 2; // 21
@@ -639,9 +660,10 @@ function buildAnnualSheet(
       formula: (c) => `${c}${R.noi}+${c}${R.debtService}` },
     { label: "Less: Replacement Reserve", key: "reserves", negative: true },
     { label: "Less: Capital Reserve", key: "capital_reserve", negative: true },
-    { label: "Less: CapEx (Named Projects)", key: "capex", negative: true },
+    { label: "Less: CapEx — Per-Unit Renovations", key: "capex_renovation", negative: true },
+    { label: "Less: CapEx — Named Projects", key: "capex_projects", negative: true },
     { label: "Cash Flow (Before Taxes)", key: "cash_flow", bold: true,
-      formula: (c) => `${c}${R.cfBeforeCapex}+${c}${R.replacementReserve}+${c}${R.capitalReserve}+${c}${R.capex}` },
+      formula: (c) => `${c}${R.cfBeforeCapex}+${c}${R.replacementReserve}+${c}${R.capitalReserve}+${c}${R.capexRenovation}+${c}${R.capexProjects}` },
     { label: "Cumulative Cash Flow", key: "cumulative_cash_flow",
       formula: (c, prev) => (prev ? `${prev}${R.cumulative}+${c}${R.cashFlow}` : `${c}${R.cashFlow}`) },
     { label: "Cap Rate", key: "cap_rate", pct: true,
@@ -697,8 +719,8 @@ function buildReturnsSheet(
   ws.columns = [{ width: 30 }, { width: 16 }];
 
   // Annual Pro Forma cross-sheet refs (year y, 0-based → column y+2).
-  const cfRef = (y: number) => `${PROFORMA}!${colName(y + 2)}15`; // Cash Flow row
-  const cfRange = `${PROFORMA}!B15:${colName(n + 1)}15`;
+  const cfRef = (y: number) => `${PROFORMA}!${colName(y + 2)}16`; // Cash Flow row
+  const cfRange = `${PROFORMA}!B16:${colName(n + 1)}16`;
   const noiY1 = `${PROFORMA}!B9`;
   const dsY1 = `${PROFORMA}!B10`; // stored negative
 
@@ -774,7 +796,7 @@ function buildReturnsSheet(
   for (let y = 0; y < n; y++) {
     const row = ws.addRow([`Year ${result.annual[y].year}`]);
     row.getCell(1).font = NORMAL_FONT;
-    row.getCell(2).value = { formula: `${PROFORMA}!${colName(y + 2)}18` } as ExcelJS.CellFormulaValue; // CoC row
+    row.getCell(2).value = { formula: `${PROFORMA}!${colName(y + 2)}19` } as ExcelJS.CellFormulaValue; // CoC row
     row.getCell(2).numFmt = PCT_FMT;
     row.getCell(2).border = THIN_BORDER;
   }
@@ -888,7 +910,11 @@ function buildUnitMixSheet(
     ]);
 
     // Renovated Rent = (renovated-basis rent) + Premium, per the pro-forma renovated basis.
-    row.getCell(7).value = { formula: `${renoRentCol}${rowNum}+F${rowNum}` } as ExcelJS.CellFormulaValue;
+    // Vacant rows bill $0 current rent, so under the "current" basis fall back to
+    // Market Rent (col E) rather than collapsing to premium-only — matches the engine.
+    const renoBaseRef =
+      renoRentCol === "E" ? `E${rowNum}` : `IF(D${rowNum}=0,E${rowNum},D${rowNum})`;
+    row.getCell(7).value = { formula: `${renoBaseRef}+F${rowNum}` } as ExcelJS.CellFormulaValue;
     // Annual GPR = Count × (unrenovated-basis rent) × 12, matching the engine's basis.
     row.getCell(8).value = { formula: `C${rowNum}*${gprCol}${rowNum}*12` } as ExcelJS.CellFormulaValue;
 
@@ -917,7 +943,7 @@ function buildUnitMixSheet(
   }
 }
 
-function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]) {
+function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"], yearBuilt?: number) {
   // Document the MODELED capex — disabled per-unit / named projects are excluded
   // (matches the engine), so the sheet totals tie to the headline numbers.
   const capex = applyCapexToggles(rawCapex);
@@ -999,6 +1025,21 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
       totalRow.getCell(c).fill = LIGHT_FILL;
       totalRow.getCell(c).border = THIN_BORDER;
     }
+  } else {
+    // No named/building-wide projects budgeted. The Pro Forma's "CapEx — Named
+    // Projects" line will read $0 (per-unit renovations are a separate line). Flag
+    // it — especially on older assets, where roof/paving/major-system needs are
+    // easy to leave uncosted.
+    const buildingAge = yearBuilt ? new Date().getFullYear() - yearBuilt : null;
+    const old = buildingAge !== null && buildingAge > 15;
+    const note = ws.addRow([
+      old
+        ? `No building-wide capital projects budgeted — this asset is ~${buildingAge} years old. Confirm roof, paving, and major-system needs are covered elsewhere.`
+        : "No building-wide capital projects budgeted — the Pro Forma 'CapEx — Named Projects' line is $0.",
+    ]);
+    ws.mergeCells(note.number, 1, note.number, 5);
+    note.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: old ? "FFB8860B" : "FF64748B" } };
+    note.getCell(1).alignment = { wrapText: true, vertical: "top" };
   }
 }
 

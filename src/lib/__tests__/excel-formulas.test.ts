@@ -42,20 +42,22 @@ describe("Excel export — live formulas reproduce the engine", () => {
     const A = wb.getWorksheet("Annual Pro Forma")!;
     const n = result.annual.length;
 
-    const price = numAt(A, 21, 2);
-    const equity = numAt(A, 22, 2);
+    const price = numAt(A, 22, 2);
+    const equity = numAt(A, 23, 2);
     expect(price).toBeCloseTo(inputs.purchase.purchase_price, 2);
     expect(equity).toBeCloseTo(result.metrics.total_equity, 2);
 
     let cumPrev = 0;
     for (let y = 0; y < n; y++) {
       const c = y + 2;
+      // CapEx is split into two rows: 14 = per-unit renovations, 15 = named projects.
       const gpr = numAt(A, 2, c), vac = numAt(A, 3, c), bad = numAt(A, 4, c),
         conc = numAt(A, 5, c), oth = numAt(A, 6, c), opex = numAt(A, 8, c),
-        ds = numAt(A, 10, c), rr = numAt(A, 12, c), cr = numAt(A, 13, c), cx = numAt(A, 14, c);
+        ds = numAt(A, 10, c), rr = numAt(A, 12, c), cr = numAt(A, 13, c),
+        cxReno = numAt(A, 14, c), cxProj = numAt(A, 15, c);
       const egi = gpr + vac + bad + conc + oth;      // "Less:" rows stored negative
       const noi = egi + opex;
-      const cf = noi + ds + rr + cr + cx;
+      const cf = noi + ds + rr + cr + cxReno + cxProj;
       const cum = cumPrev + cf; cumPrev = cum;
 
       const a = result.annual[y];

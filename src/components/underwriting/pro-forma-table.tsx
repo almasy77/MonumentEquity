@@ -134,7 +134,8 @@ export function ProFormaTable({
     ...(annual.some((a) => (a.capital_reserve ?? 0) !== 0)
       ? [{ key: "capital_reserve", label: "Less: Capital Reserve", negative: true } as RowDef]
       : []),
-    { key: "capex", label: "Less: CapEx (Named Projects)", negative: true },
+    { key: "capex_renovation", label: "Less: CapEx — Per-Unit Renovations", negative: true },
+    { key: "capex_projects", label: "Less: CapEx — Named Projects", negative: true },
     { key: "cash_flow", label: "Cash Flow", bold: true, highlight: true },
     // Key per-period metrics (rendered as percentages)
     { key: "cap_rate", label: "Cap Rate", pct: true },
