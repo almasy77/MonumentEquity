@@ -8,6 +8,7 @@ import { useAiChatbot } from "./ai-chatbot-context";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
 import { ProFormaTable } from "./pro-forma-table";
+import { PricingViewsCard } from "./pricing-views-card";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
@@ -683,6 +684,9 @@ function ScenarioAnalysis({
           />
         );
       })()}
+
+      {/* Pricing Views — valuation triangulation for the seller conversation */}
+      <PricingViewsCard deal={deal} result={result} scenario={scenario} onUpdate={onUpdate} />
 
       {/* After-Tax (TAX_TREATMENT_SPEC) — only when the scenario has tax assumptions */}
       {result.tax && (
