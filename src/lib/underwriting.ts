@@ -160,7 +160,10 @@ export interface RevenueAssumptions {
   other_income?: OtherIncomeAssumptions; // itemized line items; supersedes rubs + flat when present
   vacancy_rate: number;
   bad_debt_rate: number;
-  concessions_rate: number;
+  concessions_rate: number; // the value the engine bills (Less: Concessions = GPR × this)
+  concession_free_months?: number; // UI convenience only: months free per new lease. The
+  // form derives concessions_rate from it (× turnover ÷ 12, amortized over a 12-mo lease);
+  // the engine ignores this field and reads concessions_rate directly.
   rent_growth_rate: number; // annual
   rent_ramp?: RentRampAssumptions; // optional; absent = no ramp (legacy behavior)
 }

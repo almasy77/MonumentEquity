@@ -2163,9 +2163,45 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 )}
               </div>
               <PctField label="Bad Debt" value={r.bad_debt_rate} onChange={(v) => { setR({ ...r, bad_debt_rate: v }); markDirty(); }} />
-              <PctField label="Concessions" value={r.concessions_rate ?? 0} onChange={(v) => { setR({ ...r, concessions_rate: v }); markDirty(); }} />
               <div>
-                <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => { setE({ ...e, turnover_rate: v }); markDirty(); }} />
+                {/* Direct edit clears the free-months helper so the hint can't go stale. */}
+                <PctField label="Concessions" value={r.concessions_rate ?? 0} onChange={(v) => { setR({ ...r, concessions_rate: v, concession_free_months: undefined }); markDirty(); }} />
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">or</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={r.concession_free_months ?? ""}
+                    placeholder="0"
+                    onChange={(ev) => {
+                      const months = parseFloat(ev.target.value);
+                      const turnover = e.turnover_rate ?? 0.5;
+                      if (!isFinite(months) || months <= 0) {
+                        setR({ ...r, concession_free_months: undefined });
+                      } else {
+                        // Amortized over a 12-mo lease: rate = turnover × months ÷ 12.
+                        setR({ ...r, concession_free_months: months, concessions_rate: (turnover * months) / 12 });
+                      }
+                      markDirty();
+                    }}
+                    className="w-12 h-6 bg-slate-800 border border-slate-700 rounded px-1.5 text-[11px] text-white outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-500">mo free/lease</span>
+                </div>
+                {r.concession_free_months ? (
+                  <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                    {r.concession_free_months} mo × {((e.turnover_rate ?? 0.5) * 100).toFixed(0)}% turnover ÷ 12 = {((r.concessions_rate ?? 0) * 100).toFixed(2)}%
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <PctField label="Turnover" value={e.turnover_rate ?? 0.50} suffix="% units/yr" onChange={(v) => {
+                  setE({ ...e, turnover_rate: v });
+                  // Keep a free-months-derived concession rate in sync when turnover changes.
+                  if (r.concession_free_months) setR({ ...r, concessions_rate: (v * r.concession_free_months) / 12 });
+                  markDirty();
+                }} />
                 {r.rent_ramp?.enabled && (
                   <p className="text-[10px] text-slate-500 mt-0.5">drives turn cost; ramp turns are costed separately</p>
                 )}
