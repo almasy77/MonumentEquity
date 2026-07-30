@@ -40,6 +40,34 @@ describe("operating one-pager", () => {
     expect(html).toContain("Seller's T12 vs our underwriting");
   });
 
+  it("basis notes reflect the BILLED figure, not stale legacy fields", () => {
+    // Enter management + R&M through the structured opex line (what the engine
+    // bills), while the legacy fields hold different, stale values. The basis
+    // notes must describe what's billed (8.0% / $750), not the stale 8.5% / $680.
+    const inp = JSON.parse(readFileSync(join(__dirname, "golden", "bryden_base.input.json"), "utf8"));
+    inp.expenses.management_fee_rate = 0.085; // stale legacy
+    inp.expenses.repairs_maintenance_per_unit = 680; // stale legacy
+    inp.expenses.opex_inputs = {
+      ...(inp.expenses.opex_inputs ?? {}),
+      management_fees: { value: 0.08, mode: "pct_egi" }, // what the engine bills
+      repairs_maintenance: { value: 750, mode: "per_unit_annual" },
+    };
+    const scenario = {
+      id: "s1", deal_id: "d1", name: "Base", type: "base", version: 1, is_active: true,
+      purchase_assumptions: inp.purchase, financing_assumptions: inp.financing,
+      revenue_assumptions: inp.revenue, expense_assumptions: inp.expenses,
+      capex_assumptions: inp.capex, exit_assumptions: inp.exit,
+      tax_assumptions: inp.tax, depreciation_assumptions: inp.depreciation,
+    } as unknown as Scenario;
+    const deal = { id: "d1", address: "934 E Gay St", city: "Columbus", state: "OH", units: 12, source: "broker" } as unknown as Deal;
+
+    const html = buildOperatingOnePager(deal, scenario);
+    expect(html).toContain("8.0% of EGI"); // billed rate, not 8.5%
+    expect(html).toContain("750/unit/yr"); // billed per-unit, not 680
+    expect(html).not.toContain("8.5%");
+    expect(html).not.toContain("680");
+  });
+
   it("does NOT leak internal return metrics", () => {
     const { deal, scenario } = fixture();
     const html = buildOperatingOnePager(deal, scenario);
