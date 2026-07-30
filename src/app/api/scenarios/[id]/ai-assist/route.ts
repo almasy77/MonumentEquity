@@ -209,7 +209,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     });
   } catch (err) {
     console.error("POST /api/scenarios/[id]/ai-assist error:", err);
-    const message = err instanceof Error ? err.message : "AI assistant failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Generic message — don't reflect raw Anthropic-SDK/Redis exception text to the client.
+    return NextResponse.json({ error: "The assistant failed to process that instruction. Please try again." }, { status: 500 });
   }
 }

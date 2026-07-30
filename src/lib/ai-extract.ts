@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { safeFetch } from "./ssrf";
 
 export interface ExtractedDeal {
   address?: string;
@@ -33,7 +34,7 @@ const STATE_ABBREVS = new Set(Object.values(US_STATES));
 
 export async function extractImageFromUrl(url: string): Promise<string | null> {
   try {
-    const response = await fetch(url, {
+    const response = await safeFetch(url, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -54,7 +55,7 @@ export async function extractImageFromUrl(url: string): Promise<string | null> {
 export async function extractDealFromUrl(
   url: string
 ): Promise<ExtractedDeal> {
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

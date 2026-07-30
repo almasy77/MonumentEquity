@@ -44,8 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(extracted);
   } catch (err) {
     console.error("URL import error:", err);
-    const message =
-      err instanceof Error ? err.message : "Failed to extract listing data";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Generic message — don't reflect raw fetch/SDK/SSRF-guard exception text to the client.
+    return NextResponse.json({ error: "Failed to extract listing data from this URL." }, { status: 500 });
   }
 }

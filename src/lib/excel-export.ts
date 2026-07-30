@@ -376,9 +376,13 @@ function buildAssumptionsSheet(wb: ExcelJS.Workbook, inputs: ScenarioInputs, res
   addInputRow(ws, "Bad Debt Rate", inputs.revenue.bad_debt_rate, PCT_FMT);
   {
     const cy = inputs.revenue.concession_years ?? 1;
-    const cyLabel = (inputs.revenue.concessions_rate ?? 0) > 0
-      ? `Concessions Rate (Yr 1${cy > 1 ? `–${cy}` : ""} only)`
-      : "Concessions Rate";
+    const rate = inputs.revenue.concessions_rate ?? 0;
+    let cyLabel = "Concessions Rate";
+    if (rate > 0) {
+      if (cy < 1) cyLabel = "Concessions Rate (off)";
+      else if (cy >= inputs.exit.hold_period_years) cyLabel = "Concessions Rate (all years)";
+      else cyLabel = `Concessions Rate (Yr 1${cy > 1 ? `–${cy}` : ""} only)`;
+    }
     addInputRow(ws, cyLabel, inputs.revenue.concessions_rate, PCT_FMT);
   }
   addInputRow(ws, "Rent Growth Rate (Annual)", inputs.revenue.rent_growth_rate, PCT_FMT);
@@ -980,8 +984,13 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
   row3.getCell(2).numFmt = NUMBER_FMT;
   ws.addRow(["Start Month", capex.renovation_start_month || 1]);
   ws.addRow(["End Month", capex.renovation_end_month || capex.renovation_start_month || 1]);
-  const span = Math.max(1, (capex.renovation_end_month || capex.renovation_start_month || 1) - (capex.renovation_start_month || 1) + 1);
-  const upm = capex.units_to_renovate > 0 ? capex.units_to_renovate / span : 0;
+  // Pace mirrors the engine's getUnitsPerMonth: end-month window when set, else the
+  // legacy units_per_month field (a span-only derivation misreports the legacy path).
+  const startMonth = capex.renovation_start_month || 1;
+  const legacyUpm = (capex as { units_per_month?: number }).units_per_month;
+  const upm = capex.renovation_end_month && capex.renovation_end_month >= startMonth
+    ? (capex.units_to_renovate > 0 ? capex.units_to_renovate / (capex.renovation_end_month - startMonth + 1) : 0)
+    : (legacyUpm && legacyUpm > 0 ? legacyUpm : 0);
   const upmRow = ws.addRow(["Units per Month (derived)", Math.round(upm * 10) / 10]);
   upmRow.getCell(2).numFmt = "#,##0.0";
   if (capex.renovation_downtime_enabled) {
@@ -994,16 +1003,18 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
   row5.getCell(2).numFmt = CURRENCY_FMT;
   row5.getCell(2).font = BOLD_FONT;
 
-  // If the renovation window runs past the hold, only the portion paced INSIDE the
-  // hold is actually booked in the pro forma — surface the booked amount and the
-  // shortfall so the full budget above isn't mistaken for what the model spent.
-  const endMonth = capex.renovation_end_month || capex.renovation_start_month || 1;
+  // If the renovation runs past the hold, only the portion paced INSIDE the hold is
+  // booked. Trigger on the ENGINE truth (booked < full budget) rather than the end
+  // month, so the legacy units_per_month pacing (no end month) is caught too.
+  const effectiveEnd = capex.renovation_end_month && capex.renovation_end_month >= startMonth
+    ? capex.renovation_end_month
+    : (upm > 0 && capex.units_to_renovate > 0 ? startMonth + Math.ceil(capex.units_to_renovate / upm) - 1 : startMonth);
   const fullBudget = (capex.per_unit_cost || 0) * (capex.units_to_renovate || 0);
-  if (holdMonths && endMonth > holdMonths && bookedRenovation !== undefined && bookedRenovation < fullBudget - 1) {
+  if (holdMonths && bookedRenovation !== undefined && bookedRenovation < fullBudget - 1) {
     const bookedRow = ws.addRow(["Booked within hold (paced)", Math.round(bookedRenovation)]);
     bookedRow.getCell(2).numFmt = CURRENCY_FMT;
     const warn = ws.addRow([
-      `Renovation window ends month ${endMonth}, past the ${holdMonths}-month hold — only $${Math.round(bookedRenovation).toLocaleString()} of the $${Math.round(fullBudget).toLocaleString()} budget is booked in the pro forma; the rest falls after exit.`,
+      `Renovation completes ~month ${effectiveEnd}, past the ${holdMonths}-month hold — only $${Math.round(bookedRenovation).toLocaleString()} of the $${Math.round(fullBudget).toLocaleString()} budget is booked in the pro forma; the rest falls after exit.`,
     ]);
     ws.mergeCells(warn.number, 1, warn.number, 5);
     warn.getCell(1).font = { ...NORMAL_FONT, italic: true, color: { argb: "FFB8860B" } };
@@ -1597,7 +1608,14 @@ function buildTaxSheet(
     { width: 16 }, { width: 16 }, { width: 12 }, { width: 15 }, { width: 16 },
   ];
 
-  const title = ws.addRow(["After-Tax Analysis — estimate, not tax advice (1031 exit: taxes deferred, not eliminated)"]);
+  // Drive the exit display off the COMPUTED result (tax.exit_tax present ⇒ taxable
+  // sale), not the raw input flag — a saved scenario that omits exit_via_1031 is
+  // modeled by the engine as 1031 (default true), so gating on the un-defaulted
+  // input would drop the 1031 memo and mislabel the sheet.
+  const taxableExit = !!tax.exit_tax;
+  const title = ws.addRow([taxableExit
+    ? "After-Tax Analysis — estimate, not tax advice (fully-taxable exit: depreciation recapture + capital gains modeled)"
+    : "After-Tax Analysis — estimate, not tax advice (1031 exit: taxes deferred, not eliminated)"]);
   title.getCell(1).font = { ...HEADER_FONT, size: 12 };
   title.getCell(1).fill = HEADER_FILL;
   ws.mergeCells(`A${title.number}:J${title.number}`);
@@ -1609,7 +1627,7 @@ function buildTaxSheet(
   addLabelValue(ws, "Year-1 Federal Shield", tax.year1_federal_shield, CURRENCY_FMT);
   addLabelValue(ws, "Year-1 NY Shield", tax.year1_state_shield, CURRENCY_FMT);
   // 1031 exit → deferred-gain memo (taxes deferred, not eliminated).
-  if (assumptions.exit_via_1031) {
+  if (!taxableExit) {
     addLabelValue(ws, "Deferred Gain at Exit (memo)", tax.deferred_gain_memo.deferred_gain, CURRENCY_FMT);
     addLabelValue(ws, "  — Accumulated Federal Depreciation", tax.deferred_gain_memo.accumulated_federal_depreciation, CURRENCY_FMT);
     addLabelValue(ws, "  — §1250 share (building + land impr.)", tax.deferred_gain_memo.sec1250_depreciation, CURRENCY_FMT);
@@ -1656,7 +1674,7 @@ function buildTaxSheet(
   addInputRow(ws, "Reno 5-yr Share", assumptions.reno_5yr_pct, PCT_FMT);
   addInputRow(ws, "Repairs Expensed %", assumptions.reno_repairs_expensed_pct, PCT_FMT);
   addInputRow(ws, "OpCo Fee Leakage", assumptions.opco_fee_tax_rate, PCT_FMT);
-  addLabelValue(ws, "Exit via 1031", assumptions.exit_via_1031 ? "Yes" : "No");
+  addLabelValue(ws, "Exit via 1031", taxableExit ? "No" : "Yes");
   ws.addRow([]);
 
   addSectionHeader(ws, "Per-Year Detail", 10);

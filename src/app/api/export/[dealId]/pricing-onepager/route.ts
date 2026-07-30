@@ -25,6 +25,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   let scenario: Scenario | null = null;
   if (scenarioId) scenario = await redis.get<Scenario>(`scenario:${scenarioId}`);
   if (!scenario) return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+  // Guard: the scenario must belong to this deal (matches the other export routes).
+  if (scenario.deal_id !== dealId) return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
 
   const html = buildPricingOnePager(deal, scenario);
   return new NextResponse(html, {
