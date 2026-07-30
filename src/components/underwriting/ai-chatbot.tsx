@@ -46,18 +46,32 @@ export function AiChatbot() {
         body: JSON.stringify({ instruction }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        onAiResult(data);
+      // Parse defensively: a platform timeout / crash returns a non-JSON error
+      // page ("An error occurred…"), so calling res.json() blindly throws a
+      // confusing "Unexpected token" instead of a useful message.
+      const raw = await res.text();
+      let data: { error?: string } | null = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+
+      if (res.ok && data) {
+        onAiResult(data as unknown as Parameters<NonNullable<typeof onAiResult>>[0]);
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: `Done — applied "${instruction}"`, success: true },
         ]);
       } else {
-        const err = await res.json();
+        const content =
+          data?.error ||
+          (res.status === 504 || res.status === 502 || res.status === 503
+            ? "The assistant timed out — try a shorter, more specific instruction (e.g. change one assumption at a time)."
+            : `The assistant hit an error (${res.status || "network"}). Please try again.`);
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: err.error || "Failed to apply changes", success: false },
+          { role: "assistant", content, success: false },
         ]);
       }
     } catch (err) {
