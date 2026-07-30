@@ -500,8 +500,15 @@ export function computePropertyTaxVectors(
  */
 export interface TaxReassessment {
   enabled: boolean;
-  effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County
-  reassessed_value?: number; // default: purchase price
+  effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County.
+  // DERIVED from the decomposed inputs below when present:
+  //   effective_tax_rate = assessment_ratio × (mill_rate / 1000)
+  // so operating tax = market × ratio × rate = assessed value × rate, and the
+  // exit closed form (cap + effective_tax_rate) stays correct.
+  mill_rate?: number; // county mill rate; ÷1000 = the decimal rate on assessed value
+  assessment_ratio?: number; // assessed value ÷ market value, e.g. 0.40
+  rate_mode?: "mill" | "pct"; // how the rate is entered/displayed in the UI
+  reassessed_value?: number; // default: purchase price (left unset to auto-track it)
   // The reassessed bill starts at a specific PRO FORMA MONTH (1 = first month
   // of the hold). phase_in_month takes precedence; phase_in_year is the legacy
   // year-granularity fallback (year Y ⇒ month (Y-1)*12 + 1).
