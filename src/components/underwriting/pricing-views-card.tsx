@@ -130,16 +130,26 @@ export function PricingViewsCard({
             <h3 className="text-white text-base font-semibold">Pricing Views</h3>
             <p className="text-[11px] text-slate-500">Triangulate the price several ways — for the seller conversation.</p>
           </div>
-          {views.range && (
-            <div className="text-right text-xs">
-              <div className="text-slate-400">
-                Range <span className="text-white font-semibold tabular-nums">{usd(views.range.low)}</span>
-                {" – "}
-                <span className="text-white font-semibold tabular-nums">{usd(views.range.high)}</span>
+          <div className="flex items-center gap-3">
+            {views.range && (
+              <div className="text-right text-xs">
+                <div className="text-slate-400">
+                  Range <span className="text-white font-semibold tabular-nums">{usd(views.range.low)}</span>
+                  {" – "}
+                  <span className="text-white font-semibold tabular-nums">{usd(views.range.high)}</span>
+                </div>
+                <div className="text-slate-500">midpoint <span className="text-slate-300 tabular-nums">{usd(views.range.mid)}</span></div>
               </div>
-              <div className="text-slate-500">midpoint <span className="text-slate-300 tabular-nums">{usd(views.range.mid)}</span></div>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={() => window.open(`/api/export/${deal.id}/pricing-onepager?scenario_id=${scenario.id}`, "_blank", "noopener")}
+              className="shrink-0 text-xs px-2.5 py-1.5 rounded border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
+              title="Open a seller-facing one-pager (print to PDF)"
+            >
+              Seller one-pager ↗
+            </button>
+          </div>
         </div>
 
         {/* Market inputs */}
