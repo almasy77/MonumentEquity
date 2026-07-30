@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, TrendingUp, Shield } from "lucide-react";
 import { STAGE_LABELS } from "@/lib/constants";
 import type { Deal, Scenario, ShareLink } from "@/lib/validations";
+import { ShareScenarioCard } from "@/components/share/share-scenario-card";
+import { buildShareScenarioData } from "@/lib/share-scenario";
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -12,10 +14,6 @@ function formatCurrency(n: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(n);
-}
-
-function formatPct(n: number): string {
-  return (n * 100).toFixed(1) + "%";
 }
 
 export default async function SharePage({
@@ -73,6 +71,12 @@ export default async function SharePage({
 
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : 0;
   const stage = STAGE_LABELS[deal.stage] || deal.stage;
+
+  // Recompute each scenario from its stored inputs (single source of truth — the
+  // same calculateUnderwriting the app and Excel export use), so the shared
+  // assumptions / pro forma / sensitivity always match the live model rather than
+  // any stale stored snapshot.
+  const scenarioData = scenarios.map((s) => buildShareScenarioData(deal, s));
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -181,86 +185,15 @@ export default async function SharePage({
               <CardTitle className="text-white text-base flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" /> Underwriting Scenarios
               </CardTitle>
+              <p className="text-xs text-slate-500">
+                Expand a scenario for its assumptions, pro forma, and sensitivity analysis.
+              </p>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {scenarios.map((s) => {
-                  const m = s.calculated_metrics;
-                  return (
-                    <div
-                      key={s.id}
-                      className="p-4 bg-slate-800/50 rounded-lg border border-slate-700"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-white">
-                          {s.name}
-                        </h4>
-                        <Badge
-                          variant="outline"
-                          className="text-xs border-slate-600 text-slate-400"
-                        >
-                          {s.type}
-                        </Badge>
-                      </div>
-                      {m && (
-                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 text-center">
-                          {m.irr != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">IRR</p>
-                              <p className="text-sm font-bold text-white">
-                                {formatPct(m.irr)}
-                              </p>
-                            </div>
-                          )}
-                          {m.cash_on_cash != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">CoC</p>
-                              <p className="text-sm font-bold text-white">
-                                {formatPct(m.cash_on_cash)}
-                              </p>
-                            </div>
-                          )}
-                          {m.equity_multiple != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">Eq Mult</p>
-                              <p className="text-sm font-bold text-white">
-                                {m.equity_multiple.toFixed(2)}x
-                              </p>
-                            </div>
-                          )}
-                          {m.dscr != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">DSCR</p>
-                              <p className="text-sm font-bold text-white">
-                                {m.dscr.toFixed(2)}
-                              </p>
-                            </div>
-                          )}
-                          {m.going_in_cap != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">
-                                Going-In Cap
-                              </p>
-                              <p className="text-sm font-bold text-white">
-                                {formatPct(m.going_in_cap)}
-                              </p>
-                            </div>
-                          )}
-                          {m.stabilized_cap != null && (
-                            <div>
-                              <p className="text-xs text-slate-500">
-                                Stab Cap
-                              </p>
-                              <p className="text-sm font-bold text-white">
-                                {formatPct(m.stabilized_cap)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              <div className="space-y-3">
+                {scenarioData.map((d) => (
+                  <ShareScenarioCard key={d.id} data={d} />
+                ))}
               </div>
             </CardContent>
           </Card>
