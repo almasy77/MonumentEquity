@@ -2340,41 +2340,105 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     )}
                     {trEnabled && tr && (
                       <>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <PctField label="Effective Tax Rate" value={tr.effective_tax_rate} onChange={(v) => updateTr({ effective_tax_rate: v })} />
-                          <CurrencyField label="Reassessed Value" value={tr.reassessed_value ?? p.purchase_price} onChange={(v) => updateTr({ reassessed_value: v })} />
-                          {(() => {
-                            // Month-precise phase-in (1 = first month of the hold).
-                            // Migrate the legacy year value on first edit.
-                            const phaseInMonth = tr.phase_in_month ?? ((tr.phase_in_year ?? 1) - 1) * 12 + 1;
-                            return (
-                              <div>
-                                <NumField
-                                  label="Phase-In Month"
-                                  value={phaseInMonth}
-                                  onChange={(v) => updateTr({ phase_in_month: Math.max(1, Math.round(v)), phase_in_year: undefined })}
-                                />
-                                <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-                                  mo 1 = first month · ≈ yr {Math.floor((phaseInMonth - 1) / 12) + 1}, mo {((phaseInMonth - 1) % 12) + 1}
-                                </p>
+                        {(() => {
+                          // Decomposed rate entry: tax = (market × assessment_ratio) × (mill_rate/1000).
+                          // effective_tax_rate (engine + exit) is DERIVED from these.
+                          const marketValue = p.purchase_price || 0;
+                          const ratio = tr.assessment_ratio ?? 0.35; // Ohio/Franklin default; user edits
+                          const millRate = tr.mill_rate ?? (ratio > 0 ? (tr.effective_tax_rate || 0.0185) / ratio * 1000 : (tr.effective_tax_rate || 0.0185) * 1000);
+                          const rateMode = tr.rate_mode ?? "pct";
+                          const rateDecimal = millRate / 1000;
+                          const assessedValue = marketValue * ratio;
+                          const annualTax = assessedValue * rateDecimal;
+                          const effOnMarket = ratio * rateDecimal;
+                          const setDecomposed = (patch: Partial<TaxReassessment>) => {
+                            const nextMill = patch.mill_rate ?? millRate;
+                            const nextRatio = patch.assessment_ratio ?? ratio;
+                            // Derive the engine rate; leave reassessed_value unset so it auto-tracks price.
+                            updateTr({ ...patch, effective_tax_rate: nextRatio * (nextMill / 1000), reassessed_value: undefined });
+                          };
+                          const phaseInMonth = tr.phase_in_month ?? ((tr.phase_in_year ?? 1) - 1) * 12 + 1;
+                          return (
+                            <>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {/* Tax rate — mills or % (both ÷1000 / ÷100 to the same decimal) */}
+                                <div>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <Label className="text-xs text-slate-400">Tax Rate</Label>
+                                    <div className="flex rounded overflow-hidden border border-slate-700">
+                                      {(["mill", "pct"] as const).map((m) => (
+                                        <button
+                                          key={m}
+                                          type="button"
+                                          onClick={() => setDecomposed({ rate_mode: m })}
+                                          className={`px-1.5 py-0.5 text-[10px] ${rateMode === m ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"}`}
+                                        >
+                                          {m === "mill" ? "mills" : "%"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <Input
+                                    type="number"
+                                    value={rateMode === "mill" ? Number(millRate.toFixed(3)) : Number((rateDecimal * 100).toFixed(4))}
+                                    onChange={(ev) => {
+                                      const n = parseFloat(ev.target.value);
+                                      if (!isFinite(n)) return;
+                                      setDecomposed({ mill_rate: rateMode === "mill" ? n : n * 10 });
+                                    }}
+                                    className="bg-slate-800 border-slate-700 text-white h-9"
+                                  />
+                                  <p className="text-[10px] text-slate-500 mt-0.5">
+                                    {rateMode === "mill" ? `${(rateDecimal * 100).toFixed(3)}% (÷1000)` : `${millRate.toFixed(1)} mills`}
+                                  </p>
+                                </div>
+                                <PctField label="Assessed % of Market" value={ratio} onChange={(v) => setDecomposed({ assessment_ratio: v })} />
+                                <div>
+                                  <NumField
+                                    label="Phase-In Month"
+                                    value={phaseInMonth}
+                                    onChange={(v) => updateTr({ phase_in_month: Math.max(1, Math.round(v)), phase_in_year: undefined })}
+                                  />
+                                  <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                                    mo 1 = first month · ≈ yr {Math.floor((phaseInMonth - 1) / 12) + 1}, mo {((phaseInMonth - 1) % 12) + 1}
+                                  </p>
+                                </div>
+                                <div className="flex items-end pb-1">
+                                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={tr.apply_at_exit ?? true}
+                                      onChange={(ev) => updateTr({ apply_at_exit: ev.target.checked })}
+                                      className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                                    />
+                                    Apply at exit
+                                  </label>
+                                </div>
                               </div>
-                            );
-                          })()}
-                          <div className="flex items-end pb-1">
-                            <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={tr.apply_at_exit ?? true}
-                                onChange={(ev) => updateTr({ apply_at_exit: ev.target.checked })}
-                                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
-                              />
-                              Apply at exit
-                            </label>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-500">
-                          Operations: from the phase-in month, property tax = reassessed value × rate ({fmtCurrency(estReassessed)}/yr), escalated; the prior bill applies until then (a mid-year switch is pro-rated). Exit: value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
-                        </p>
+
+                              {/* Auto-computed: property value → assessed value → property taxes */}
+                              <div className="grid grid-cols-3 gap-3">
+                                {[
+                                  { label: "Property Value", val: fmtCurrency(marketValue), hint: "auto — purchase price" },
+                                  { label: "Assessed Value", val: fmtCurrency(assessedValue), hint: `${(ratio * 100).toFixed(0)}% × market` },
+                                  { label: "Property Taxes / yr", val: fmtCurrency(annualTax), hint: `assessed × ${(rateDecimal * 100).toFixed(3)}%`, accent: true },
+                                ].map((c) => (
+                                  <div key={c.label}>
+                                    <Label className="text-xs text-slate-400">{c.label}</Label>
+                                    <div className={`h-9 flex items-center px-2.5 rounded border border-slate-700 bg-slate-800/50 tabular-nums text-sm ${c.accent ? "text-emerald-300 font-semibold" : "text-slate-200"}`}>
+                                      {c.val}
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">{c.hint}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <p className="text-[10px] text-slate-500">
+                                Enter the county mill rate (÷1000) or the equivalent %, and the assessment ratio (assessed ÷ market). Property Value auto-fills from the purchase price; Assessed Value and Property Taxes compute from them. Effective rate on market = {(effOnMarket * 100).toFixed(3)}%. From the phase-in month the reassessed bill applies (escalated; mid-year switch pro-rated); at exit, value = NOI excl. tax ÷ (cap + rate) — your buyer&apos;s taxes at their price.
+                              </p>
+                            </>
+                          );
+                        })()}
 
                         {/* Property Tax v2 (fix-spec Phase 2): abatement record + scenario.
                             Enabling creates expenses.property_tax_v2 (calendar-anchored,
