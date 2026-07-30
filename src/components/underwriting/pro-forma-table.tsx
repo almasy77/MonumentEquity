@@ -323,7 +323,27 @@ export function ProFormaTable({
                   Tax/(Shield) = federal + NY + NIIT, net; green = net shield. */}
               {taxYears && taxYears.length > 0 && (
                 <>
+                  {/* Depreciation memo (non-cash) — the deduction driving the
+                      shield below. Greyed/italic so it never reads as cash. */}
                   <tr className="border-t-2 border-slate-600">
+                    <td className="py-1.5 pr-4 text-slate-500 italic">
+                      Depreciation
+                      <span className="text-slate-600 text-[10px] ml-1.5">non-cash · fed</span>
+                    </td>
+                    {annual.map((a) => {
+                      const ty = taxYears[a.year - 1];
+                      return (
+                        <td
+                          key={a.year}
+                          className="text-right py-1.5 px-2 tabular-nums text-slate-500 italic"
+                          title={ty ? `Federal: ${fmt(ty.federal_depreciation)} · NY: ${fmt(ty.state_depreciation)} — non-cash deduction; realized value is the shield in Tax Savings below` : undefined}
+                        >
+                          {ty && ty.federal_depreciation ? `(${fmt(ty.federal_depreciation)})` : fmt(0)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr>
                     <td className="py-1.5 pr-4 text-slate-300">
                       Tax Savings / (Tax)
                       <span className="text-slate-600 text-[10px] ml-1.5">fed + NY + NIIT · est.</span>

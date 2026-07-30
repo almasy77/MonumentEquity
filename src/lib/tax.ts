@@ -122,6 +122,16 @@ export interface TaxResult {
   cost_seg_fee_shield: number; // memo: that deduction × combined ordinary rate (gate-open reference)
   pal_carryforward_at_exit: number; // NOT released by the 1031 — deferred value
   deferred_gain_memo: DeferredGainMemo;
+  // Realized value of the depreciation deductions = tax with depreciation minus
+  // tax without it, per year. Respects REPS/§461(l)/PAL usability (suspended
+  // years contribute ~0). Undefined only in the internal suppressed run.
+  depreciation_shield?: DepreciationShield;
+}
+
+export interface DepreciationShield {
+  by_year: number[]; // tax saved by depreciation each year (positive = savings)
+  year1: number; // first-year shield (the cost-seg / bonus spike)
+  total: number; // cumulative realized shield over the hold
 }
 
 // ─── Depreciation helpers ────────────────────────────────────
@@ -165,7 +175,14 @@ export interface TaxLayerContext {
   };
 }
 
-export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): TaxResult {
+export function computeTaxLayer(
+  inputs: ScenarioInputs,
+  ctx: TaxLayerContext,
+  // Internal: when true, zero the depreciation deductions so the caller (this
+  // same function, one level down) can measure depreciation's realized tax value
+  // as the with-minus-without tax delta — automatically gated by REPS/§461(l)/PAL.
+  opts?: { suppressDepreciation?: boolean },
+): TaxResult {
   const tax = { ...TAX_DEFAULTS, ...inputs.tax };
   const { purchase, financing, exit } = inputs;
   const holdYears = exit.hold_period_years;
@@ -316,9 +333,12 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
         : Math.max(0, Math.min(refiCostAnnual, ctx.refi.cost - amortizedBeforeRefi));
     }
 
-    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − study fee − expensed repairs − refi deductions
-    const tiFed = a.noi - a.interest_paid - fedDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
-    const tiState = a.noi - a.interest_paid - stateDep - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
+    // Taxable income (§4): NOI − interest − dep − fin amort − prepaids − study fee − expensed repairs − refi deductions.
+    // depFed/depState are zeroed in the suppress-depreciation run (shield measurement).
+    const depFed = opts?.suppressDepreciation ? 0 : fedDep;
+    const depState = opts?.suppressDepreciation ? 0 : stateDep;
+    const tiFed = a.noi - a.interest_paid - depFed - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
+    const tiState = a.noi - a.interest_paid - depState - finAmort - prepaids - costSegFeeDed - capexExpDeduction - refiDed;
 
     // ── Federal loss routing: REPS → §461(l) → NOL ──
     // NOL carried INTO this year (from prior years) is release-eligible now via
@@ -431,10 +451,30 @@ export function computeTaxLayer(inputs: ScenarioInputs, ctx: TaxLayerContext): T
   const flowsHousehold = [-ctx.totalEquity, ...atcfHousehold];
   flowsHousehold[flowsHousehold.length - 1] += ctx.netSaleProceeds + ctx.returnOfOperatingReserve;
 
+  // ── Realized depreciation shield ── re-run with depreciation zeroed and take
+  // the per-year tax delta. One level of recursion only (the suppressed run does
+  // not recurse). Skipped in the suppressed run itself.
+  let depreciationShield: DepreciationShield | undefined;
+  if (!opts?.suppressDepreciation) {
+    const noDep = computeTaxLayer(inputs, ctx, { suppressDepreciation: true });
+    const byYear = years.map((ty, i) => {
+      const withDep = ty.federal_tax + ty.state_tax + ty.niit;
+      const n = noDep.years[i];
+      const withoutDep = n ? n.federal_tax + n.state_tax + n.niit : 0;
+      return withoutDep - withDep; // positive = tax saved by depreciation
+    });
+    depreciationShield = {
+      by_year: byYear,
+      year1: byYear[0] ?? 0,
+      total: byYear.reduce((s, v) => s + v, 0),
+    };
+  }
+
   const y1 = years[0];
 
   return {
     years,
+    depreciation_shield: depreciationShield,
     after_tax_irr_propco: calculateAnnualXIRR(flowsPropco),
     after_tax_irr_household: calculateAnnualXIRR(flowsHousehold),
     year1_federal_shield: y1 && y1.federal_tax < 0 ? -y1.federal_tax : 0,

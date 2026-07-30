@@ -692,7 +692,7 @@ function ScenarioAnalysis({
               <h3 className="text-white text-base font-semibold">After-Tax (1031 exit — taxes deferred, not eliminated)</h3>
               <span className="text-[10px] text-slate-500 italic">estimate — not tax advice</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <div className="bg-slate-800/60 rounded p-2.5 text-center ring-1 ring-blue-500/50">
                 <div className="text-xs text-blue-300 mb-0.5 font-medium">Household After-Tax IRR</div>
                 <div className="text-sm text-white font-bold tabular-nums">
@@ -706,6 +706,15 @@ function ScenarioAnalysis({
                   {result.tax.after_tax_irr_propco !== null ? `${(result.tax.after_tax_irr_propco * 100).toFixed(1)}%` : "—"}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-0.5">lender / valuation view</div>
+              </div>
+              <div className="bg-slate-800/50 rounded p-2.5 text-center ring-1 ring-emerald-500/30">
+                <div className="text-xs text-slate-400 mb-0.5">Depreciation Shield</div>
+                <div className="text-sm text-emerald-400 font-semibold tabular-nums">
+                  ${Math.round(result.tax.depreciation_shield?.total ?? 0).toLocaleString()}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  realized over hold · ${Math.round(result.tax.depreciation_shield?.year1 ?? 0).toLocaleString()} Yr-1
+                </div>
               </div>
               <div className="bg-slate-800/50 rounded p-2.5 text-center">
                 <div className="text-xs text-slate-400 mb-0.5">Year-1 Federal Shield</div>
