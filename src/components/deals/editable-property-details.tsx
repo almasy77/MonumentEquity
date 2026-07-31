@@ -30,6 +30,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     let parsed: unknown = value;
     const numericFields = [
       "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
+      "tax_mill_rate", "tax_mill_reduction_pct", "tax_assessment_pct",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -89,6 +90,10 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
           <EditableField label="County" value={deal.county || ""} onSave={(v) => updateDeal("county", v)} placeholder="Enter county" />
           <EditableField label="Tax Parcel #" value={deal.parcel_number || ""} onSave={(v) => updateDeal("parcel_number", v)} placeholder="APN / Parcel number" />
+          {/* County tax basis — auto-populates the underwriting Tax Reassessment when enabled. */}
+          <EditableField label="Mill Rate" value={deal.tax_mill_rate?.toString() || ""} onSave={(v) => updateDeal("tax_mill_rate", v)} type="number" suffix=" mills" placeholder="Gross county mills, e.g. 90" />
+          <EditableField label="Mill Assessment Rate" value={deal.tax_mill_reduction_pct?.toString() || ""} onSave={(v) => updateDeal("tax_mill_reduction_pct", v)} type="number" suffix="%" placeholder="Mill reduction, e.g. 35" />
+          <EditableField label="Assessment Rate" value={deal.tax_assessment_pct?.toString() || ""} onSave={(v) => updateDeal("tax_assessment_pct", v)} type="number" suffix="%" placeholder="Assessed % of market, e.g. 35" />
           <EditableField label="County Site Address (alt)" value={deal.county_site_address || ""} onSave={(v) => updateDeal("county_site_address", v)} placeholder="If county indexes a different street" />
           <EditableField label="Tax Incentive" value={deal.incentive_type || ""} onSave={(v) => updateDeal("incentive_type", v)} placeholder="CRA / TIF / PILOT / LIHTC" />
           <EditableField label="Granting Authority" value={deal.granting_authority || ""} onSave={(v) => updateDeal("granting_authority", v)} placeholder="e.g. the City of Columbus" />

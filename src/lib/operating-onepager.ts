@@ -37,7 +37,7 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
 
   // ── Property-tax basis (the headline explanation) ──
   const tr = (exp.tax_reassessment ?? undefined) as
-    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; reassessed_value?: number }
+    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; mill_reduction_rate?: number; reassessed_value?: number }
     | undefined;
   const price = inputs.purchase.purchase_price || 0;
   let taxBasis = "Entered operating bill.";
@@ -45,7 +45,11 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
     const eff = tr.effective_tax_rate ?? 0;
     if (tr.assessment_ratio && tr.mill_rate) {
       const assessed = price * tr.assessment_ratio;
-      taxBasis = `Reassessed to the sale price on transfer: assessed ${usd(assessed)} (${pct1(tr.assessment_ratio)} of ${usd(price)}) × ${tr.mill_rate.toFixed(1)} mills. The seller's current bill reflects a lower prior assessment.`;
+      const reduction = tr.mill_reduction_rate ?? 0;
+      const millText = reduction > 0
+        ? `${tr.mill_rate.toFixed(1)} mills less ${pct1(reduction)} reduction (${(tr.mill_rate * (1 - reduction)).toFixed(1)} eff.)`
+        : `${tr.mill_rate.toFixed(1)} mills`;
+      taxBasis = `Reassessed to the sale price on transfer: assessed ${usd(assessed)} (${pct1(tr.assessment_ratio)} of ${usd(price)}) × ${millText}. The seller's current bill reflects a lower prior assessment.`;
     } else {
       taxBasis = `Reassessed to the sale price on transfer at ${pct1(eff)} effective — counties reassess toward the purchase price, so the seller's current (lower) bill is not the buyer's bill.`;
     }
