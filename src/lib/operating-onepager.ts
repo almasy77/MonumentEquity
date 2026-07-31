@@ -37,7 +37,7 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
 
   // ── Property-tax basis (the headline explanation) ──
   const tr = (exp.tax_reassessment ?? undefined) as
-    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; mill_reduction_rate?: number; reassessed_value?: number }
+    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; mill_assessed_rate?: number; mill_reduction_rate?: number; reassessed_value?: number }
     | undefined;
   const price = inputs.purchase.purchase_price || 0;
   let taxBasis = "Entered operating bill.";
@@ -55,12 +55,12 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
       const assessed = marketBase * ratio;
       const stabilizedTax = marketBase * eff; // fully-reassessed annual bill
       const effMills = (eff / ratio) * 1000; // EFFECTIVE mills implied by the billed rate
-      const reduction = tr.mill_reduction_rate ?? 0;
+      const millAssessed = tr.mill_assessed_rate ?? (tr.mill_reduction_rate != null ? 1 - tr.mill_reduction_rate : 1);
       const grossMills = tr.mill_rate;
-      const grossConsistent = grossMills != null && Math.abs(grossMills * (1 - reduction) - effMills) < 0.5;
+      const grossConsistent = grossMills != null && Math.abs(grossMills * millAssessed - effMills) < 0.5;
       const millText = grossConsistent
-        ? (reduction > 0
-            ? `${grossMills!.toFixed(1)} mills less ${pct1(reduction)} (${effMills.toFixed(1)} eff.)`
+        ? (millAssessed < 1
+            ? `${grossMills!.toFixed(1)} mills × ${pct1(millAssessed)} (${effMills.toFixed(1)} eff.)`
             : `${grossMills!.toFixed(1)} mills`)
         : `${effMills.toFixed(1)} eff. mills`;
       // Year-1 shown tax may sit below the stabilized bill when reassessment phases in

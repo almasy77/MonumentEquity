@@ -23,6 +23,33 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// Live readout of the property-tax formula from the deal's tax fields:
+//   assessed value = market value × (assessed % of market value)
+//   property tax   = (mill rate / 1000) × (assessed % of mill rate) × assessed value
+function TaxComputed({ deal }: { deal: Deal }) {
+  const mill = deal.tax_mill_rate;
+  const millAssessedPct = deal.tax_mill_assessed_pct ?? 100;
+  const assessmentPct = deal.tax_assessment_pct;
+  const market = deal.tax_market_value ?? deal.asking_price;
+  if (mill == null || assessmentPct == null || !market) return null;
+  const assessedValue = market * (assessmentPct / 100);
+  const propertyTax = (mill / 1000) * (millAssessedPct / 100) * assessedValue;
+  const effOnMarket = (mill / 1000) * (millAssessedPct / 100) * (assessmentPct / 100);
+  return (
+    <div className="mt-1 rounded border border-slate-800 bg-slate-900/40 px-2.5 py-1.5 text-[11px] tabular-nums">
+      <div className="flex justify-between text-slate-400">
+        <span>Assessed Value</span>
+        <span className="text-slate-200">{formatCurrency(assessedValue)}</span>
+      </div>
+      <div className="flex justify-between text-slate-400 mt-0.5">
+        <span>Property Tax / yr</span>
+        <span className="text-emerald-300 font-semibold">{formatCurrency(propertyTax)}</span>
+      </div>
+      <div className="text-[10px] text-slate-500 mt-0.5">{(effOnMarket * 100).toFixed(3)}% of market value</div>
+    </div>
+  );
+}
+
 export function EditablePropertyDetails({ deal }: { deal: Deal }) {
   const router = useRouter();
 
@@ -30,7 +57,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     let parsed: unknown = value;
     const numericFields = [
       "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
-      "tax_mill_rate", "tax_mill_reduction_pct", "tax_assessment_pct",
+      "tax_mill_rate", "tax_mill_assessed_pct", "tax_assessment_pct", "tax_market_value",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -90,10 +117,13 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Lot Size" value={deal.lot_size || ""} onSave={(v) => updateDeal("lot_size", v)} placeholder="e.g. 0.45 acres" />
           <EditableField label="County" value={deal.county || ""} onSave={(v) => updateDeal("county", v)} placeholder="Enter county" />
           <EditableField label="Tax Parcel #" value={deal.parcel_number || ""} onSave={(v) => updateDeal("parcel_number", v)} placeholder="APN / Parcel number" />
-          {/* County tax basis — auto-populates the underwriting Tax Reassessment when enabled. */}
-          <EditableField label="Mill Rate" value={deal.tax_mill_rate?.toString() || ""} onSave={(v) => updateDeal("tax_mill_rate", v)} type="number" suffix=" mills" placeholder="Gross county mills, e.g. 90" />
-          <EditableField label="Mill Assessment Rate" value={deal.tax_mill_reduction_pct?.toString() || ""} onSave={(v) => updateDeal("tax_mill_reduction_pct", v)} type="number" suffix="%" placeholder="Mill reduction, e.g. 35" />
-          <EditableField label="Assessment Rate" value={deal.tax_assessment_pct?.toString() || ""} onSave={(v) => updateDeal("tax_assessment_pct", v)} type="number" suffix="%" placeholder="Assessed % of market, e.g. 35" />
+          {/* Property tax basis (any market) — auto-populates the underwriting Tax Reassessment.
+              property tax = (mill/1000) × (assessed % of mill) × (market × assessed % of market) */}
+          <EditableField label="Mill Rate" value={deal.tax_mill_rate?.toString() || ""} onSave={(v) => updateDeal("tax_mill_rate", v)} type="number" suffix=" mills" placeholder="Mill rate, e.g. 75" />
+          <EditableField label="Assessed % of Mill Rate" value={deal.tax_mill_assessed_pct?.toString() || ""} onSave={(v) => updateDeal("tax_mill_assessed_pct", v)} type="number" suffix="%" placeholder="100 if net, e.g. 65" />
+          <EditableField label="Market Value" value={deal.tax_market_value?.toString() || ""} onSave={(v) => updateDeal("tax_market_value", v)} type="number" prefix="$" placeholder="County market/appraised value" />
+          <EditableField label="Assessed % of Market Value" value={deal.tax_assessment_pct?.toString() || ""} onSave={(v) => updateDeal("tax_assessment_pct", v)} type="number" suffix="%" placeholder="Assessment ratio, e.g. 35" />
+          <TaxComputed deal={deal} />
           <EditableField label="County Site Address (alt)" value={deal.county_site_address || ""} onSave={(v) => updateDeal("county_site_address", v)} placeholder="If county indexes a different street" />
           <EditableField label="Tax Incentive" value={deal.incentive_type || ""} onSave={(v) => updateDeal("incentive_type", v)} placeholder="CRA / TIF / PILOT / LIHTC" />
           <EditableField label="Granting Authority" value={deal.granting_authority || ""} onSave={(v) => updateDeal("granting_authority", v)} placeholder="e.g. the City of Columbus" />

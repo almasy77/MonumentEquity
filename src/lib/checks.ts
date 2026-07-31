@@ -200,7 +200,8 @@ export function computeReconciliationChecks(
   {
     const tr = inputs.expenses.tax_reassessment;
     if (tr?.enabled && tr.mill_rate != null && tr.assessment_ratio != null && tr.assessment_ratio > 0) {
-      const derived = tr.assessment_ratio * (tr.mill_rate / 1000) * (1 - (tr.mill_reduction_rate ?? 0));
+      const millAssessed = tr.mill_assessed_rate ?? (tr.mill_reduction_rate != null ? 1 - tr.mill_reduction_rate : 1);
+      const derived = tr.assessment_ratio * (tr.mill_rate / 1000) * millAssessed;
       const eff = tr.effective_tax_rate ?? 0;
       // Tolerate rounding: 0.5 basis points on the market-value rate.
       const pass = Math.abs(derived - eff) < 0.00005;

@@ -44,11 +44,11 @@ describe("reassessment — decomposed mill × ratio", () => {
     expect(up.monthly[0].opex_breakdown.property_tax).toBeCloseTo(expectedMonthly * 2, 2);
   });
 
-  it("applies the mill reduction factor (Ohio HB920): effective = ratio × mill/1000 × (1 − reduction)", () => {
+  it("applies the assessed-%-of-mill-rate factor: effective = ratio × mill/1000 × millAssessed", () => {
     const ratio = 0.35;
     const mills = 90;
-    const reduction = 0.35; // gross mills cut 35% → 58.5 effective mills
-    const effective = ratio * (mills / 1000) * (1 - reduction); // what the UI derives & stores
+    const millAssessed = 0.65; // only 65% of the gross mill rate applies → 58.5 effective mills
+    const effective = ratio * (mills / 1000) * millAssessed; // what the UI derives & stores
 
     const inputs = bryden();
     inputs.expenses.tax_reassessment = {
@@ -56,18 +56,18 @@ describe("reassessment — decomposed mill × ratio", () => {
       effective_tax_rate: effective,
       assessment_ratio: ratio,
       mill_rate: mills,
-      mill_reduction_rate: reduction,
+      mill_assessed_rate: millAssessed,
       phase_in_month: 1,
     };
     const r = calculateUnderwriting(inputs);
     const price = inputs.purchase.purchase_price;
-    const expectedMonthly = (price * ratio * (mills / 1000) * (1 - reduction)) / 12;
+    const expectedMonthly = (price * ratio * (mills / 1000) * millAssessed) / 12;
     expect(r.monthly[0].opex_breakdown.property_tax).toBeCloseTo(expectedMonthly, 2);
-    // The reduction genuinely lowers the bill vs no reduction.
-    const noRed = calculateUnderwriting({
+    // A sub-100% assessed-%-of-mill genuinely lowers the bill vs the full mill rate.
+    const full = calculateUnderwriting({
       ...inputs,
-      expenses: { ...inputs.expenses, tax_reassessment: { ...inputs.expenses.tax_reassessment!, mill_reduction_rate: 0, effective_tax_rate: ratio * (mills / 1000) } },
+      expenses: { ...inputs.expenses, tax_reassessment: { ...inputs.expenses.tax_reassessment!, mill_assessed_rate: 1, effective_tax_rate: ratio * (mills / 1000) } },
     });
-    expect(r.monthly[0].opex_breakdown.property_tax).toBeLessThan(noRed.monthly[0].opex_breakdown.property_tax);
+    expect(r.monthly[0].opex_breakdown.property_tax).toBeLessThan(full.monthly[0].opex_breakdown.property_tax);
   });
 });
