@@ -507,14 +507,15 @@ export function computePropertyTaxVectors(
  */
 export interface TaxReassessment {
   enabled: boolean;
-  effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County.
-  // DERIVED from the decomposed inputs below when present:
-  //   effective_tax_rate = assessment_ratio × (mill_rate / 1000) × (1 − mill_reduction_rate)
-  // so operating tax = market × ratio × rate × (1−reduction) = assessed value × effective
+  effective_tax_rate: number; // annual tax / market value, e.g. 0.0185.
+  // DERIVED from the decomposed inputs below when present (any market):
+  //   effective_tax_rate = assessment_ratio × (mill_rate / 1000) × mill_assessed_rate
+  // so operating tax = market × ratio × rate × mill_assessed = assessed value × effective
   // mill rate, and the exit closed form (cap + effective_tax_rate) stays correct.
-  mill_rate?: number; // gross county mill rate; ÷1000 = the decimal rate on assessed value
-  mill_reduction_rate?: number; // fraction the gross mills are reduced (Ohio HB920 reduction factor), e.g. 0.35 = mills cut 35%; default 0
-  assessment_ratio?: number; // assessed value ÷ market value, e.g. 0.40
+  mill_rate?: number; // mill rate (gross or net); ÷1000 = the decimal rate on assessed value
+  mill_assessed_rate?: number; // "assessed % of mill rate" as a fraction — the effective share of the mill rate applied (1 if already net); default 1
+  mill_reduction_rate?: number; // DEPRECATED legacy; mill_assessed_rate = 1 − this
+  assessment_ratio?: number; // "assessed % of market value" — assessed ÷ market, e.g. 0.35
   rate_mode?: "mill" | "pct"; // how the rate is entered/displayed in the UI
   reassessed_value?: number; // default: purchase price (left unset to auto-track it)
   // The reassessed bill starts at a specific PRO FORMA MONTH (1 = first month

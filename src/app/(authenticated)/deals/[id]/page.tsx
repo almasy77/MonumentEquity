@@ -20,6 +20,7 @@ import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { ImportOMDialog } from "@/components/deals/import-om-dialog";
+import { TaxImportDialog } from "@/components/deals/tax-import-dialog";
 import { DealFilesCard } from "@/components/deals/deal-files-card";
 import {
   ArrowLeft,
@@ -29,6 +30,7 @@ import {
   ListTodo,
   MapPin,
   FileText,
+  Receipt,
 } from "lucide-react";
 import type { Deal, Contact, Task, Scenario } from "@/lib/validations";
 import type { ActivityEntry } from "@/lib/activity";
@@ -186,6 +188,14 @@ export default async function DealDetailPage({
               trigger={
                 <button className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
                   <FileText className="h-4 w-4" /> Import OM
+                </button>
+              }
+            />
+            <TaxImportDialog
+              dealId={id}
+              trigger={
+                <button className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
+                  <Receipt className="h-4 w-4" /> Import Tax Record
                 </button>
               }
             />

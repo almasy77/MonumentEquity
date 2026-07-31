@@ -36,9 +36,9 @@ describe("check (j) — reassessment basis ties to billed rate", () => {
     expect(j.detail).toMatch(/disagree/);
   });
 
-  it("honors the mill reduction factor in the reconciliation", () => {
-    const ratio = 0.35, mills = 90, reduction = 0.35;
-    const j = setup({ enabled: true, assessment_ratio: ratio, mill_rate: mills, mill_reduction_rate: reduction, effective_tax_rate: ratio * (mills / 1000) * (1 - reduction), phase_in_month: 1 });
+  it("honors the assessed-%-of-mill-rate factor in the reconciliation", () => {
+    const ratio = 0.35, mills = 90, millAssessed = 0.65;
+    const j = setup({ enabled: true, assessment_ratio: ratio, mill_rate: mills, mill_assessed_rate: millAssessed, effective_tax_rate: ratio * (mills / 1000) * millAssessed, phase_in_month: 1 });
     expect(j.pass).toBe(true);
   });
 

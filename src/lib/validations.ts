@@ -168,11 +168,14 @@ export const dealSchema = z.object({
   current_annual_insurance: z.number().optional(),
   assessed_value: z.number().optional(),
   tax_rate: z.number().optional(), // mill rate (legacy, OM-import only)
-  // Decomposed county tax basis — feeds the underwriting Tax Reassessment when enabled.
-  // effective tax on market value = tax_assessment_pct% × mill_rate/1000 × (1 − reduction%).
-  tax_mill_rate: z.number().optional(), // gross county mill rate, e.g. 90.0
-  tax_mill_reduction_pct: z.number().optional(), // % the gross mills are reduced (Ohio HB920 reduction factor), e.g. 35 = mills cut 35%
-  tax_assessment_pct: z.number().optional(), // assessed value as % of market value, e.g. 35
+  // Generic property-tax basis (any market) — feeds the underwriting Tax Reassessment.
+  //   assessed value = market value × (assessed % of market value)
+  //   property tax   = (mill_rate / 1000) × (assessed % of mill rate) × assessed value
+  tax_mill_rate: z.number().optional(), // mill rate (gross or net), e.g. 90
+  tax_mill_assessed_pct: z.number().optional(), // "assessed % of mill rate" — effective fraction of the mill rate applied (100 if the mill rate is already net)
+  tax_assessment_pct: z.number().optional(), // "assessed % of market value" — assessment ratio, e.g. 35
+  tax_market_value: z.number().optional(), // market value for the tax calc; blank ⇒ purchase price
+  tax_mill_reduction_pct: z.number().optional(), // DEPRECATED legacy; assessed % of mill = 100 − this
   tax_record_url: z.string().url().optional(), // county tax assessor link
   // County auditor's site address when it differs from the marketed address
   // (some parcels are indexed under a different street). Rendered in the LOI.

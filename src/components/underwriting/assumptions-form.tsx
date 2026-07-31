@@ -21,8 +21,8 @@ interface Props {
   dealUnits?: number;
   dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
   dealRentRoll?: RentRollUnit[]; // deal-level imported rent roll — source for per-unit rows (spec B2)
-  // Deal-level county tax basis (Property Details card) — seeds Tax Reassessment on enable.
-  dealTaxDefaults?: { millRate?: number; millReductionPct?: number; assessmentPct?: number };
+  // Deal-level tax basis (Property Details card) — seeds Tax Reassessment on enable.
+  dealTaxDefaults?: { millRate?: number; millAssessedPct?: number; assessmentPct?: number };
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
   year1DebtService?: number; // engine year-1 debt service (annual $) — feeds the auto operating reserve
   year1Opex?: number; // engine year-1 operating expenses (annual $) — feeds the auto operating reserve
@@ -2388,14 +2388,14 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                               const d = dealTaxDefaults;
                               const seedRatio = tr?.assessment_ratio ?? (d?.assessmentPct != null ? d.assessmentPct / 100 : undefined);
                               const seedMill = tr?.mill_rate ?? d?.millRate;
-                              const seedReduction = tr?.mill_reduction_rate ?? (d?.millReductionPct != null ? d.millReductionPct / 100 : undefined);
+                              const seedMillAssessed = tr?.mill_assessed_rate ?? (d?.millAssessedPct != null ? d.millAssessedPct / 100 : undefined);
                               const patch: Partial<TaxReassessment> = { enabled: true };
                               if (seedRatio != null) patch.assessment_ratio = seedRatio;
                               if (seedMill != null) patch.mill_rate = seedMill;
-                              if (seedReduction != null) patch.mill_reduction_rate = seedReduction;
+                              if (seedMillAssessed != null) patch.mill_assessed_rate = seedMillAssessed;
                               // If we have the pieces, derive the engine rate so it's live immediately.
                               if (seedRatio != null && seedMill != null) {
-                                patch.effective_tax_rate = seedRatio * (seedMill / 1000) * (1 - (seedReduction ?? 0));
+                                patch.effective_tax_rate = seedRatio * (seedMill / 1000) * (seedMillAssessed ?? 1);
                                 patch.reassessed_value = undefined;
                               }
                               updateTr(patch);
@@ -2415,24 +2415,25 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     {trEnabled && tr && (
                       <>
                         {(() => {
-                          // Decomposed rate entry: tax = (market × assessment_ratio) × (mill_rate/1000) × (1 − reduction).
-                          // effective_tax_rate (engine + exit) is DERIVED from these.
+                          // Decomposed rate entry (any market): tax = (market × assessment_ratio) × (mill_rate/1000) × mill_assessed.
+                          // effective_tax_rate (engine + exit) is DERIVED from these. Market = purchase price.
                           const marketValue = p.purchase_price || 0;
-                          const ratio = tr.assessment_ratio ?? 0.35; // Ohio/Franklin default; user edits
-                          const reduction = tr.mill_reduction_rate ?? 0; // Ohio HB920 reduction factor
-                          const millRate = tr.mill_rate ?? (ratio > 0 && (1 - reduction) > 0 ? (tr.effective_tax_rate || 0.0185) / ratio / (1 - reduction) * 1000 : (tr.effective_tax_rate || 0.0185) * 1000);
+                          const ratio = tr.assessment_ratio ?? 0.35; // assessed % of market value; user edits
+                          // "assessed % of mill rate" — the effective share of the mill rate (1 if net).
+                          const millAssessed = tr.mill_assessed_rate ?? (tr.mill_reduction_rate != null ? 1 - tr.mill_reduction_rate : 1);
+                          const millRate = tr.mill_rate ?? (ratio > 0 && millAssessed > 0 ? (tr.effective_tax_rate || 0.0185) / ratio / millAssessed * 1000 : (tr.effective_tax_rate || 0.0185) * 1000);
                           const rateMode = tr.rate_mode ?? "pct";
                           const rateDecimal = millRate / 1000;
-                          const effMillDecimal = rateDecimal * (1 - reduction); // after the reduction factor
+                          const effMillDecimal = rateDecimal * millAssessed; // mill rate × assessed % of mill rate
                           const assessedValue = marketValue * ratio;
                           const annualTax = assessedValue * effMillDecimal;
                           const effOnMarket = ratio * effMillDecimal;
                           const setDecomposed = (patch: Partial<TaxReassessment>) => {
                             const nextMill = patch.mill_rate ?? millRate;
                             const nextRatio = patch.assessment_ratio ?? ratio;
-                            const nextReduction = patch.mill_reduction_rate ?? reduction;
+                            const nextMillAssessed = patch.mill_assessed_rate ?? millAssessed;
                             // Derive the engine rate; leave reassessed_value unset so it auto-tracks price.
-                            updateTr({ ...patch, effective_tax_rate: nextRatio * (nextMill / 1000) * (1 - nextReduction), reassessed_value: undefined });
+                            updateTr({ ...patch, effective_tax_rate: nextRatio * (nextMill / 1000) * nextMillAssessed, reassessed_value: undefined });
                           };
                           const phaseInMonth = tr.phase_in_month ?? ((tr.phase_in_year ?? 1) - 1) * 12 + 1;
                           return (
@@ -2471,9 +2472,9 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                 </div>
                                 <PctField label="Assessed % of Market" value={ratio} onChange={(v) => setDecomposed({ assessment_ratio: v })} />
                                 <div>
-                                  <PctField label="Mill Reduction" value={reduction} onChange={(v) => setDecomposed({ mill_reduction_rate: Math.min(0.999, Math.max(0, v)) })} />
+                                  <PctField label="Assessed % of Mill Rate" value={millAssessed} onChange={(v) => setDecomposed({ mill_assessed_rate: Math.min(1, Math.max(0, v)), mill_reduction_rate: undefined })} />
                                   <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-                                    {reduction > 0 ? `${millRate.toFixed(1)} → ${(millRate * (1 - reduction)).toFixed(1)} eff. mills` : "e.g. Franklin Cty ≈ 35%"}
+                                    {millAssessed < 1 ? `${millRate.toFixed(1)} → ${(millRate * millAssessed).toFixed(1)} eff. mills` : "100% if the mill rate is already net"}
                                   </p>
                                 </div>
                                 <div>
@@ -2510,7 +2511,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                   {[
                                     { label: "Property Value", val: fmtCurrency(marketValue), hint: "auto — purchase price" },
                                     { label: "Assessed Value", val: fmtCurrency(assessedValue), hint: `${(ratio * 100).toFixed(0)}% × market` },
-                                    { label: "Property Taxes / yr", val: fmtCurrency(annualTax), hint: reduction > 0 ? `assessed × ${(effMillDecimal * 100).toFixed(3)}% (eff.)` : `assessed × ${(rateDecimal * 100).toFixed(3)}%`, accent: true },
+                                    { label: "Property Taxes / yr", val: fmtCurrency(annualTax), hint: millAssessed < 1 ? `assessed × ${(effMillDecimal * 100).toFixed(3)}% (eff.)` : `assessed × ${(rateDecimal * 100).toFixed(3)}%`, accent: true },
                                   ].map((c) => (
                                     <div key={c.label}>
                                       <Label className="text-xs text-slate-400">{c.label}</Label>
