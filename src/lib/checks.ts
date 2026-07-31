@@ -191,6 +191,33 @@ export function computeReconciliationChecks(
     }
   }
 
+  // (j) Reassessment decomposition ties to the billed rate. The engine bills off
+  // effective_tax_rate, but the UI/exports narrate the decomposed mill_rate ×
+  // assessment_ratio × (1 − reduction). If those drift apart, the "basis" text
+  // (e.g. "75 mills") contradicts the dollar figure the engine bills (~62.8 mills)
+  // and Year-1 NOI is silently mis-stated. This hard-FAILS on that drift — it does
+  // NOT report n/a when reassessment is on (only when it's off / rate not decomposed).
+  {
+    const tr = inputs.expenses.tax_reassessment;
+    if (tr?.enabled && tr.mill_rate != null && tr.assessment_ratio != null && tr.assessment_ratio > 0) {
+      const derived = tr.assessment_ratio * (tr.mill_rate / 1000) * (1 - (tr.mill_reduction_rate ?? 0));
+      const eff = tr.effective_tax_rate ?? 0;
+      // Tolerate rounding: 0.5 basis points on the market-value rate.
+      const pass = Math.abs(derived - eff) < 0.00005;
+      const derivedMills = tr.assessment_ratio > 0 ? (eff / tr.assessment_ratio) * 1000 : 0;
+      checks.push({
+        id: "j",
+        name: "Reassessment basis ties to billed rate",
+        pass,
+        detail: pass
+          ? `mill × ratio (${(derived * 100).toFixed(3)}%) = effective (${(eff * 100).toFixed(3)}%)`
+          : `basis says ${tr.mill_rate.toFixed(1)} mills but the billed effective rate is ${(eff * 100).toFixed(3)}% (≈ ${derivedMills.toFixed(1)} eff. mills) — narrative and bill disagree`,
+      });
+    } else {
+      checks.push({ id: "j", name: "Reassessment basis ties to billed rate", pass: true, detail: "reassessment off or rate not decomposed — n/a" });
+    }
+  }
+
   return checks;
 }
 

@@ -37,16 +37,41 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
 
   // ── Property-tax basis (the headline explanation) ──
   const tr = (exp.tax_reassessment ?? undefined) as
-    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; reassessed_value?: number }
+    | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; mill_reduction_rate?: number; reassessed_value?: number }
     | undefined;
   const price = inputs.purchase.purchase_price || 0;
   let taxBasis = "Entered operating bill.";
   if (tr?.enabled) {
-    const eff = tr.effective_tax_rate ?? 0;
-    if (tr.assessment_ratio && tr.mill_rate) {
-      const assessed = price * tr.assessment_ratio;
-      taxBasis = `Reassessed to the sale price on transfer: assessed ${usd(assessed)} (${pct1(tr.assessment_ratio)} of ${usd(price)}) × ${tr.mill_rate.toFixed(1)} mills. The seller's current bill reflects a lower prior assessment.`;
-    } else {
+    const eff = tr.effective_tax_rate ?? 0; // the rate the ENGINE actually bills
+    const ratio = tr.assessment_ratio;
+    if (ratio && ratio > 0 && eff > 0) {
+      // Derive everything from effective_tax_rate — the rate the engine bills — so the
+      // narrative can never contradict the dollar figure. The raw mill_rate input can
+      // drift from effective_tax_rate (e.g. a rate entered directly while mill_rate
+      // holds a stale/default value); showing it verbatim printed "75 mills" next to a
+      // bill that reconciles to ~62.8 mills. We show gross mills only when they still
+      // reconcile with the billed rate, else the effective mills that tie to the dollar.
+      const marketBase = tr.reassessed_value ?? price;
+      const assessed = marketBase * ratio;
+      const stabilizedTax = marketBase * eff; // fully-reassessed annual bill
+      const effMills = (eff / ratio) * 1000; // EFFECTIVE mills implied by the billed rate
+      const reduction = tr.mill_reduction_rate ?? 0;
+      const grossMills = tr.mill_rate;
+      const grossConsistent = grossMills != null && Math.abs(grossMills * (1 - reduction) - effMills) < 0.5;
+      const millText = grossConsistent
+        ? (reduction > 0
+            ? `${grossMills!.toFixed(1)} mills less ${pct1(reduction)} (${effMills.toFixed(1)} eff.)`
+            : `${grossMills!.toFixed(1)} mills`)
+        : `${effMills.toFixed(1)} eff. mills`;
+      // Year-1 shown tax may sit below the stabilized bill when reassessment phases in
+      // mid-year (blended with the seller's lower bill) — disclose that so it reconciles.
+      const shownTax = ox ? ox.property_tax : stabilizedTax;
+      const phased = shownTax < stabilizedTax * 0.99;
+      taxBasis = `Reassessed to the sale price on transfer: assessed ${usd(assessed)} (${pct1(ratio)} of ${usd(marketBase)}) × ${millText} = ${usd(stabilizedTax)}/yr stabilized.`
+        + (phased
+            ? ` Year-1 shown (${usd(shownTax)}) blends the seller's lower bill during the phase-in.`
+            : ` The seller's current bill reflects a lower prior assessment.`);
+    } else if (eff > 0) {
       taxBasis = `Reassessed to the sale price on transfer at ${pct1(eff)} effective — counties reassess toward the purchase price, so the seller's current (lower) bill is not the buyer's bill.`;
     }
   }

@@ -43,4 +43,31 @@ describe("reassessment — decomposed mill × ratio", () => {
     const up = calculateUnderwriting({ ...inputs, purchase: { ...inputs.purchase, purchase_price: price * 2 } });
     expect(up.monthly[0].opex_breakdown.property_tax).toBeCloseTo(expectedMonthly * 2, 2);
   });
+
+  it("applies the mill reduction factor (Ohio HB920): effective = ratio × mill/1000 × (1 − reduction)", () => {
+    const ratio = 0.35;
+    const mills = 90;
+    const reduction = 0.35; // gross mills cut 35% → 58.5 effective mills
+    const effective = ratio * (mills / 1000) * (1 - reduction); // what the UI derives & stores
+
+    const inputs = bryden();
+    inputs.expenses.tax_reassessment = {
+      enabled: true,
+      effective_tax_rate: effective,
+      assessment_ratio: ratio,
+      mill_rate: mills,
+      mill_reduction_rate: reduction,
+      phase_in_month: 1,
+    };
+    const r = calculateUnderwriting(inputs);
+    const price = inputs.purchase.purchase_price;
+    const expectedMonthly = (price * ratio * (mills / 1000) * (1 - reduction)) / 12;
+    expect(r.monthly[0].opex_breakdown.property_tax).toBeCloseTo(expectedMonthly, 2);
+    // The reduction genuinely lowers the bill vs no reduction.
+    const noRed = calculateUnderwriting({
+      ...inputs,
+      expenses: { ...inputs.expenses, tax_reassessment: { ...inputs.expenses.tax_reassessment!, mill_reduction_rate: 0, effective_tax_rate: ratio * (mills / 1000) } },
+    });
+    expect(r.monthly[0].opex_breakdown.property_tax).toBeLessThan(noRed.monthly[0].opex_breakdown.property_tax);
+  });
 });

@@ -509,10 +509,11 @@ export interface TaxReassessment {
   enabled: boolean;
   effective_tax_rate: number; // annual tax / market value, e.g. 0.0185 for Franklin County.
   // DERIVED from the decomposed inputs below when present:
-  //   effective_tax_rate = assessment_ratio × (mill_rate / 1000)
-  // so operating tax = market × ratio × rate = assessed value × rate, and the
-  // exit closed form (cap + effective_tax_rate) stays correct.
-  mill_rate?: number; // county mill rate; ÷1000 = the decimal rate on assessed value
+  //   effective_tax_rate = assessment_ratio × (mill_rate / 1000) × (1 − mill_reduction_rate)
+  // so operating tax = market × ratio × rate × (1−reduction) = assessed value × effective
+  // mill rate, and the exit closed form (cap + effective_tax_rate) stays correct.
+  mill_rate?: number; // gross county mill rate; ÷1000 = the decimal rate on assessed value
+  mill_reduction_rate?: number; // fraction the gross mills are reduced (Ohio HB920 reduction factor), e.g. 0.35 = mills cut 35%; default 0
   assessment_ratio?: number; // assessed value ÷ market value, e.g. 0.40
   rate_mode?: "mill" | "pct"; // how the rate is entered/displayed in the UI
   reassessed_value?: number; // default: purchase price (left unset to auto-track it)
