@@ -35,7 +35,7 @@ describe("sidecar shape", () => {
       expect(sc.key_outputs.annual_noi).toHaveLength(inputs.exit.hold_period_years);
       expect(sc.key_outputs.annual_property_tax).toHaveLength(inputs.exit.hold_period_years);
       expect(Array.isArray(sc.checks.items)).toBe(true);
-      expect(sc.checks.items.map((c) => c.id)).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i"]);
+      expect(sc.checks.items.map((c) => c.id)).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
       // Reconciliation identities that must hold regardless of fixture:
       const byId = Object.fromEntries(sc.checks.items.map((c) => [c.id, c]));
       expect(byId.a.pass, byId.a.detail).toBe(true); // exit method reconciles
