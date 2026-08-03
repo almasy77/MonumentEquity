@@ -21,8 +21,10 @@ interface Props {
   dealUnits?: number;
   dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
   dealRentRoll?: RentRollUnit[]; // deal-level imported rent roll — source for per-unit rows (spec B2)
-  // Deal-level tax basis (Property Details card) — seeds Tax Reassessment on enable.
-  dealTaxDefaults?: { millRate?: number; millAssessedPct?: number; assessmentPct?: number };
+  // Deal-level tax basis (Property Details card) — seeds Tax Reassessment / v2 on enable.
+  dealTaxDefaults?: { millRate?: number; millAssessedPct?: number; assessmentPct?: number; marketValue?: number; currentAnnualTax?: number; abatementPresent?: boolean };
+  // Precomputed property-tax risk flags for this deal (abatement, reassessment gap, etc.).
+  taxFlags?: { id: string; severity: "warn" | "info"; text: string }[];
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
   year1DebtService?: number; // engine year-1 debt service (annual $) — feeds the auto operating reserve
   year1Opex?: number; // engine year-1 operating expenses (annual $) — feeds the auto operating reserve
@@ -1092,7 +1094,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, dealTaxDefaults, year1Revenue, year1DebtService, year1Opex }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, dealTaxDefaults, taxFlags, year1Revenue, year1DebtService, year1Opex }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -2412,6 +2414,16 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         Entered tax ({fmtCurrency(enteredAnnual)}/yr) is well below the reassessed estimate ({fmtCurrency(estReassessed)}/yr at purchase price). Enable reassessment or verify.
                       </p>
                     )}
+                    {taxFlags && taxFlags.length > 0 && (
+                      <div className="space-y-1">
+                        {taxFlags.map((f) => (
+                          <div key={f.id} className={`flex gap-1.5 rounded px-2 py-1 text-[10px] leading-snug ${f.severity === "warn" ? "bg-amber-500/10 text-amber-300" : "bg-slate-700/30 text-slate-400"}`}>
+                            <span className="shrink-0">{f.severity === "warn" ? "⚠" : "ℹ"}</span>
+                            <span>{f.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {trEnabled && tr && (
                       <>
                         {(() => {
@@ -2576,7 +2588,28 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                     type="checkbox"
                                     checked={v2On}
                                     onChange={(ev) => {
-                                      if (ev.target.checked) updateV2({ enabled: true });
+                                      if (ev.target.checked) {
+                                        // Auto-populate the effective rate + abatement record from the
+                                        // deal's tax basis on enable (only what isn't already set).
+                                        const d = dealTaxDefaults;
+                                        const dealRate = (d?.millRate != null && d?.assessmentPct != null)
+                                          ? (d.millRate / 1000) * ((d.millAssessedPct ?? 100) / 100) * (d.assessmentPct / 100)
+                                          : undefined;
+                                        const patch: Partial<PropertyTaxAssumptions> = { enabled: true };
+                                        const eff = v2?.effective_tax_rate ?? tr?.effective_tax_rate ?? dealRate;
+                                        if (eff != null) patch.effective_tax_rate = eff;
+                                        // Seed the abatement record when the deal flags an abatement.
+                                        if (d?.abatementPresent && !v2?.abatement) {
+                                          const price = p.purchase_price || 0;
+                                          patch.abatement = {
+                                            abated_annual_tax: d.currentAnnualTax ?? 0, // current (abated) bill
+                                            unabated_annual_tax: eff != null && price ? Math.round(price * eff) : 0, // reassessed full bill
+                                            final_abated_tax_year: new Date().getFullYear() + 2,
+                                            transferable: "unconfirmed",
+                                          };
+                                        }
+                                        updateV2(patch);
+                                      }
                                       else if (v2) { setE({ ...e, property_tax_v2: { ...v2, enabled: false } }); markDirty(); }
                                     }}
                                     className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"

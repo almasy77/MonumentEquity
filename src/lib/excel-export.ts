@@ -9,6 +9,7 @@
 
 import ExcelJS from "exceljs";
 import type { Deal } from "./validations";
+import { computeTaxFlags } from "./tax-flags";
 import { applyCapexToggles, resolveProformaBases } from "./underwriting";
 import type {
   ScenarioInputs,
@@ -1110,6 +1111,20 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
     summary.getCell(1).font = { bold: true, size: 11, name: FONT_SANS, color: { argb: allChecksPass(reconChecks) ? "FF28A745" : "FFDC3545" } };
   }
   ws.addRow([]);
+
+  // Property-tax risk flags (advisory) — do not gate ALL CHECKS PASS.
+  {
+    const flags = computeTaxFlags(deal, inputs.purchase.purchase_price);
+    if (flags.length > 0) {
+      addSectionHeader(ws, "Property Tax Flags (advisory)", 3);
+      for (const f of flags) {
+        const row = ws.addRow([f.severity === "warn" ? "⚠ Review" : "ℹ Note", "", f.text]);
+        row.getCell(1).font = { bold: true, name: FONT_SANS, color: { argb: f.severity === "warn" ? "FFB8860B" : "FF6C757D" } };
+        row.getCell(3).alignment = { wrapText: true, vertical: "top" };
+      }
+      ws.addRow([]);
+    }
+  }
 
   // CapEx guardrail (Phase 4.3) — advisory, does not gate ALL CHECKS PASS
   {

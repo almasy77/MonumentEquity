@@ -4,8 +4,31 @@ import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Separator } from "@/components/ui/separator";
 import { EditableField } from "./editable-field";
-import { Building2 } from "lucide-react";
+import { Building2, AlertTriangle, Info } from "lucide-react";
 import type { Deal } from "@/lib/validations";
+import { computeTaxFlags } from "@/lib/tax-flags";
+
+// Risk flags for the property-tax basis (abatement, reassessment gap, CAUV, land-use
+// mismatch, reappraisal cycle). These warn a human; they never change the computed tax.
+function TaxFlags({ deal }: { deal: Deal }) {
+  const flags = computeTaxFlags(deal);
+  if (flags.length === 0) return null;
+  return (
+    <div className="mt-1 space-y-1">
+      {flags.map((f) => (
+        <div
+          key={f.id}
+          className={`flex gap-1.5 rounded px-2 py-1 text-[10px] leading-snug ${
+            f.severity === "warn" ? "bg-amber-500/10 text-amber-300" : "bg-slate-700/30 text-slate-400"
+          }`}
+        >
+          {f.severity === "warn" ? <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" /> : <Info className="h-3 w-3 shrink-0 mt-0.5" />}
+          <span>{f.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -61,6 +84,10 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
+    }
+    const boolFields = ["tax_abatement_present", "tax_cauv", "tax_reappraisal_in_progress"];
+    if (boolFields.includes(field)) {
+      parsed = value === "true" ? true : value === "false" ? undefined : value;
     }
 
     const res = await fetch(`/api/deals/${deal.id}`, {
@@ -124,6 +151,25 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Market Value" value={deal.tax_market_value?.toString() || ""} onSave={(v) => updateDeal("tax_market_value", v)} type="number" prefix="$" placeholder="County market/appraised value" />
           <EditableField label="Assessed % of Market Value" value={deal.tax_assessment_pct?.toString() || ""} onSave={(v) => updateDeal("tax_assessment_pct", v)} type="number" suffix="%" placeholder="Assessment ratio, e.g. 35" />
           <TaxComputed deal={deal} />
+          <EditableField label="Land Use Code" value={deal.tax_land_use_code || ""} onSave={(v) => updateDeal("tax_land_use_code", v)} placeholder="e.g. 401 - APARTMENTS 4 TO 19 FAMILY" />
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-0.5">
+            {([
+              ["tax_abatement_present", "Abatement / exemption"],
+              ["tax_cauv", "CAUV"],
+              ["tax_reappraisal_in_progress", "Reappraisal in progress"],
+            ] as const).map(([field, label]) => (
+              <label key={field} className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!deal[field]}
+                  onChange={(e) => updateDeal(field, e.target.checked ? "true" : "false")}
+                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <TaxFlags deal={deal} />
           <EditableField label="County Site Address (alt)" value={deal.county_site_address || ""} onSave={(v) => updateDeal("county_site_address", v)} placeholder="If county indexes a different street" />
           <EditableField label="Tax Incentive" value={deal.incentive_type || ""} onSave={(v) => updateDeal("incentive_type", v)} placeholder="CRA / TIF / PILOT / LIHTC" />
           <EditableField label="Granting Authority" value={deal.granting_authority || ""} onSave={(v) => updateDeal("granting_authority", v)} placeholder="e.g. the City of Columbus" />
