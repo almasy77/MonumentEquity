@@ -794,6 +794,8 @@ export interface DealMetrics {
   // Coverage
   year1_dscr: number;
   min_dscr: number;
+  year1_debt_yield: number; // year-1 NOI / origination loan amount
+  min_debt_yield: number; // lowest (annual NOI / outstanding balance that year) across the hold
   // Exit
   exit_value: number;
   exit_noi: number;
@@ -1279,6 +1281,21 @@ export function calculateUnderwriting(
     return Math.min(min, dscr);
   }, Infinity);
 
+  // Debt Yield = NOI / outstanding loan balance. Year-1 uses the origination
+  // balance; the hold-period minimum tracks the amortizing balance year by year.
+  const year1DebtYield = loanAmount > 0 ? year1NOI / loanAmount : 0;
+  let runningBalance = loanAmount;
+  const minDebtYield = annual.reduce((min, a, i) => {
+    // Mid-hold cash-out refi resets the balance to the new loan at the start of
+    // the first year it governs. The refi closes at the END of refi.year, so the
+    // new loan applies from the next year — annual index === refi.year (0-based),
+    // mirroring how debt_service switches to the new loan after the refi year.
+    if (refi && i === refi.year) runningBalance = refiNewLoanAmount;
+    const dy = runningBalance > 0 ? a.noi / runningBalance : Infinity;
+    runningBalance -= a.principal_paid; // IO periods: principal_paid = 0, balance holds flat
+    return Math.min(min, dy);
+  }, Infinity);
+
   // ── Depreciation ──
   const dep = inputs.depreciation;
   let depreciation: DepreciationResult | undefined;
@@ -1325,6 +1342,8 @@ export function calculateUnderwriting(
     average_cash_on_cash: avgCoC,
     year1_dscr: year1DSCR,
     min_dscr: !isFinite(minDSCR) ? year1DSCR : minDSCR,
+    year1_debt_yield: year1DebtYield,
+    min_debt_yield: !isFinite(minDebtYield) ? year1DebtYield : minDebtYield,
     exit_value: exitValue,
     exit_noi: lastYearNOI,
     net_sale_proceeds: netSaleProceeds,

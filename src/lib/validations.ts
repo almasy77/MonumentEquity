@@ -176,6 +176,12 @@ export const dealSchema = z.object({
   tax_assessment_pct: z.number().optional(), // "assessed % of market value" — assessment ratio, e.g. 35
   tax_market_value: z.number().optional(), // market value for the tax calc; blank ⇒ purchase price
   tax_mill_reduction_pct: z.number().optional(), // DEPRECATED legacy; assessed % of mill = 100 − this
+  // County-record context + risk flags (surfaced in UI + export; some set by the tax importer).
+  tax_year: z.number().int().optional(),
+  tax_land_use_code: z.string().optional(), // e.g. "401 - APARTMENTS 4 TO 19 FAMILY"
+  tax_abatement_present: z.boolean().optional(), // abatement / exemption / CRA / TIF / PILOT on the parcel
+  tax_cauv: z.boolean().optional(), // Current Agricultural Use Value — conversion/recoupment risk
+  tax_reappraisal_in_progress: z.boolean().optional(), // county reappraisal/update cycle in progress
   tax_record_url: z.string().url().optional(), // county tax assessor link
   // County auditor's site address when it differs from the marketed address
   // (some parcels are indexed under a different street). Rendered in the LOI.

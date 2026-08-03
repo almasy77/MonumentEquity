@@ -99,6 +99,8 @@ interface TaxPatch {
   assessed_value?: number;
   current_annual_taxes?: number;
   tax_year?: number;
+  tax_land_use_code?: string;
+  tax_abatement_present?: boolean;
 }
 
 function round2(n: number): number {
@@ -241,8 +243,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     if (Number.isInteger(extracted.tax_year)) {
       patch.tax_year = extracted.tax_year;
     }
-
+    if (extracted.land_use_code) {
+      patch.tax_land_use_code = extracted.land_use_code;
+    }
     if (extracted.has_abatement) {
+      patch.tax_abatement_present = true;
       notes.push(
         `Abatement / exemption indicated${extracted.abatement_notes ? `: ${extracted.abatement_notes}` : ""} — this is NOT reflected in the derived mills; review separately.`,
       );

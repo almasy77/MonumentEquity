@@ -3,6 +3,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import type { DealMetrics } from "@/lib/underwriting";
 
+// Placeholder thresholds — UNSOURCED. Confirm against lender term sheets before
+// treating these as authoritative debt-yield underwriting gates.
+const DEBT_YIELD_THRESHOLDS = { good: 0.10, warn: 0.08 };
+
 function fmt(n: number | null | undefined, type: "pct" | "money" | "mult"): string {
   if (n == null) return "—";
   if (type === "pct") return `${(n * 100).toFixed(2)}%`;
@@ -43,6 +47,12 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
       title: "Debt Service Coverage Ratio — Year 1 NOI / Year 1 Debt Service",
       value: metrics.year1_dscr.toFixed(2),
       color: metricColor(metrics.year1_dscr, { good: 1.25, warn: 1.0, reverse: true }),
+    },
+    {
+      label: "Debt Yield (Yr 1)",
+      title: `Year 1 NOI / origination loan amount. Low across hold: ${(metrics.min_debt_yield * 100).toFixed(1)}%`,
+      value: `${(metrics.year1_debt_yield * 100).toFixed(1)}%`,
+      color: metricColor(metrics.year1_debt_yield, { ...DEBT_YIELD_THRESHOLDS, reverse: true }),
     },
     {
       label: "Equity Multiple",

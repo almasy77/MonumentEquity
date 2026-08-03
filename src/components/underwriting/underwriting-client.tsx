@@ -12,6 +12,7 @@ import { PricingViewsCard } from "./pricing-views-card";
 import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
+import { computeTaxFlags } from "@/lib/tax-flags";
 import type { UnderwritingResult, RentBasis, UnrenovatedBasis, RenovatedBasis, ExitAssumptions } from "@/lib/underwriting";
 import { uploadFile } from "@/lib/upload-client";
 
@@ -670,7 +671,8 @@ function ScenarioAnalysis({
         dealUnits={deal.units}
         dealCity={deal.city}
         dealRentRoll={deal.rent_roll}
-        dealTaxDefaults={{ millRate: deal.tax_mill_rate, millAssessedPct: deal.tax_mill_assessed_pct, assessmentPct: deal.tax_assessment_pct }}
+        dealTaxDefaults={{ millRate: deal.tax_mill_rate, millAssessedPct: deal.tax_mill_assessed_pct, assessmentPct: deal.tax_assessment_pct, marketValue: deal.tax_market_value, currentAnnualTax: deal.current_annual_taxes, abatementPresent: deal.tax_abatement_present }}
+        taxFlags={computeTaxFlags(deal, typeof scenario.purchase_assumptions?.purchase_price === "number" ? scenario.purchase_assumptions.purchase_price : undefined)}
         year1Revenue={result.annual[0] ? result.annual[0].gpr + result.annual[0].other_income : undefined}
         year1DebtService={result.annual[0]?.debt_service}
         year1Opex={result.annual[0]?.total_opex}
