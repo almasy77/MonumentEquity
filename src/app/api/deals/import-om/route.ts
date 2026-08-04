@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { extractFromOM } from "@/lib/om-extract";
+import { createOrUpdateMarketingScenario } from "@/lib/marketing-scenario";
 import { extractImageFromUrl } from "@/lib/ai-extract";
 import { fetchBlobFile, persistDealFile, deleteBlobUrl } from "@/lib/blob-helpers";
 import type { DealFile } from "@/lib/validations";
@@ -121,6 +122,28 @@ export async function POST(req: NextRequest) {
 
 function userId(session: { user: { id: string } }): string {
   return session.user.id;
+}
+
+/**
+ * After a deal is persisted from an OM, create-or-update its "marketing"
+ * scenario from the OM pro forma (when one is present). Non-critical: the deal
+ * is already saved, so any failure here is swallowed and simply yields no
+ * marketing scenario in the response.
+ */
+async function maybeCreateMarketingScenario(
+  dealId: string,
+  deal: Deal,
+  data: OMExtractedData,
+  createdBy: string,
+): Promise<{ created: boolean; id: string } | null> {
+  try {
+    const res = await createOrUpdateMarketingScenario({ dealId, deal, data, userId: createdBy });
+    if (!res) return null;
+    return { created: res.created, id: res.scenario.id };
+  } catch (err) {
+    console.error("import-om: marketing scenario creation failed (non-critical):", err);
+    return null;
+  }
 }
 
 async function findDuplicates(data: OMExtractedData): Promise<{ id: string; address: string; city: string; state: string; units: number }[]> {
@@ -289,7 +312,9 @@ async function createNewDeal(data: OMExtractedData, createdBy: string, dealFile?
     user_id: createdBy,
   });
 
-  return NextResponse.json({ deal, extracted: data }, { status: 201 });
+  const marketing_scenario = await maybeCreateMarketingScenario(id, deal, data, createdBy);
+
+  return NextResponse.json({ deal, extracted: data, marketing_scenario }, { status: 201 });
 }
 
 async function updateExistingDeal(dealId: string, data: OMExtractedData, updatedBy: string, newContactIds: string[], dealFile?: DealFile) {
@@ -378,5 +403,7 @@ async function updateExistingDeal(dealId: string, data: OMExtractedData, updated
     user_id: updatedBy,
   });
 
-  return NextResponse.json({ deal: updated, extracted: data });
+  const marketing_scenario = await maybeCreateMarketingScenario(dealId, updated, data, updatedBy);
+
+  return NextResponse.json({ deal: updated, extracted: data, marketing_scenario });
 }

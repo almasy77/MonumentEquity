@@ -61,6 +61,7 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
   const [extracted, setExtracted] = useState<PreviewData | null>(null);
   const [error, setError] = useState("");
   const [resultDealId, setResultDealId] = useState<string | null>(null);
+  const [marketingScenario, setMarketingScenario] = useState<{ created: boolean; id: string } | null>(null);
   const [mergeIntoId, setMergeIntoId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -71,6 +72,7 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
     setExtracted(null);
     setError("");
     setResultDealId(null);
+    setMarketingScenario(null);
     setMergeIntoId(null);
     setDragOver(false);
   }
@@ -129,6 +131,7 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
 
       const result = await res.json();
       setResultDealId(result.deal?.id);
+      setMarketingScenario(result.marketing_scenario ?? null);
       setStep("done");
       router.refresh();
     } catch (err) {
@@ -489,6 +492,11 @@ export function ImportOMDialog({ dealId, trigger }: ImportOMDialogProps) {
                   {extracted.rent_roll.length > 0 && <p>{extracted.rent_roll.length} units in rent roll</p>}
                   {extracted.t12.months.length > 0 && <p>{extracted.t12.months.length} months of T12 data</p>}
                   {extracted.contacts && extracted.contacts.length > 0 && <p>{extracted.contacts.length} contacts added</p>}
+                  {marketingScenario && (
+                    <p className="text-blue-300">
+                      {marketingScenario.created ? "Created" : "Updated"} Marketing scenario from the OM pro forma
+                    </p>
+                  )}
                 </div>
               )}
             </div>
