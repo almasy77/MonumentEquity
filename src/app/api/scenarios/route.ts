@@ -173,6 +173,8 @@ export async function POST(req: NextRequest) {
       upside: { rent_growth_rate: 0.05, tax_escalation_rate: 0.015, vacancy_rate: 0.05, exit_cap_rate: 0.06 },
       downside: { rent_growth_rate: 0.01, tax_escalation_rate: 0.03, vacancy_rate: 0.10, exit_cap_rate: 0.08 },
       value_add: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
+      renovation: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
+      // marketing / current are filled from documents — no growth-rate preset.
     };
     const preset = typePresets[scenarioType] || {};
 

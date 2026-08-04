@@ -93,7 +93,10 @@ export function UnderwritingClient({
     setCreating(true);
     try {
       const names: Record<string, string> = {
+        marketing: "Marketing (OM)",
+        current: "Current (T12)",
         base: "Base Case",
+        renovation: "Renovation",
         upside: "Upside",
         downside: "Downside",
         value_add: "Value-Add",
@@ -260,17 +263,46 @@ export function UnderwritingClient({
   }
 
 
+  // Find an existing scenario of a given type for this deal, or create it. Used so
+  // document uploads land in the RIGHT scenario (T12 / rent roll → Current) rather
+  // than whatever tab happens to be active.
+  async function findOrCreateScenarioByType(type: string, name: string): Promise<string | null> {
+    const existing = scenarios.find((s) => s.type === type);
+    if (existing) return existing.id;
+    try {
+      const res = await fetch("/api/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deal_id: deal.id, name, type }),
+      });
+      if (res.ok) {
+        const data: ScenarioWithResult = await res.json();
+        setScenarios((prev) => [...prev, data.scenario]);
+        return data.scenario.id;
+      }
+    } catch (err) {
+      console.error("find-or-create scenario failed:", err);
+    }
+    return null;
+  }
+
   async function handleFileImport(file: File, type: "rent_roll" | "t12") {
-    if (!activeId) return;
+    // The seller's T12 and current rent roll both define the CURRENT scenario.
+    const targetId = await findOrCreateScenarioByType("current", "Current (T12)");
+    if (!targetId) {
+      alert("Could not create the Current scenario to import into.");
+      return;
+    }
     setImporting(type);
     try {
       const endpoint = type === "rent_roll" ? "import-rent-roll" : "import-t12";
-      const res = await uploadFile(file, `/api/scenarios/${activeId}/${endpoint}`);
+      const res = await uploadFile(file, `/api/scenarios/${targetId}/${endpoint}`);
       if (res.ok) {
         const data: ScenarioWithResult & { imported: Record<string, number> } = await res.json();
         setScenarios((prev) =>
-          prev.map((s) => (s.id === activeId ? data.scenario : s))
+          prev.map((s) => (s.id === targetId ? data.scenario : s))
         );
+        setActiveId(targetId);
         setActiveResult(data.underwriting);
       } else {
         const err = await res.json();
@@ -462,48 +494,50 @@ export function UnderwritingClient({
             {showArchived ? "Hide" : "Show"} archived ({archivedScenarios.length})
           </button>
         )}
+        {/* T12 / rent-roll uploads route to the Current scenario (find-or-create),
+            so they work even before any scenario exists — hence not gated on activeId. */}
+        <input
+          ref={rentRollInputRef}
+          type="file"
+          accept=".csv,.xlsx,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFileImport(f, "rent_roll");
+          }}
+        />
+        <input
+          ref={t12InputRef}
+          type="file"
+          accept=".csv,.xlsx,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFileImport(f, "t12");
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => rentRollInputRef.current?.click()}
+          disabled={importing !== null}
+          className="border-slate-700 text-purple-400 hover:bg-purple-900/20 ml-auto"
+        >
+          {importing === "rent_roll" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+          Import Rent Roll → Current
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => t12InputRef.current?.click()}
+          disabled={importing !== null}
+          className="border-slate-700 text-purple-400 hover:bg-purple-900/20"
+        >
+          {importing === "t12" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+          Import T12 → Current
+        </Button>
         {activeId && activeResult && (
           <>
-            <input
-              ref={rentRollInputRef}
-              type="file"
-              accept=".csv,.xlsx,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileImport(f, "rent_roll");
-              }}
-            />
-            <input
-              ref={t12InputRef}
-              type="file"
-              accept=".csv,.xlsx,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileImport(f, "t12");
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => rentRollInputRef.current?.click()}
-              disabled={importing !== null}
-              className="border-slate-700 text-purple-400 hover:bg-purple-900/20 ml-auto"
-            >
-              {importing === "rent_roll" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
-              Import Rent Roll
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => t12InputRef.current?.click()}
-              disabled={importing !== null}
-              className="border-slate-700 text-purple-400 hover:bg-purple-900/20"
-            >
-              {importing === "t12" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
-              Import T12
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -584,7 +618,8 @@ export function UnderwritingClient({
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {[
-                { type: "base", label: "Base Case", desc: "3% rent growth, 2% expense escalation" },
+                { type: "base", label: "Base Case", desc: "your assumptions — 3% rent growth, 2% expense escalation" },
+                { type: "renovation", label: "Renovation", desc: "value-add — reno capex + renovated rents" },
                 { type: "upside", label: "Upside", desc: "5% rent growth, 1.5% expense escalation" },
                 { type: "downside", label: "Downside", desc: "1% rent growth, 3% expense escalation" },
               ].map(({ type, label, desc }) => (
