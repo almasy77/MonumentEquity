@@ -3,9 +3,19 @@ on:
   pull_request:
   push:
     branches: [main]
+
+# Cancel superseded runs on the same branch/PR so a burst of pushes doesn't pile
+# jobs up in the runner queue (which can leave them stuck waiting, then cancelled).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Fail fast if a runner hangs or never picks the job up, instead of dangling
+    # ~15 min. The suite itself runs in well under a minute.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
