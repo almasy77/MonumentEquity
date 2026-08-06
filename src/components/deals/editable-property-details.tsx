@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Separator } from "@/components/ui/separator";
@@ -7,6 +8,75 @@ import { EditableField } from "./editable-field";
 import { Building2, AlertTriangle, Info } from "lucide-react";
 import type { Deal } from "@/lib/validations";
 import { computeTaxFlags } from "@/lib/tax-flags";
+
+// A tax multiplier the user can enter EITHER way: as a reduction factor (the county's
+// "Reduction Factor", e.g. 0.353) OR as the retained % (e.g. 64.7). They're complements
+// (retained% = (1 − reduction) × 100); both edit the same stored retained-% value, and
+// editing one live-updates the other. Stored value drives the property-tax formula.
+function DualRateField({
+  label,
+  retainedPct,
+  onSave,
+  hint,
+}: {
+  label: string;
+  retainedPct?: number;
+  onSave: (pct: number | undefined) => void;
+  hint?: string;
+}) {
+  // Local edit state; the parent remounts this via key={retainedPct} on save so it
+  // re-inits from the stored value (avoids a setState-in-effect resync).
+  const [reductionStr, setReductionStr] = useState(retainedPct != null ? String(Math.round((1 - retainedPct / 100) * 10000) / 10000) : "");
+  const [pctStr, setPctStr] = useState(retainedPct != null ? String(retainedPct) : "");
+
+  const inputCls = "w-16 h-7 bg-slate-800 border border-slate-700 rounded px-1.5 text-[11px] text-white outline-none focus:border-blue-500 tabular-nums";
+  return (
+    <div>
+      <label className="text-xs text-slate-400">{label}</label>
+      <div className="flex items-center gap-1.5 mt-0.5">
+        <input
+          type="number"
+          step="0.001"
+          value={reductionStr}
+          placeholder="0.353"
+          onChange={(e) => {
+            setReductionStr(e.target.value);
+            const r = parseFloat(e.target.value);
+            if (isFinite(r)) setPctStr(String(Math.round((1 - r) * 1000) / 10));
+          }}
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v === "") return onSave(undefined);
+            const r = parseFloat(v);
+            if (isFinite(r)) onSave(Math.round((1 - r) * 1000) / 10);
+          }}
+          className={inputCls}
+        />
+        <span className="text-[10px] text-slate-500">reduction, or</span>
+        <input
+          type="number"
+          step="0.1"
+          value={pctStr}
+          placeholder="64.7"
+          onChange={(e) => {
+            setPctStr(e.target.value);
+            const p = parseFloat(e.target.value);
+            if (isFinite(p)) setReductionStr(String(Math.round((1 - p / 100) * 10000) / 10000));
+          }}
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v === "") return onSave(undefined);
+            const p = parseFloat(v);
+            if (isFinite(p)) onSave(Math.round(p * 100) / 100);
+          }}
+          className={inputCls}
+        />
+        <span className="text-[10px] text-slate-500">%</span>
+      </div>
+      {hint && <p className="text-[10px] text-slate-500 mt-0.5">{hint}</p>}
+    </div>
+  );
+}
 
 // Risk flags for the property-tax basis (abatement, reassessment gap, CAUV, land-use
 // mismatch, reappraisal cycle). These warn a human; they never change the computed tax.
@@ -147,9 +217,21 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           {/* Property tax basis (any market) — auto-populates the underwriting Tax Reassessment.
               property tax = (mill/1000) × (assessed % of mill) × (market × assessed % of market) */}
           <EditableField label="Mill Rate" value={deal.tax_mill_rate?.toString() || ""} onSave={(v) => updateDeal("tax_mill_rate", v)} type="number" suffix=" mills" placeholder="Mill rate, e.g. 75" />
-          <EditableField label="Assessed % of Mill Rate" value={deal.tax_mill_assessed_pct?.toString() || ""} onSave={(v) => updateDeal("tax_mill_assessed_pct", v)} type="number" suffix="%" placeholder="100 if net, e.g. 65" />
+          <DualRateField
+            key={`mill-${deal.tax_mill_assessed_pct ?? ""}`}
+            label="Assessed % of Mill Rate"
+            retainedPct={deal.tax_mill_assessed_pct}
+            onSave={(pct) => updateDeal("tax_mill_assessed_pct", pct == null ? "" : String(pct))}
+            hint="County reduction factor (e.g. 0.353) or the retained % (64.7). 100% if the mill rate is already net."
+          />
           <EditableField label="Market Value" value={deal.tax_market_value?.toString() || ""} onSave={(v) => updateDeal("tax_market_value", v)} type="number" prefix="$" placeholder="County market/appraised value" />
-          <EditableField label="Assessed % of Market Value" value={deal.tax_assessment_pct?.toString() || ""} onSave={(v) => updateDeal("tax_assessment_pct", v)} type="number" suffix="%" placeholder="Assessment ratio, e.g. 35" />
+          <DualRateField
+            key={`assess-${deal.tax_assessment_pct ?? ""}`}
+            label="Assessed % of Market Value"
+            retainedPct={deal.tax_assessment_pct}
+            onSave={(pct) => updateDeal("tax_assessment_pct", pct == null ? "" : String(pct))}
+            hint="Assessment reduction factor (e.g. 0.65) or the assessed % of market (35)."
+          />
           <TaxComputed deal={deal} />
           <EditableField label="Land Use Code" value={deal.tax_land_use_code || ""} onSave={(v) => updateDeal("tax_land_use_code", v)} placeholder="e.g. 401 - APARTMENTS 4 TO 19 FAMILY" />
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-0.5">

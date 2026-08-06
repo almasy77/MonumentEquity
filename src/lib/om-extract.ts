@@ -107,6 +107,38 @@ export interface OMExtractedData {
     total_noi?: number;
     source?: string;
   };
+  // The broker's PRO FORMA / marketing projection (a stabilized, idealized
+  // operating statement at market rents — distinct from the historical T12).
+  // Present only when the OM actually lays out a pro forma with revenue AND
+  // expense lines. All dollar figures are ANNUAL unless noted. Omitted for
+  // facts-only OMs (no pro forma) so no Marketing scenario is created.
+  marketing_pro_forma?: {
+    offering_price?: number; // asking / offering price as presented in the pro forma
+    unit_mix?: {
+      unit_type: string; // e.g. "1BR/1BA"
+      count: number;
+      market_rent?: number; // monthly pro-forma / market rent per unit
+      current_rent?: number; // monthly in-place rent, if shown alongside
+    }[];
+    gross_potential_rent?: number; // annual, at pro-forma rents
+    vacancy_rate?: number; // decimal (economic vacancy the pro forma assumes)
+    other_income?: number; // annual (laundry, RUBS, parking, fees, etc.)
+    effective_gross_income?: number; // annual
+    expenses?: {
+      property_taxes?: number; // annual
+      insurance?: number; // annual
+      management_fees?: number; // annual $ (if the % is not stated)
+      management_fee_rate?: number; // decimal, share of EGI (e.g. 0.05)
+      repairs_maintenance?: number; // annual
+      utilities?: number; // annual
+      payroll?: number; // annual
+      admin_marketing?: number; // annual (admin, legal, G&A, marketing)
+      contract_services?: number; // annual (landscaping, pest, snow, etc.)
+      reserves?: number; // annual replacement reserves
+      total_operating_expenses?: number; // annual
+    };
+    net_operating_income?: number; // annual pro-forma NOI
+  };
   market_notes?: string;
 }
 
@@ -128,7 +160,9 @@ For the T12: extract monthly data if available. Use YYYY-MM format for month fie
 
 For contacts: extract ALL broker contacts, seller contacts, and property management contacts. Include every name, company, title, email, and phone number you can find — check the cover page, headers, footers, confidentiality notices, and contact sections.
 
-For lease dates: use YYYY-MM-DD format when possible, or YYYY-MM if only month/year is given.`;
+For lease dates: use YYYY-MM-DD format when possible, or YYYY-MM if only month/year is given.
+
+For the marketing pro forma: many OMs present a "Pro Forma", "Stabilized", "Market", or "Projected" operating statement that is SEPARATE from the historical T12 actuals. When such a projection is present, capture it under "marketing_pro_forma" — the broker's target rents and target expenses at stabilization. This is the broker's marketing case, NOT the seller's trailing actuals (which belong in "t12"). Pull per-unit-type pro-forma/market rents, the pro-forma expense lines (taxes, insurance, management, R&M, utilities, payroll, admin/marketing, contract services, reserves), other income, and the offering/asking price the pro forma is built on. If the OM only shows historical actuals or bare facts with no forward projection, OMIT marketing_pro_forma entirely.`;
 
 const EXTRACTION_PROMPT = `Extract ALL available data from this real estate document. Pull out every detail you can find.
 
@@ -244,8 +278,38 @@ Return JSON matching this structure:
     "total_noi": number (annual),
     "source": "seller_provided|broker_om|verified|estimated"
   },
+  "marketing_pro_forma": {
+    "offering_price": number (asking / offering price the pro forma is built on),
+    "unit_mix": [
+      {
+        "unit_type": "Studio|1BR/1BA|2BR/1BA|etc",
+        "count": number,
+        "market_rent": number (monthly pro-forma / market rent per unit),
+        "current_rent": number (monthly in-place rent, if shown alongside)
+      }
+    ],
+    "gross_potential_rent": number (annual, at pro-forma rents),
+    "vacancy_rate": decimal (economic vacancy the pro forma assumes),
+    "other_income": number (annual),
+    "effective_gross_income": number (annual),
+    "expenses": {
+      "property_taxes": number (annual),
+      "insurance": number (annual),
+      "management_fees": number (annual $, if % not stated),
+      "management_fee_rate": decimal (share of EGI, e.g. 0.05),
+      "repairs_maintenance": number (annual),
+      "utilities": number (annual),
+      "payroll": number (annual),
+      "admin_marketing": number (annual),
+      "contract_services": number (annual),
+      "reserves": number (annual)
+    },
+    "net_operating_income": number (annual pro-forma NOI)
+  },
   "market_notes": "Brief summary of key selling points, market context, value-add opportunity, or any other notable information from the document"
 }
+
+Include "marketing_pro_forma" ONLY when the OM presents a forward pro forma / stabilized projection with rents AND expenses. If the document is facts-only or shows only historical actuals, omit "marketing_pro_forma" entirely.
 
 Extract EVERYTHING you can find — every contact, every unit, every line item. Return ONLY the JSON object, no markdown formatting.`;
 

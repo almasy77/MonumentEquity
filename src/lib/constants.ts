@@ -88,7 +88,10 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 };
 
 export const SCENARIO_TYPES = [
-  "base",
+  "marketing",  // OM / broker pro-forma — auto-filled from an OM upload
+  "current",    // seller T12 + current rent roll — auto-filled from those uploads
+  "base",       // your base underwriting assumptions
+  "renovation", // value-add case (reno capex + renovated rents)
   "upside",
   "downside",
   "value_add",
@@ -98,8 +101,12 @@ export const SCENARIO_TYPES = [
 
 export type ScenarioType = (typeof SCENARIO_TYPES)[number];
 
+// Canonical display labels, incl. the document-driven scenario framework.
 export const SCENARIO_TYPE_LABELS: Record<ScenarioType, string> = {
+  marketing: "Marketing (OM)",
+  current: "Current (T12)",
   base: "Base Case",
+  renovation: "Renovation",
   upside: "Upside",
   downside: "Downside",
   value_add: "Value-Add",
