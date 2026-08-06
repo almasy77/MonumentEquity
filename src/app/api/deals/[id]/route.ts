@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, addToIndex, removeFromIndex, getFromIndex } from "@/lib/db";
+import { getRedis, addToIndex, removeFromIndex, getFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
@@ -54,6 +54,13 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     const oldStage = existing.stage;
     const newStage = body.stage as DealStage | undefined;
 
+    // Reject an out-of-enum status: index maintenance below only recognizes
+    // active/dead/passed, so any other value would persist on the record while
+    // silently desyncing the indexes.
+    if (body.status !== undefined && !["active", "dead", "passed"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+
     // Viewers cannot edit deals
     if (session.user.role === "viewer") {
       return NextResponse.json({ error: "Read-only access" }, { status: 403 });
@@ -69,8 +76,15 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       }
     }
 
-    // Handle stage change
-    if (newStage && newStage !== oldStage && DEAL_STAGES.includes(newStage)) {
+    // Handle stage change. Only maintain the by_stage pipeline index for ACTIVE
+    // deals — a dead/passed deal must never be (re)inserted into a stage index,
+    // or it resurfaces in the pipeline. (Reactivation re-adds it below.)
+    if (
+      newStage &&
+      newStage !== oldStage &&
+      DEAL_STAGES.includes(newStage) &&
+      existing.status === "active"
+    ) {
       await removeFromIndex(`deals:by_stage:${oldStage}`, id);
       await addToIndex(`deals:by_stage:${newStage}`, id, Date.now());
 
@@ -174,10 +188,14 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     ].filter((u): u is string => typeof u === "string" && u.length > 0);
     await Promise.allSettled(blobUrls.map((u) => deleteBlobUrl(u)));
 
-    // Cascade delete: scenarios, tasks, checklists for this deal
+    // Cascade delete: scenarios (+ their version snapshots), tasks, checklists.
     const scenarioIds = await getFromIndex(`scenarios:by_deal:${id}`);
     for (const sid of scenarioIds) {
       await redis.del(`scenario:${sid}`);
+      // Each edited scenario accumulates scenario_version:${sid}:${n} snapshots
+      // that live outside any index — SCAN and purge them so they don't orphan.
+      const versionKeys = await scanKeys(`scenario_version:${sid}:*`);
+      if (versionKeys.length > 0) await redis.del(...versionKeys);
     }
     if (scenarioIds.length > 0) await redis.del(`scenarios:by_deal:${id}`);
 

@@ -14,6 +14,7 @@ import {
   Settings,
   Building2,
   Inbox,
+  Archive,
   LogOut,
 } from "lucide-react";
 
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/comps", label: "Comps", icon: BarChart3 },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
+  { href: "/archived", label: "Archived", icon: Archive },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

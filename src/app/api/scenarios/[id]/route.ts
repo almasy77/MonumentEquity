@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, removeFromIndex } from "@/lib/db";
+import { getRedis, removeFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
@@ -197,6 +197,11 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     await redis.del(`scenario:${id}`);
     await removeFromIndex(`scenarios:by_deal:${scenario.deal_id}`, id);
+
+    // Purge this scenario's version snapshots (scenario_version:${id}:${n}),
+    // which live outside any index and would otherwise orphan forever.
+    const versionKeys = await scanKeys(`scenario_version:${id}:*`);
+    if (versionKeys.length > 0) await redis.del(...versionKeys);
 
     await logActivity({
       deal_id: scenario.deal_id,
