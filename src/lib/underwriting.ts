@@ -570,10 +570,28 @@ export interface CapexProject {
   enabled?: boolean; // default true; false → excluded from cost & cash flow without deleting (A/B impact)
 }
 
+// A single renovation tier (e.g. "Full reno" vs "Partial reno") — its own cost/unit,
+// unit count, and schedule. Multiple lines sum into the renovation capex and the
+// renovated-unit pacing. (Renovated RENT still comes from the unit-mix premium.)
+export interface RenovationLine {
+  id: string;
+  label?: string; // e.g. "Full", "Partial"
+  per_unit_cost: number;
+  units_to_renovate: number;
+  renovation_start_month: number; // 1-indexed
+  renovation_end_month?: number; // 1-indexed, inclusive
+  units_per_month?: number; // legacy pacing fallback
+  renovation_downtime_enabled?: boolean;
+  renovation_downtime_months?: number;
+}
+
 export interface CapexAssumptions {
   pca_complete?: boolean; // property condition assessment on file (Phase 4.3 guardrail)
   per_unit_cost: number;
   units_to_renovate: number;
+  // Multiple renovation tiers. When present + non-empty, these REPLACE the single
+  // per_unit_cost/units_to_renovate line below (which stays for backwards compat).
+  renovation_lines?: RenovationLine[];
   // default true; false → the per-unit renovation program is turned OFF entirely
   // (no cost, no renovation rent premium, no downtime) so the un-renovated impact
   // can be A/B'd without deleting the inputs.
@@ -1479,7 +1497,7 @@ export function calculateUnderwriting(
     warnings.push("Exit cap significantly below going-in — verify exit assumptions");
   }
 
-  const totalCapex = capex.per_unit_cost * capex.units_to_renovate +
+  const totalCapex = getRenovationLines(capex).reduce((s, l) => s + l.per_unit_cost * l.units_to_renovate, 0) +
     capex.projects.reduce((s, p) => s + p.cost, 0);
   if (totalUnits > 0 && totalCapex / totalUnits > 25000) {
     warnings.push("CapEx exceeds $25K/unit — verify intentional");
@@ -1799,13 +1817,39 @@ export function calculateLoanBalance(
   return Math.max(0, balance);
 }
 
-/** Derive the per-month renovation throughput from start/end or legacy units_per_month */
-function getUnitsPerMonth(capex: CapexAssumptions): number {
-  if (capex.renovation_end_month && capex.renovation_end_month >= (capex.renovation_start_month || 1)) {
-    const span = capex.renovation_end_month - (capex.renovation_start_month || 1) + 1;
-    return capex.units_to_renovate / span;
+/** Per-month renovation throughput for one line: from start/end span, else legacy units_per_month. */
+function unitsPerMonthOf(line: Pick<RenovationLine, "renovation_start_month" | "renovation_end_month" | "units_to_renovate" | "units_per_month">): number {
+  if (line.renovation_end_month && line.renovation_end_month >= (line.renovation_start_month || 1)) {
+    const span = line.renovation_end_month - (line.renovation_start_month || 1) + 1;
+    return line.units_to_renovate / span;
   }
-  return capex.units_per_month || 0;
+  return line.units_per_month || 0;
+}
+
+/**
+ * The active renovation lines. Uses capex.renovation_lines when present + non-empty,
+ * else synthesizes a single line from the legacy per_unit_cost/units fields — so
+ * existing single-line scenarios are byte-identical. Empty when the program is off.
+ */
+export function getRenovationLines(capex: CapexAssumptions): RenovationLine[] {
+  if (capex.per_unit_enabled === false) return [];
+  const lines = capex.renovation_lines;
+  if (lines && lines.length > 0) {
+    return lines.filter((l) => (l.units_to_renovate || 0) > 0 && (l.per_unit_cost || 0) >= 0);
+  }
+  if ((capex.units_to_renovate || 0) > 0) {
+    return [{
+      id: "legacy",
+      per_unit_cost: capex.per_unit_cost,
+      units_to_renovate: capex.units_to_renovate,
+      renovation_start_month: capex.renovation_start_month,
+      renovation_end_month: capex.renovation_end_month,
+      units_per_month: capex.units_per_month,
+      renovation_downtime_enabled: capex.renovation_downtime_enabled,
+      renovation_downtime_months: capex.renovation_downtime_months,
+    }];
+  }
+  return [];
 }
 
 /** 0-indexed pro forma month the reassessed bill begins. phase_in_month wins;
@@ -2106,30 +2150,39 @@ export function buildUnitStateSchedule(args: {
   }
 
   // ── Renovation overlay (always — reno schedule is independent of the ramp).
-  // Specific units are assigned deepest-below-market first; each unit's
-  // downtime and renovated rent flow through its own timeline. ──
-  const renoCount = Math.min(Math.max(0, Math.floor(capex.units_to_renovate || 0)), total);
-  if (renoCount > 0) {
-    const upm = getUnitsPerMonth(capex);
-    if (upm > 0) {
-      const startMonth = Math.max(1, capex.renovation_start_month || 1);
-      const downtime = capex.renovation_downtime_enabled
-        ? Math.max(0, capex.renovation_downtime_months || 0)
+  // Deepest-below-market units are renovated first, allocated across the renovation
+  // LINES in order (line 1's units, then line 2's, …); each unit is paced on its own
+  // line's schedule and downtime. Single-line scenarios reduce to the legacy curve. ──
+  const activeLines = getRenovationLines(capex).filter(
+    (l) => unitsPerMonthOf(l) > 0 && Math.floor(l.units_to_renovate || 0) > 0,
+  );
+  const totalRenoUnits = Math.min(
+    activeLines.reduce((s, l) => s + Math.floor(l.units_to_renovate || 0), 0),
+    total,
+  );
+  if (totalRenoUnits > 0) {
+    const ranked = expanded
+      .map((e, i) => ({ e, i }))
+      .sort((a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent))
+      .slice(0, totalRenoUnits);
+
+    let cursor = 0;
+    for (const line of activeLines) {
+      const upm = unitsPerMonthOf(line);
+      const startMonth = Math.max(1, line.renovation_start_month || 1);
+      const downtime = line.renovation_downtime_enabled
+        ? Math.max(0, line.renovation_downtime_months || 0)
         : 0;
-      const assigned = expanded
-        .map((e, i) => ({ e, i }))
-        .sort((a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent))
-        .slice(0, renoCount);
-      assigned.forEach(({ i }, j) => {
-        // Unit j completes when cumulative pace reaches j+1 (matches the
-        // legacy buildRenovationSchedule cumulative curve).
-        const completion = startMonth + Math.ceil((j + 1) / upm) - 1; // 1-indexed month
+      const lineUnits = Math.floor(line.units_to_renovate || 0);
+      for (let j = 0; j < lineUnits && cursor < ranked.length; j++, cursor++) {
+        // Unit j-within-line completes when the line's cumulative pace reaches j+1.
+        const completion = startMonth + Math.ceil((j + 1) / upm) - 1; // 1-indexed
         const c = completion - 1; // 0-indexed
-        if (c >= totalMonths) return;
-        const t = units[i].states;
-        for (let k = Math.max(0, c - 0); k < Math.min(c + downtime, totalMonths); k++) t[k] = "offline_reno";
+        if (c >= totalMonths) continue;
+        const t = units[ranked[cursor].i].states;
+        for (let k = Math.max(0, c); k < Math.min(c + downtime, totalMonths); k++) t[k] = "offline_reno";
         for (let k = c + downtime; k < totalMonths; k++) t[k] = "renovated";
-      });
+      }
     }
   }
 
@@ -2215,22 +2268,16 @@ function calculateMonthCapexBreakdown(
 ): { renovation: number; projects: number; total: number } {
   let renovation = 0;
 
-  // Per-unit renovations: spread cost evenly across renovation window
-  const upm = getUnitsPerMonth(capex);
-  const startMonth = Math.max(1, capex.renovation_start_month || 1);
-  if (upm > 0 && capex.per_unit_cost > 0 && month >= startMonth) {
-    const monthsActive = month - startMonth + 1;
-    const monthsActivePrev = monthsActive - 1;
-    const totalRenovatedBefore = Math.min(
-      monthsActivePrev * upm,
-      capex.units_to_renovate
-    );
-    const totalRenovatedAfter = Math.min(
-      monthsActive * upm,
-      capex.units_to_renovate
-    );
-    const unitsThisMonth = totalRenovatedAfter - totalRenovatedBefore;
-    renovation += unitsThisMonth * capex.per_unit_cost;
+  // Per-unit renovations: each line spreads its cost evenly across its own window.
+  for (const line of getRenovationLines(capex)) {
+    const upm = unitsPerMonthOf(line);
+    const startMonth = Math.max(1, line.renovation_start_month || 1);
+    if (upm > 0 && line.per_unit_cost > 0 && month >= startMonth) {
+      const monthsActive = month - startMonth + 1;
+      const before = Math.min((monthsActive - 1) * upm, line.units_to_renovate);
+      const after = Math.min(monthsActive * upm, line.units_to_renovate);
+      renovation += (after - before) * line.per_unit_cost;
+    }
   }
 
   // Project-based (named/dated) CapEx

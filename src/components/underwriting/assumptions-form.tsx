@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, RefreshCw, Check, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions, RenovationLine } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
@@ -2721,12 +2721,37 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         {/* CapEx: Per-Unit Renovations */}
         <Section title="CapEx: Per-Unit Renovations">
           {(() => {
-            const startMo = c.renovation_start_month || 1;
-            const endMo = c.renovation_end_month || startMo;
-            const span = Math.max(1, endMo - startMo + 1);
-            const derivedUPM = c.units_to_renovate > 0 ? (c.units_to_renovate / span) : 0;
             const downtimeEnabled = c.renovation_downtime_enabled || false;
+            const downtimeMonths = c.renovation_downtime_months || 1;
             const perUnitOn = c.per_unit_enabled !== false; // default on
+
+            // The active tiers: renovation_lines when present, else a single line
+            // derived from the legacy per_unit_cost/units fields.
+            const lines: RenovationLine[] = (c.renovation_lines && c.renovation_lines.length > 0)
+              ? c.renovation_lines
+              : [{ id: "line-1", per_unit_cost: c.per_unit_cost || 0, units_to_renovate: c.units_to_renovate || 0, renovation_start_month: c.renovation_start_month || 1, renovation_end_month: c.renovation_end_month || (c.renovation_start_month || 1) }];
+
+            // Persist the tiers (downtime stamped onto each, since the engine reads it
+            // per line) and mirror the first tier to the legacy fields for consumers
+            // that still read them.
+            const commit = (next: RenovationLine[]) => {
+              const stamped = next.map((l) => ({ ...l, renovation_downtime_enabled: downtimeEnabled, renovation_downtime_months: downtimeMonths }));
+              const first = stamped[0];
+              setC({
+                ...c,
+                renovation_lines: stamped,
+                per_unit_cost: first?.per_unit_cost ?? 0,
+                units_to_renovate: first?.units_to_renovate ?? 0,
+                renovation_start_month: first?.renovation_start_month ?? 1,
+                renovation_end_month: first?.renovation_end_month,
+              });
+              markDirty();
+            };
+            const setLine = (i: number, patch: Partial<RenovationLine>) => commit(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+            const addLine = () => commit([...lines, { id: `line-${Date.now()}`, per_unit_cost: 0, units_to_renovate: 0, renovation_start_month: 1, renovation_end_month: 12 }]);
+            const removeLine = (i: number) => commit(lines.filter((_, idx) => idx !== i));
+            const totalCapex = lines.reduce((s, l) => s + (l.per_unit_cost || 0) * (l.units_to_renovate || 0), 0);
+
             return (
               <div className="space-y-3">
                 {/* Include / exclude the whole per-unit reno program (cost +
@@ -2742,17 +2767,47 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </button>
                   <span className="text-xs text-slate-400">{perUnitOn ? "Renovation program ON" : "Renovation program OFF — excluded from the model"}</span>
                 </div>
-                <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 ${perUnitOn ? "" : "opacity-50"}`}>
-                  <CurrencyField label="Cost / Unit" value={c.per_unit_cost} onChange={(v) => { setC({ ...c, per_unit_cost: v }); markDirty(); }} />
-                  <NumField label="Units to Renovate" value={c.units_to_renovate} onChange={(v) => { setC({ ...c, units_to_renovate: v }); markDirty(); }} />
-                  <NumField label="Start Month" value={startMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_start_month: v }); markDirty(); }} />
-                  <NumField label="End Month" value={endMo} suffix="mo" onChange={(v) => { setC({ ...c, renovation_end_month: Math.max(startMo, v) }); markDirty(); }} />
+
+                {/* Renovation tiers — e.g. full-reno units + partial-reno units. */}
+                <div className={`space-y-2 ${perUnitOn ? "" : "opacity-50"}`}>
+                  {lines.map((l, i) => {
+                    const startMo = l.renovation_start_month || 1;
+                    const endMo = l.renovation_end_month || startMo;
+                    const span = Math.max(1, endMo - startMo + 1);
+                    const upm = (l.units_to_renovate || 0) > 0 ? l.units_to_renovate / span : 0;
+                    return (
+                      <div key={l.id} className="rounded border border-slate-800 p-2 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={l.label ?? ""}
+                            placeholder={`Tier ${i + 1} — e.g. ${i === 0 ? "Full reno" : "Partial reno"}`}
+                            onChange={(e) => setLine(i, { label: e.target.value || undefined })}
+                            className="flex-1 h-6 bg-slate-800 border border-slate-700 rounded px-2 text-[11px] text-white outline-none focus:border-blue-500"
+                          />
+                          {lines.length > 1 && (
+                            <button type="button" onClick={() => removeLine(i)} className="text-[11px] text-slate-500 hover:text-red-400 px-1">Remove</button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <CurrencyField label="Cost / Unit" value={l.per_unit_cost} onChange={(v) => setLine(i, { per_unit_cost: v })} />
+                          <NumField label="Units to Renovate" value={l.units_to_renovate} onChange={(v) => setLine(i, { units_to_renovate: v })} />
+                          <NumField label="Start Month" value={startMo} suffix="mo" onChange={(v) => setLine(i, { renovation_start_month: v })} />
+                          <NumField label="End Month" value={endMo} suffix="mo" onChange={(v) => setLine(i, { renovation_end_month: Math.max(startMo, v) })} />
+                        </div>
+                        <div className="text-[10px] text-slate-500 tabular-nums">
+                          {(upm % 1 === 0 ? upm : upm.toFixed(1))} units/mo · line CapEx {fmtCurrency((l.per_unit_cost || 0) * (l.units_to_renovate || 0))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={addLine} className="text-xs text-blue-400 hover:text-blue-300">+ Add renovation tier</button>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-slate-400">
-                  <span>Units / Month: <span className="text-white font-medium">{derivedUPM % 1 === 0 ? derivedUPM : derivedUPM.toFixed(1)}</span></span>
-                  <span>Total CapEx: <span className="text-white font-medium">{perUnitOn ? fmtCurrency(c.per_unit_cost * c.units_to_renovate) : "$0 (off)"}</span></span>
+
+                <div className="text-xs text-slate-400">
+                  Total CapEx: <span className="text-white font-medium">{perUnitOn ? fmtCurrency(totalCapex) : "$0 (off)"}</span>
                 </div>
-                {/* Renovation Downtime */}
+
+                {/* Renovation Downtime (applies to all tiers) */}
                 <div className="flex items-center gap-3 border-t border-slate-700 pt-3">
                   <button
                     type="button"
@@ -2763,7 +2818,11 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setC({ ...c, renovation_downtime_enabled: !downtimeEnabled }); markDirty(); }}
+                    onClick={() => {
+                      const next = !downtimeEnabled;
+                      setC({ ...c, renovation_downtime_enabled: next, renovation_lines: lines.map((l) => ({ ...l, renovation_downtime_enabled: next, renovation_downtime_months: downtimeMonths })) });
+                      markDirty();
+                    }}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${downtimeEnabled ? "bg-blue-600" : "bg-slate-700"}`}
                   >
                     <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${downtimeEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
@@ -2771,7 +2830,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   <span className="text-xs text-slate-400">Renovation downtime vacancy</span>
                   {downtimeEnabled && (
                     <div className="flex items-center gap-2">
-                      <NumField label="Downtime" value={c.renovation_downtime_months || 1} suffix="mo/unit" onChange={(v) => { setC({ ...c, renovation_downtime_months: Math.max(0.5, v) }); markDirty(); }} />
+                      <NumField label="Downtime" value={downtimeMonths} suffix="mo/unit" onChange={(v) => { const m = Math.max(0.5, v); setC({ ...c, renovation_downtime_months: m, renovation_lines: lines.map((l) => ({ ...l, renovation_downtime_enabled: downtimeEnabled, renovation_downtime_months: m })) }); markDirty(); }} />
                     </div>
                   )}
                 </div>

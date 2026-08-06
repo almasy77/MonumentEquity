@@ -36,9 +36,20 @@ const FIELDS: FieldDesc[] = [
   { label: "exp. growth", section: "expense_assumptions", key: "expense_escalation_rate", fmt: pct, minDelta: 0.0001 },
 ];
 
-// Short note on the renovation scope, if a program is on.
+// Short note on the renovation scope, if a program is on. Handles multiple tiers.
 function renoNote(capex: Rec): string | null {
-  if (!capex || capex["renovation_enabled"] === false) return null;
+  if (!capex || capex["per_unit_enabled"] === false) return null;
+  const rawLines = capex["renovation_lines"];
+  const lines = Array.isArray(rawLines) ? (rawLines as Record<string, unknown>[]) : null;
+  if (lines && lines.length > 0) {
+    const units = lines.reduce((s, l) => s + (num(l, "units_to_renovate") ?? 0), 0);
+    if (units <= 0) return null;
+    if (lines.length > 1) {
+      const budget = lines.reduce((s, l) => s + (num(l, "per_unit_cost") ?? 0) * (num(l, "units_to_renovate") ?? 0), 0);
+      return `reno ${lines.length} tiers · ${units} units · ${moneyK(budget)}`;
+    }
+    return `reno ${moneyK(num(lines[0], "per_unit_cost") ?? 0)}/unit × ${units}`;
+  }
   const cost = num(capex, "per_unit_cost");
   const units = num(capex, "units_to_renovate");
   if (!cost || !units) return null;
