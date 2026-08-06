@@ -2430,14 +2430,28 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const ltvLoan = purchase.purchase_price * financing.ltv;
   const monthlyRate = financing.interest_rate / 12;
   const amortMonths = financing.amortization_years * 12;
-  const rentBasis: RentBasis = exit.sensitivity_rent_basis || "current";
-
   // ── Unit-state schedule (fix-spec Phase 1) — same machine as the monthly
   // pro forma, so the sensitivity path can no longer diverge from it.
-  // Legacy "_plus_reno" sensitivity bases mean "all units renovated from
-  // month 1": expressed by overriding the capex pace to renovate everything
-  // immediately rather than via a separate rent formula.
-  const hasRenoPremiumBasis = rentBasis === "current_plus_reno" || rentBasis === "market_plus_reno";
+  // Rent basis resolution: an EXPLICIT sensitivity_rent_basis overrides; when it
+  // is unset (the common case) inherit the headline pro-forma bases via
+  // resolveProformaBases so the grid's "no change" center cell reconciles to the
+  // headline IRR. (Previously this defaulted to in-place "current" rents while
+  // the headline ran market/renovated rents, so the grid silently contradicted
+  // the headline for every value-add deal.) Legacy "_plus_reno" bases mean "all
+  // units renovated from month 1", expressed by overriding the capex pace.
+  const sensBasis = exit.sensitivity_rent_basis;
+  const hasRenoPremiumBasis = sensBasis === "current_plus_reno" || sensBasis === "market_plus_reno";
+  let sensInPlaceBasis: UnrenovatedBasis;
+  let sensRenoBasis: RenovatedBasis;
+  if (sensBasis) {
+    const isMarket = sensBasis === "market" || sensBasis === "market_plus_reno";
+    sensInPlaceBasis = isMarket ? "market" : "current";
+    sensRenoBasis = isMarket ? "market_plus_premium" : "current_plus_premium";
+  } else {
+    const pf = resolveProformaBases(exit);
+    sensInPlaceBasis = pf.unrenovated;
+    sensRenoBasis = pf.renovated;
+  }
   const sensCapex = hasRenoPremiumBasis
     ? { ...capex, units_to_renovate: totalUnits, renovation_start_month: 1, renovation_end_month: 1, renovation_downtime_enabled: false }
     : capex;
@@ -2446,8 +2460,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     ramp: revenue.rent_ramp,
     capex: sensCapex,
     totalMonths,
-    inPlaceBasis: rentBasis === "market" || rentBasis === "market_plus_reno" ? "market" : "current",
-    renoBasis: rentBasis === "market" || rentBasis === "market_plus_reno" ? "market_plus_premium" : "current_plus_premium",
+    inPlaceBasis: sensInPlaceBasis,
+    renoBasis: sensRenoBasis,
   });
 
   const annualCashFlows: number[] = [];

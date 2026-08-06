@@ -40,8 +40,18 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
     | { enabled?: boolean; effective_tax_rate?: number; assessment_ratio?: number; mill_rate?: number; mill_assessed_rate?: number; mill_reduction_rate?: number; reassessed_value?: number }
     | undefined;
   const price = inputs.purchase.purchase_price || 0;
+  const v2 = (exp.property_tax_v2 ?? undefined) as { enabled?: boolean } | undefined;
   let taxBasis = "Entered operating bill.";
-  if (tr?.enabled) {
+  if (v2?.enabled) {
+    // Phase-2 model takes precedence over v1 in the engine (property_tax_v2
+    // short-circuits before tax_reassessment), so the note must too — otherwise
+    // it drifts to "Entered operating bill." next to a reassessed/abated figure.
+    const shownTax = ox ? ox.property_tax : 0;
+    const effShown = price > 0 && shownTax > 0 ? (shownTax / price) : 0;
+    taxBasis = shownTax > 0
+      ? `Reassessed under the Phase-2 tax model (HB920 growth + any abatement schedule): ${usd(shownTax)}/yr in Year 1${effShown > 0 ? ` (${pct1(effShown)} of price)` : ""}. The seller's current bill is not the buyer's bill.`
+      : "Phase-2 tax model in force (HB920 growth + abatement schedule).";
+  } else if (tr?.enabled) {
     const eff = tr.effective_tax_rate ?? 0; // the rate the ENGINE actually bills
     const ratio = tr.assessment_ratio;
     if (ratio && ratio > 0 && eff > 0) {
@@ -89,6 +99,15 @@ export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
     ? [
         { label: "Gross Potential Rent", amount: a0.gpr, basis: "Unit-mix rents rolled to the pro forma basis." },
         { label: "Less: Vacancy", amount: a0.vacancy_loss, neg: true, basis: rev.vacancy_rate ? `${pct1(rev.vacancy_rate)} of GPR` : "" },
+        // Bad debt and concessions are part of EGI (egi = gpr − vacancy − bad_debt
+        // − concessions + other); show them whenever non-zero so the visible rows
+        // foot to the EGI figure below instead of leaving an unexplained gap.
+        ...(a0.bad_debt > 0
+          ? [{ label: "Less: Bad Debt", amount: a0.bad_debt, neg: true, basis: rev.bad_debt_rate ? `${pct1(rev.bad_debt_rate)} of GPR` : "" } as Row]
+          : []),
+        ...(a0.concessions > 0
+          ? [{ label: "Less: Concessions", amount: a0.concessions, neg: true, basis: rev.concessions_rate ? `${pct1(rev.concessions_rate)} of GPR` : "" } as Row]
+          : []),
         { label: "Plus: Other Income", amount: a0.other_income, basis: "Fees, RUBS, and ancillary income." },
         { label: "Effective Gross Income", amount: a0.egi, bold: true, band: true },
         { label: "Management", amount: ox.management_fees, perUnit: true, basis: mgmtRate ? `${pct1(mgmtRate)} of EGI (third-party market fee)` : "Market management fee." },

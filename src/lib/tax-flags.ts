@@ -34,7 +34,11 @@ function unitRangeFromLandUse(code: string): { min: number; max: number } | null
 export function computeTaxFlags(deal: Deal, price?: number): TaxFlag[] {
   const flags: TaxFlag[] = [];
   const purchase = price ?? deal.asking_price ?? 0;
-  const appraised = deal.tax_market_value ?? deal.assessed_value; // appraised/market value on record
+  // Only the auditor's MARKET/appraised value is a valid basis for the "price is
+  // above appraised" gap. assessed_value is the TAXABLE value (~35% of market in
+  // Ohio-style jurisdictions); comparing price against it fired the flag on
+  // essentially every deal with a bogus percentage.
+  const appraised = deal.tax_market_value; // appraised/market value on record
 
   if (deal.tax_abatement_present || deal.incentive_type) {
     flags.push({
