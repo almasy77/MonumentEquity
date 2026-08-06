@@ -1856,11 +1856,11 @@ function buildTaxDetailSheet(
   }
 
   addSectionHeader(ws, `Scenario Vectors — in force: ${vectors.scenario_in_force}`, 5);
-  const hdr = ws.addRow(["Tax Year", "Abated, Transfers", "Abatement Lost", "Reassessed to Price", ""]);
+  const hdr = ws.addRow(["Tax Year", "Abated, Transfers", "Abatement Lost", "Reassessed to Price", "Periodic Hold"]);
   styleHeaderRow(hdr, 5);
   for (const r of vectors.rows) {
-    const row = ws.addRow([r.tax_year, r.abated_transfers, r.abatement_lost, r.reassessed_to_price, ""]);
-    for (let c = 2; c <= 4; c++) {
+    const row = ws.addRow([r.tax_year, r.abated_transfers, r.abatement_lost, r.reassessed_to_price, r.periodic_hold]);
+    for (let c = 2; c <= 5; c++) {
       row.getCell(c).numFmt = CURRENCY_FMT;
       row.getCell(c).border = THIN_BORDER;
     }
@@ -1868,9 +1868,15 @@ function buildTaxDetailSheet(
   }
   ws.addRow([]);
 
-  const notes = ws.addRow([
-    "Reappraisal: Franklin County triennial update 2026, sexennial reappraisal 2029 (verify tentative values when posted). BOR complaint window: Jan 1 – Mar 31 of the year after the tax year. Default scenario rule: abatement_lost whenever the transfer is not CONFIRMED. Payment timing: each tax year's bill is modeled WITHIN its own calendar year (accrual). Ohio bills in arrears (tax year T collected in T+1), so true cash-basis tax steps land ~1 year later than shown here — the current treatment is conservative (increases recognized ~a year early).",
-  ]);
+  // Jurisdiction-aware footnote — the Franklin County reappraisal calendar only
+  // applies to Ohio sale-price deals; periodic-revaluation states are modeled by
+  // holding the assessed value and escalating by the tax escalation rate.
+  const stateUp = v2.parcel?.state ? v2.parcel.state.toUpperCase() : "";
+  const isPeriodicState = stateUp !== "" && stateUp !== "OH";
+  const noteText = isPeriodicState
+    ? `Periodic-revaluation jurisdiction (${stateUp}): the assessed value is held between county revaluations and the bill grows only by the tax escalation rate — it does NOT reassess toward the purchase price. ${v2.next_reappraisal_year ? `A revaluation is modeled at tax year ${v2.next_reappraisal_year}${v2.reappraisal_target_value ? ` (assessed value → $${Math.round(v2.reappraisal_target_value).toLocaleString()})` : ""}.` : "No specific revaluation year is set — confirm the county's cycle and enter it for a step re-mark."} Default scenario rule: abatement_lost whenever a transfer is not CONFIRMED.`
+    : "Reappraisal: Franklin County triennial update 2026, sexennial reappraisal 2029 (verify tentative values when posted). BOR complaint window: Jan 1 – Mar 31 of the year after the tax year. Default scenario rule: abatement_lost whenever the transfer is not CONFIRMED. Payment timing: each tax year's bill is modeled WITHIN its own calendar year (accrual). Ohio bills in arrears (tax year T collected in T+1), so true cash-basis tax steps land ~1 year later than shown here — the current treatment is conservative (increases recognized ~a year early).";
+  const notes = ws.addRow([noteText]);
   notes.getCell(1).font = { ...NORMAL_FONT, italic: true };
   notes.getCell(1).alignment = { wrapText: true };
   ws.mergeCells(`A${notes.number}:E${notes.number}`);

@@ -2700,11 +2700,40 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                     return (
                                       <p className={`text-[10px] ${tone}`}>
                                         Jurisdiction {v2.parcel?.state ? v2.parcel.state.toUpperCase() : "(no state)"}: {v2.parcel?.state ? label : "no state on file — defaults to sale-price reassessment (legacy). Set the state to select the correct mechanic."}
+                                        {jr.typical_cycle_years ? ` Typical revaluation cycle ~${jr.typical_cycle_years} yrs (confirm the county's actual schedule).` : ""}
                                       </p>
                                     );
                                   })()}
+                                  {/* Periodic-revaluation modeling: the assessed value is frozen between
+                                      county revaluations and the bill grows only by the deal's tax
+                                      escalation rate; at the next reval it re-marks to an estimated value. */}
+                                  {v2.parcel?.state && jurisdictionRulesFor(v2.parcel.state).method !== "sale_price" && (
+                                    <div className="grid grid-cols-2 gap-3 rounded-md border border-slate-800 bg-slate-900/40 p-2">
+                                      <div>
+                                        <Label className="text-xs text-slate-400">
+                                          Next Reappraisal Year
+                                          <InfoDot tip="The TAX YEAR of the county's next revaluation. Until then the assessed value is held and the bill grows only by your tax escalation rate; at this year it re-marks to the estimated value at right." />
+                                        </Label>
+                                        <Input
+                                          type="number"
+                                          inputMode="numeric"
+                                          value={v2.next_reappraisal_year ?? ""}
+                                          onChange={(ev) => { const n = parseInt(ev.target.value, 10); updateV2({ next_reappraisal_year: isNaN(n) ? undefined : n }); }}
+                                          placeholder="e.g. 2028"
+                                          className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs text-slate-400">
+                                          Est. Assessed Value at Reappraisal
+                                          <InfoDot tip="Your estimate of the county's assessed (taxable) value from the next revaluation. Leave blank to simply hold the current assessment and escalate it. Enter the CURRENT assessed value in 'Reassessed Value' above — not the purchase price." />
+                                        </Label>
+                                        <BareCurrencyInput value={v2.reappraisal_target_value ?? 0} onChange={(val) => updateV2({ reappraisal_target_value: val || undefined })} />
+                                      </div>
+                                    </div>
+                                  )}
                                   <p className="text-[10px] text-slate-500">
-                                    Bills are calendar-anchored to the closing date. In sale-price (Ohio-style) jurisdictions the bill reassesses toward the purchase price and is shaped per HB 920 — only ~12.5% floats with valuation, the voted remainder is dollar-flat plus levy drift. In periodic-revaluation states the bill is held flat (levy drift only) and does NOT jump to the sale price. All scenario vectors export to the workbook.
+                                    Bills are calendar-anchored to the closing date. In sale-price (Ohio-style) jurisdictions the bill reassesses toward the purchase price and is shaped per HB 920 — only ~12.5% floats with valuation, the voted remainder is dollar-flat plus levy drift. In periodic-revaluation states the assessed value is held between revaluations and the bill grows only by your tax escalation rate ({`${Number(((e.tax_escalation_rate ?? 0) * 100).toFixed(2))}%`}), stepping to the estimated value at the next reappraisal. All scenario vectors export to the workbook.
                                   </p>
                                 </>
                               )}
