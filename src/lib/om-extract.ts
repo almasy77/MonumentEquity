@@ -220,7 +220,7 @@ Return JSON matching this structure:
   "rent_roll": [
     {
       "unit_number": "string",
-      "unit_type": "Studio|1BR/1BA|2BR/1BA|etc",
+      "unit_type": "Studio|1BR/1BA|2BR/1BA|etc — use 'Unknown' if no bedroom/unit-type is stated; never guess or infer from sqft",
       "sqft": number,
       "status": "occupied|vacant|notice_to_vacate|down",
       "tenant_name": "string",
@@ -282,7 +282,7 @@ Return JSON matching this structure:
     "offering_price": number (asking / offering price the pro forma is built on),
     "unit_mix": [
       {
-        "unit_type": "Studio|1BR/1BA|2BR/1BA|etc",
+        "unit_type": "Studio|1BR/1BA|2BR/1BA|etc — use 'Unknown' if no bedroom/unit-type is stated; never guess or infer from sqft",
         "count": number,
         "market_rent": number (monthly pro-forma / market rent per unit),
         "current_rent": number (monthly in-place rent, if shown alongside)

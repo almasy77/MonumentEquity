@@ -9,6 +9,7 @@ import { ChevronDown, ChevronRight, Trash2, RefreshCw, Check, Loader2, Plus, X, 
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions, RenovationLine } from "@/lib/underwriting";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
+import { jurisdictionRulesFor } from "@/lib/property-tax-jurisdictions";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
 
@@ -22,12 +23,13 @@ interface Props {
   dealCity?: string; // filters rent comps for the market-rent guardrail (spec B8)
   dealRentRoll?: RentRollUnit[]; // deal-level imported rent roll — source for per-unit rows (spec B2)
   // Deal-level tax basis (Property Details card) — seeds Tax Reassessment / v2 on enable.
-  dealTaxDefaults?: { millRate?: number; millAssessedPct?: number; assessmentPct?: number; marketValue?: number; currentAnnualTax?: number; abatementPresent?: boolean };
+  dealTaxDefaults?: { millRate?: number; millAssessedPct?: number; assessmentPct?: number; marketValue?: number; currentAnnualTax?: number; abatementPresent?: boolean; state?: string };
   // Precomputed property-tax risk flags for this deal (abatement, reassessment gap, etc.).
   taxFlags?: { id: string; severity: "warn" | "info"; text: string }[];
   year1Revenue?: number; // engine year-1 GPR + other income (annual $) — feeds the trajectory block
   year1DebtService?: number; // engine year-1 debt service (annual $) — feeds the auto operating reserve
   year1Opex?: number; // engine year-1 operating expenses (annual $) — feeds the auto operating reserve
+  goingInCapRate?: number; // engine going-in cap (year-1 NOI / price) — feeds the exit-cap guidance hover
 }
 
 // ─── Per-unit rows (spec B2 / ramp Phase 2) ───
@@ -524,12 +526,14 @@ function PctField({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   step,
   suffix,
+  tooltip,
 }: {
   label: string;
   value: number; // stored as decimal e.g. 0.07
   onChange: (v: number) => void;
   step?: string;
   suffix?: string;
+  tooltip?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -543,6 +547,7 @@ function PctField({
       <Label className="text-xs text-slate-400">
         {label}
         <span className="text-slate-600 ml-1">{suffix || "%"}</span>
+        {tooltip && <InfoDot tip={tooltip} />}
       </Label>
       <Input
         type="text"
@@ -1094,7 +1099,7 @@ function OpexGroup<K extends string>({
   );
 }
 
-export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, dealTaxDefaults, taxFlags, year1Revenue, year1DebtService, year1Opex }: Props) {
+export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12, dealCity, dealRentRoll, dealTaxDefaults, taxFlags, year1Revenue, year1DebtService, year1Opex, goingInCapRate }: Props) {
   const purchase = (scenario.purchase_assumptions ?? {}) as unknown as ScenarioInputs["purchase"];
   const financing = (scenario.financing_assumptions ?? {}) as unknown as ScenarioInputs["financing"];
   const revenue = (scenario.revenue_assumptions ?? {}) as unknown as ScenarioInputs["revenue"];
@@ -2139,7 +2144,23 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
               <div>
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-400">Other Income</Label>
+                  <Label className="text-xs text-slate-400">
+                    Other Income
+                    {typeof e.t12_baseline?.other_income === "number" && (
+                      <InfoDot
+                        tip={
+                          `Trailing 12-month actual other income: ${fmtCurrency(e.t12_baseline.other_income)}/yr.` +
+                          (() => {
+                            const modeled = (r.other_income_monthly || 0) * 12;
+                            const delta = modeled - (e.t12_baseline?.other_income || 0);
+                            return delta > 0
+                              ? ` This assumption (${fmtCurrency(modeled)}/yr) is ${fmtCurrency(delta)} above trailing actual — if it includes new programs (RUBS, pet rent, fees) not currently collected, confirm lease authority to bill existing tenants and consider ramping it in over your mark-to-market schedule rather than booking it at full value in Year 1.`
+                              : " This assumption is at or below trailing actual.";
+                          })()
+                        }
+                      />
+                    )}
+                  </Label>
                   <button
                     type="button"
                     onClick={() => (oiExpanded ? setOiExpanded(false) : openOtherIncomeItems())}
@@ -2598,6 +2619,11 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                         const patch: Partial<PropertyTaxAssumptions> = { enabled: true };
                                         const eff = v2?.effective_tax_rate ?? tr?.effective_tax_rate ?? dealRate;
                                         if (eff != null) patch.effective_tax_rate = eff;
+                                        // Seed the parcel's state so the engine picks the right reassessment
+                                        // mechanic (sale-price vs periodic revaluation) for this jurisdiction.
+                                        if (d?.state && !v2?.parcel?.state) {
+                                          patch.parcel = { ...(v2?.parcel ?? {}), state: d.state };
+                                        }
                                         // Seed the abatement record when the deal flags an abatement.
                                         if (d?.abatementPresent && !v2?.abatement) {
                                           const price = p.purchase_price || 0;
@@ -2662,9 +2688,23 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                       <Label className="text-xs text-slate-400">Parcel ID</Label>
                                       <Input value={v2.parcel?.parcel_id || ""} onChange={(ev) => updateV2({ parcel: { ...(v2.parcel ?? {}), parcel_id: ev.target.value } })} placeholder="010-123456" className="bg-slate-800 border-slate-700 text-white text-sm h-8" />
                                     </div>
+                                    <div>
+                                      <Label className="text-xs text-slate-400">State</Label>
+                                      <Input value={v2.parcel?.state || ""} onChange={(ev) => updateV2({ parcel: { ...(v2.parcel ?? {}), state: ev.target.value.toUpperCase().slice(0, 2) } })} placeholder="OH" className="bg-slate-800 border-slate-700 text-white text-sm h-8 uppercase" />
+                                    </div>
                                   </div>
+                                  {(() => {
+                                    const jr = jurisdictionRulesFor(v2.parcel?.state);
+                                    const label = jr.method === "sale_price" ? "reassesses toward the sale price" : jr.method === "periodic_cycle" ? "periodic revaluation cycle — bill NOT reassessed to price" : "unmapped — bill held flat as a fail-safe; confirm county mechanics";
+                                    const tone = jr.method === "unknown" ? "text-amber-400" : "text-slate-500";
+                                    return (
+                                      <p className={`text-[10px] ${tone}`}>
+                                        Jurisdiction {v2.parcel?.state ? v2.parcel.state.toUpperCase() : "(no state)"}: {v2.parcel?.state ? label : "no state on file — defaults to sale-price reassessment (legacy). Set the state to select the correct mechanic."}
+                                      </p>
+                                    );
+                                  })()}
                                   <p className="text-[10px] text-slate-500">
-                                    Bills are calendar-anchored to the closing date (Ohio: tax year = calendar year, billed in arrears) and shaped per HB 920 — only ~12.5% of the bill floats with valuation; the voted remainder is dollar-flat plus levy drift. All three scenario vectors export to the workbook.
+                                    Bills are calendar-anchored to the closing date. In sale-price (Ohio-style) jurisdictions the bill reassesses toward the purchase price and is shaped per HB 920 — only ~12.5% floats with valuation, the voted remainder is dollar-flat plus levy drift. In periodic-revaluation states the bill is held flat (levy drift only) and does NOT jump to the sale price. All scenario vectors export to the workbook.
                                   </p>
                                 </>
                               )}
@@ -2938,7 +2978,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 }
               />
             ) : (
-              <PctField label="Exit Cap Rate" value={ex.exit_cap_rate} onChange={(v) => { setEx({ ...ex, exit_cap_rate: v }); markDirty(); }} />
+              <PctField
+                label="Exit Cap Rate"
+                value={ex.exit_cap_rate}
+                onChange={(v) => { setEx({ ...ex, exit_cap_rate: v }); markDirty(); }}
+                tooltip={
+                  "House convention: exit cap should be 50-100bps above the going-in cap rate, to cushion against cap-rate decompression over the hold. A flat or compressed exit cap is aggressive and should have a specific, stated reason (e.g. a documented repositioning plan)." +
+                  (goingInCapRate && goingInCapRate > 0
+                    ? ` Going-in cap: ${(goingInCapRate * 100).toFixed(2)}% → house convention suggests ${((goingInCapRate + 0.005) * 100).toFixed(2)}-${((goingInCapRate + 0.01) * 100).toFixed(2)}%.`
+                    : "")
+                }
+              />
             )}
           </div>
           <p className="text-xs text-slate-500 pt-1">

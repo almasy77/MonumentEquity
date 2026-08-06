@@ -331,7 +331,7 @@ export function RentRollTable({ dealId, rentRoll, dealUnits }: { dealId: string;
                       <EditableCell value={unit.unit_number} onChange={(v) => updateUnit(idx, "unit_number", v)} />
                     </td>
                     <td className="py-1 px-1">
-                      <EditableCell value={unit.unit_type || ""} onChange={(v) => updateUnit(idx, "unit_type", v)} placeholder="1BR/1BA" />
+                      <EditableCell value={unit.unit_type || ""} onChange={(v) => updateUnit(idx, "unit_type", v)} placeholder="e.g. 2BR/1BA" />
                     </td>
                     <td className="py-1 px-1 text-right">
                       <EditableCell value={unit.sqft?.toString() || ""} onChange={(v) => updateUnit(idx, "sqft", v)} type="number" className="text-right" />

@@ -6,6 +6,7 @@
 import type { Deal } from "./validations";
 import type { ScenarioInputs, UnderwritingResult } from "./underwriting";
 import { propertyTaxForMonthV2, propertyTaxScenarioInForce, calculateLoanBalance } from "./underwriting";
+import { jurisdictionRulesFor } from "./property-tax-jurisdictions";
 
 export interface ReconciliationCheck {
   id: string;
@@ -216,6 +217,27 @@ export function computeReconciliationChecks(
       });
     } else {
       checks.push({ id: "j", name: "Reassessment basis ties to billed rate", pass: true, detail: "reassessment off or rate not decomposed — n/a" });
+    }
+  }
+
+  // (k) Jurisdiction tax method is known. Property tax v2 defaults an unmapped
+  // state to periodic_hold (fail-safe: it does NOT assume sale-price reassessment),
+  // but the user still needs to confirm the county's real mechanics before the bill
+  // can be trusted — so an explicitly-set-but-unmapped state hard-FAILS here and
+  // blocks "all checks pass". A deal with NO state keeps the legacy behavior and is
+  // not retroactively flagged.
+  {
+    const v2 = inputs.expenses.property_tax_v2;
+    const state = v2?.parcel?.state;
+    if (v2?.enabled && state && jurisdictionRulesFor(state).method === "unknown") {
+      checks.push({
+        id: "k",
+        name: "Property-tax jurisdiction is mapped",
+        pass: false,
+        detail: `No reassessment rule mapped for ${state.toUpperCase()} — confirm the county's mechanics (sale-price vs periodic revaluation) or set the tax scenario manually before trusting the bill.`,
+      });
+    } else {
+      checks.push({ id: "k", name: "Property-tax jurisdiction is mapped", pass: true, detail: v2?.enabled ? "jurisdiction mapped or state on file" : "property tax v2 not enabled — n/a" });
     }
   }
 
