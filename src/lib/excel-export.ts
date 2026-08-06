@@ -10,7 +10,7 @@
 import ExcelJS from "exceljs";
 import type { Deal } from "./validations";
 import { computeTaxFlags } from "./tax-flags";
-import { applyCapexToggles, resolveProformaBases } from "./underwriting";
+import { applyCapexToggles, resolveProformaBases, getRenovationLines } from "./underwriting";
 import type {
   ScenarioInputs,
   UnderwritingResult,
@@ -977,40 +977,57 @@ function buildCapexSheet(wb: ExcelJS.Workbook, rawCapex: ScenarioInputs["capex"]
   const ws = wb.addWorksheet("CapEx Schedule");
   ws.columns = [{ width: 24 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }];
 
-  // Per-unit section
+  // Per-unit section — one row per renovation tier (full / partial / …), summed.
   addSectionHeader(ws, "Per-Unit Renovations", 5);
-  const row2 = ws.addRow(["Cost per Unit", capex.per_unit_cost]);
-  row2.getCell(2).numFmt = CURRENCY_FMT;
-  const row3 = ws.addRow(["Units to Renovate", capex.units_to_renovate]);
-  row3.getCell(2).numFmt = NUMBER_FMT;
-  ws.addRow(["Start Month", capex.renovation_start_month || 1]);
-  ws.addRow(["End Month", capex.renovation_end_month || capex.renovation_start_month || 1]);
-  // Pace mirrors the engine's getUnitsPerMonth: end-month window when set, else the
-  // legacy units_per_month field (a span-only derivation misreports the legacy path).
-  const startMonth = capex.renovation_start_month || 1;
-  const legacyUpm = (capex as { units_per_month?: number }).units_per_month;
-  const upm = capex.renovation_end_month && capex.renovation_end_month >= startMonth
-    ? (capex.units_to_renovate > 0 ? capex.units_to_renovate / (capex.renovation_end_month - startMonth + 1) : 0)
-    : (legacyUpm && legacyUpm > 0 ? legacyUpm : 0);
-  const upmRow = ws.addRow(["Units per Month (derived)", Math.round(upm * 10) / 10]);
-  upmRow.getCell(2).numFmt = "#,##0.0";
-  if (capex.renovation_downtime_enabled) {
-    ws.addRow(["Renovation Downtime", `${capex.renovation_downtime_months || 1} mo/unit`]);
+  const renoLines = getRenovationLines(capex);
+  const lineEnd = (l: (typeof renoLines)[number]) => {
+    const st = l.renovation_start_month || 1;
+    if (l.renovation_end_month && l.renovation_end_month >= st) return l.renovation_end_month;
+    const lupm = l.units_per_month || 0;
+    return lupm > 0 && (l.units_to_renovate || 0) > 0 ? st + Math.ceil(l.units_to_renovate / lupm) - 1 : st;
+  };
+  const lineUpm = (l: (typeof renoLines)[number]) => {
+    const st = l.renovation_start_month || 1;
+    if (l.renovation_end_month && l.renovation_end_month >= st) return (l.units_to_renovate || 0) / (l.renovation_end_month - st + 1);
+    return l.units_per_month || 0;
+  };
+  if (renoLines.length <= 1) {
+    const l = renoLines[0];
+    const row2 = ws.addRow(["Cost per Unit", l?.per_unit_cost ?? 0]);
+    row2.getCell(2).numFmt = CURRENCY_FMT;
+    const row3 = ws.addRow(["Units to Renovate", l?.units_to_renovate ?? 0]);
+    row3.getCell(2).numFmt = NUMBER_FMT;
+    ws.addRow(["Start Month", l?.renovation_start_month || 1]);
+    ws.addRow(["End Month", l ? lineEnd(l) : 1]);
+    const upmRow = ws.addRow(["Units per Month (derived)", Math.round((l ? lineUpm(l) : 0) * 10) / 10]);
+    upmRow.getCell(2).numFmt = "#,##0.0";
+    if (capex.renovation_downtime_enabled) ws.addRow(["Renovation Downtime", `${capex.renovation_downtime_months || 1} mo/unit`]);
+    const row5 = ws.addRow(["Total Per-Unit CapEx (full budget)"]);
+    row5.getCell(1).font = BOLD_FONT;
+    row5.getCell(2).value = { formula: "B2*B3" } as ExcelJS.CellFormulaValue;
+    row5.getCell(2).numFmt = CURRENCY_FMT;
+    row5.getCell(2).font = BOLD_FONT;
+  } else {
+    const hdr = ws.addRow(["Tier", "Cost/Unit", "Units", "Months", "Budget"]);
+    hdr.eachCell((cell) => { cell.font = BOLD_FONT; });
+    renoLines.forEach((l, i) => {
+      const budget = (l.per_unit_cost || 0) * (l.units_to_renovate || 0);
+      const row = ws.addRow([l.label || `Tier ${i + 1}`, l.per_unit_cost || 0, l.units_to_renovate || 0, `${l.renovation_start_month || 1}–${lineEnd(l)}`, budget]);
+      row.getCell(2).numFmt = CURRENCY_FMT;
+      row.getCell(3).numFmt = NUMBER_FMT;
+      row.getCell(5).numFmt = CURRENCY_FMT;
+    });
+    if (capex.renovation_downtime_enabled) ws.addRow(["Renovation Downtime", `${capex.renovation_downtime_months || 1} mo/unit (all tiers)`]);
+    const totalRow = ws.addRow(["Total Per-Unit CapEx (full budget)", "", "", "", renoLines.reduce((s, l) => s + (l.per_unit_cost || 0) * (l.units_to_renovate || 0), 0)]);
+    totalRow.getCell(1).font = BOLD_FONT;
+    totalRow.getCell(5).numFmt = CURRENCY_FMT;
+    totalRow.getCell(5).font = BOLD_FONT;
   }
-  // Total per-unit CapEx (formula = full budget = cost/unit × units)
-  const row5 = ws.addRow(["Total Per-Unit CapEx (full budget)"]);
-  row5.getCell(1).font = BOLD_FONT;
-  row5.getCell(2).value = { formula: "B2*B3" } as ExcelJS.CellFormulaValue;
-  row5.getCell(2).numFmt = CURRENCY_FMT;
-  row5.getCell(2).font = BOLD_FONT;
 
   // If the renovation runs past the hold, only the portion paced INSIDE the hold is
-  // booked. Trigger on the ENGINE truth (booked < full budget) rather than the end
-  // month, so the legacy units_per_month pacing (no end month) is caught too.
-  const effectiveEnd = capex.renovation_end_month && capex.renovation_end_month >= startMonth
-    ? capex.renovation_end_month
-    : (upm > 0 && capex.units_to_renovate > 0 ? startMonth + Math.ceil(capex.units_to_renovate / upm) - 1 : startMonth);
-  const fullBudget = (capex.per_unit_cost || 0) * (capex.units_to_renovate || 0);
+  // booked. Trigger on the ENGINE truth (booked < full budget) across all tiers.
+  const effectiveEnd = renoLines.reduce((mx, l) => Math.max(mx, lineEnd(l)), 0);
+  const fullBudget = renoLines.reduce((s, l) => s + (l.per_unit_cost || 0) * (l.units_to_renovate || 0), 0);
   if (holdMonths && bookedRenovation !== undefined && bookedRenovation < fullBudget - 1) {
     const bookedRow = ws.addRow(["Booked within hold (paced)", Math.round(bookedRenovation)]);
     bookedRow.getCell(2).numFmt = CURRENCY_FMT;
