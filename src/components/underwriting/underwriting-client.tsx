@@ -13,6 +13,7 @@ import { SensitivityGrid } from "./sensitivity-grid";
 import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
 import { computeTaxFlags } from "@/lib/tax-flags";
+import { describeScenario } from "@/lib/scenario-description";
 import type { UnderwritingResult, RentBasis, UnrenovatedBasis, RenovatedBasis, ExitAssumptions } from "@/lib/underwriting";
 import { uploadFile } from "@/lib/upload-client";
 
@@ -654,6 +655,7 @@ export function UnderwritingClient({
           deal={deal}
           loading={loading}
           onUpdate={updateScenario}
+          baseScenario={scenarios.find((s) => s.type === "base")}
         />
       )}
 
@@ -675,13 +677,16 @@ function ScenarioAnalysis({
   deal,
   loading,
   onUpdate,
+  baseScenario,
 }: {
   scenario: Scenario;
   result: UnderwritingResult;
   deal: Deal;
   loading: boolean;
   onUpdate: (updates: Partial<Record<string, unknown>>, opts?: { applyResult?: boolean }) => Promise<void>;
+  baseScenario?: Scenario;
 }) {
+  const description = describeScenario(scenario, baseScenario);
   return (
     <div className="space-y-4">
       {/* Warnings */}
@@ -698,6 +703,13 @@ function ScenarioAnalysis({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Auto-generated scenario description — key inputs / diffs vs Base Case */}
+      {description && (
+        <p className="text-xs text-slate-400 -mt-1 px-0.5 leading-snug">
+          <span className="text-slate-500">{scenario.name}:</span> {description}
+        </p>
       )}
 
       {/* Key Metrics — at the top */}
