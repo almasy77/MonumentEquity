@@ -104,6 +104,13 @@ export function UnderwritingClient({
         custom: "Custom",
       };
 
+      // Seeding chain: Base Case starts FROM the Current scenario (seller actuals),
+      // Renovation starts FROM the Base Case — so each analytical case begins from
+      // real numbers instead of blank defaults. Falls back to a fresh build when the
+      // upstream scenario doesn't exist yet.
+      const seedTypeFor: Record<string, string> = { base: "current", renovation: "base" };
+      const seed = scenarios.find((s) => s.type === seedTypeFor[type]);
+
       const res = await fetch("/api/scenarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -111,6 +118,7 @@ export function UnderwritingClient({
           deal_id: deal.id,
           name: names[type] || "Base Case",
           type,
+          ...(seed ? { clone_from: seed.id } : {}),
         }),
       });
 
@@ -618,8 +626,8 @@ export function UnderwritingClient({
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {[
-                { type: "base", label: "Base Case", desc: "your assumptions — 3% rent growth, 2% expense escalation" },
-                { type: "renovation", label: "Renovation", desc: "value-add — reno capex + renovated rents" },
+                { type: "base", label: "Base Case", desc: "your assumptions — seeds from Current if present" },
+                { type: "renovation", label: "Renovation", desc: "value-add — seeds from Base if present" },
                 { type: "upside", label: "Upside", desc: "5% rent growth, 1.5% expense escalation" },
                 { type: "downside", label: "Downside", desc: "1% rent growth, 3% expense escalation" },
               ].map(({ type, label, desc }) => (
