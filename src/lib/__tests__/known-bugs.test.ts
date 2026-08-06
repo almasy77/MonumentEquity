@@ -9,7 +9,7 @@
  * "bid_price labeled" is an export-level check (Phase 3 d), not an engine test.
  */
 import { describe, it, expect } from "vitest";
-import { calculateUnderwriting } from "../underwriting";
+import { calculateUnderwriting, buildUnitMixFromRentRoll } from "../underwriting";
 import type { ScenarioInputs, UnitMix } from "../underwriting";
 
 /**
@@ -158,5 +158,23 @@ describe("known bugs (flip it.fails → it as phases land)", () => {
     const maxAnnualDS = r.annual[0].noi / 1.25;
     const dscrLoan = maxAnnualDS / 12 / pmtFactor;
     expect(r.metrics.loan_amount).toBeLessThanOrEqual(Math.min(ltvLoan, dscrLoan) + 1);
+  });
+
+  // Colony Pointe scrutiny: a directly-imported rent roll with NO unit-type /
+  // bedroom column must NOT be silently labeled "1BR/1BA" for every unit (that
+  // deal was a 2BR/1BA property). The deterministic unit-mix builder must never
+  // inject a bedroom count the source didn't provide.
+  it("a rent roll with no unit_type is not silently defaulted to 1BR/1BA", () => {
+    const typeless = Array.from({ length: 12 }, (_, i) => ({
+      current_rent: 900 + i * 10,
+      market_rent: 1100,
+      // no unit_type — mirrors an Excel rent roll with only Unit / Rent / SqFt columns
+    }));
+    const mix = buildUnitMixFromRentRoll(typeless, 12);
+    expect(mix.length).toBeGreaterThan(0);
+    for (const m of mix) {
+      expect(m.type).not.toBe("1BR/1BA");
+      expect(m.type).not.toMatch(/^\d+BR/); // never fabricate any bedroom count
+    }
   });
 });

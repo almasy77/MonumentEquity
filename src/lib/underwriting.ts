@@ -8,6 +8,7 @@
 import { calculateAnnualXIRR } from "./irr";
 import { computeTaxLayer, TAX_DEFAULTS } from "./tax";
 import type { TaxAssumptions, TaxResult } from "./tax";
+import { jurisdictionRulesFor } from "./property-tax-jurisdictions";
 
 // ─── Input Types ─────────────────────────────────────────────
 
@@ -336,6 +337,7 @@ export interface PropertyTaxAbatement {
 
 export interface ParcelMeta {
   parcel_id?: string;
+  state?: string; // 2-letter — selects the reassessment method (see property-tax-jurisdictions.ts)
   taxing_district?: string;
   property_class?: string;
   effective_tax_rate_source?: string;
@@ -360,7 +362,11 @@ export const HB920_DEFAULTS: HB920Shape = {
   reappraisal_bump_pct: 0.10,
 };
 
-export type PropertyTaxScenarioName = "abated_transfers" | "abatement_lost" | "reassessed_to_price";
+export type PropertyTaxScenarioName =
+  | "abated_transfers"
+  | "abatement_lost"
+  | "reassessed_to_price"
+  | "periodic_hold"; // non-sale-price jurisdictions: hold the entered bill, escalated only — NO reassessment toward price
 
 export interface PropertyTaxAssumptions {
   enabled: boolean;
@@ -378,12 +384,22 @@ export interface PropertyTaxAssumptions {
 /**
  * Scenario-in-force default (spec Phase 2.4): abatement_lost whenever an
  * abatement exists but its transfer is not CONFIRMED; abated_transfers when
- * confirmed; reassessed_to_price when there is no abatement record.
+ * confirmed. With no abatement the reassessment mechanic is JURISDICTION-driven:
+ *  - no state on file  → reassessed_to_price (backward compat: this is exactly
+ *    the pre-jurisdiction default, so existing saved deals are unchanged).
+ *  - "sale_price" state → reassessed_to_price (welcome-stranger, e.g. Ohio's
+ *    old simplification — the county reassesses toward the purchase price).
+ *  - "periodic_cycle" or unmapped ("unknown") state → periodic_hold: fail SAFE
+ *    by holding the entered bill (escalated only), never growing it toward the
+ *    purchase price. Unmapped states are ALSO flagged by checks.ts so the user
+ *    must confirm the county's mechanics before trusting the number.
  */
 export function propertyTaxScenarioInForce(pt: PropertyTaxAssumptions): PropertyTaxScenarioName {
   if (pt.scenario) return pt.scenario;
-  if (!pt.abatement) return "reassessed_to_price";
-  return pt.abatement.transferable === "confirmed" ? "abated_transfers" : "abatement_lost";
+  if (pt.abatement) return pt.abatement.transferable === "confirmed" ? "abated_transfers" : "abatement_lost";
+  const state = pt.parcel?.state;
+  if (!state) return "reassessed_to_price"; // backward compat — missing state behaves as before
+  return jurisdictionRulesFor(state).method === "sale_price" ? "reassessed_to_price" : "periodic_hold";
 }
 
 /** HB 920 year-over-year growth factor, with reappraisal bumps. */
@@ -419,6 +435,13 @@ export function propertyTaxBillForTaxYear(
   taxYear: number,
 ): number {
   const shape = { ...HB920_DEFAULTS, ...pt.hb920 };
+  // HB 920's reappraisal calendar ([2026, 2029]) is Franklin County OH-specific.
+  // Don't leak it into an explicitly non-OH jurisdiction (unless the deal set its
+  // own hb920.reappraisal_years). No-state deals keep the default for backward compat.
+  const state = pt.parcel?.state;
+  if (state && state.toUpperCase() !== "OH" && !pt.hb920?.reappraisal_years) {
+    shape.reappraisal_years = [];
+  }
   const anchor = taxYearOfMonth(pt, 0);
   const ab = pt.abatement;
 
@@ -426,6 +449,15 @@ export function propertyTaxBillForTaxYear(
     case "reassessed_to_price": {
       const base = (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
       return shapeBill(base, anchor, taxYear, shape);
+    }
+    case "periodic_hold": {
+      // Non-sale-price jurisdictions: the bill does NOT jump toward the purchase
+      // price. Hold the entered bill (reassessed_value should be the CURRENT
+      // assessed value for these states, not the price) and grow it only by the
+      // voted-levy drift — no floating-share reappraisal bump toward valuation.
+      const base = (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
+      const flatShape: HB920Shape = { floating_share: 0, inflation_cap: 0, levy_drift: shape.levy_drift, reappraisal_years: [] };
+      return shapeBill(base, anchor, taxYear, flatShape);
     }
     case "abatement_lost": {
       const base = ab ? ab.unabated_annual_tax : (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
@@ -498,9 +530,18 @@ export function computePropertyTaxVectors(
 
 /**
  * Property tax reassessment (post-acquisition + exit-side).
+ *
+ * NOTE ON JURISDICTION: the "reassess toward the sale price" mechanic below is a
+ * SALE-PRICE ("welcome stranger") default — historically Ohio-flavored. It is NOT
+ * universal: most states reassess only on a periodic county revaluation cycle and
+ * the sale price does not change the bill at closing. The v2 engine now selects
+ * the mechanic per jurisdiction via property-tax-jurisdictions.ts (see
+ * propertyTaxScenarioInForce); the v1 model here still assumes reassess-to-price
+ * and should be used only where that actually applies.
+ *
  * The seller's frozen bill understates the buyer's real tax burden twice:
- *  1. Operations — the county reassesses toward the sale price (Franklin
- *     County OH: triennial update; sale prices feed assessments).
+ *  1. Operations — a sale-price jurisdiction reassesses toward the sale price
+ *     (e.g. an Ohio-style triennial update where sale prices feed assessments).
  *  2. Exit — YOUR buyer underwrites THEIR reassessed taxes at THEIR price,
  *     so exit NOI capitalized at the seller-era bill overstates exit value.
  *     Closed form resolves the circularity: exitValue = NOI_excl_tax / (cap + rate).
@@ -1493,8 +1534,34 @@ export function calculateUnderwriting(
   if (revenue.vacancy_rate < 0.03) warnings.push("Vacancy below 3% — may be aggressive");
   if (revenue.vacancy_rate > 0.20) warnings.push("Vacancy above 20% — verify assumption");
   if (revenue.rent_growth_rate > 0.05) warnings.push("Rent growth above 5%/yr — may be aggressive");
-  if (exit.exit_cap_rate > 0 && goingInCap > 0 && exit.exit_cap_rate < goingInCap * 0.85) {
-    warnings.push("Exit cap significantly below going-in — verify exit assumptions");
+  if (exit.exit_cap_rate > 0 && goingInCap > 0) {
+    if (exit.exit_cap_rate < goingInCap * 0.85) {
+      warnings.push("Exit cap significantly below going-in — verify exit assumptions");
+    } else if (exit.exit_cap_rate < goingInCap + 0.005) {
+      // House convention: exit cap should be 50–100 bps ABOVE going-in to cushion
+      // cap-rate decompression over the hold. Flat/compressed exit is aggressive.
+      warnings.push(
+        `Exit cap ${(exit.exit_cap_rate * 100).toFixed(2)}% is less than 50 bps above the going-in cap ${(goingInCap * 100).toFixed(2)}% — house convention is entry +50–100 bps; a flat or compressed exit cap needs a specific, stated reason`
+      );
+    }
+  }
+
+  // Jurisdiction-aware property-tax v2 sanity warnings.
+  {
+    const v2pt = expenses.property_tax_v2;
+    if (v2pt?.enabled) {
+      const st = v2pt.parcel?.state;
+      if (st && jurisdictionRulesFor(st).method === "unknown") {
+        warnings.push(
+          `No property-tax reassessment rule mapped for ${st.toUpperCase()} — the bill is held flat (not reassessed to price) as a fail-safe; confirm the county's mechanics before trusting it`
+        );
+      }
+      if (propertyTaxScenarioInForce(v2pt) === "periodic_hold" && v2pt.reassessed_value == null) {
+        warnings.push(
+          "Periodic-revaluation jurisdiction: the tax bill defaults off the purchase price — enter the CURRENT assessed value so the held-flat bill reflects today's assessment, not the sale price"
+        );
+      }
+    }
   }
 
   const totalCapex = getRenovationLines(capex).reduce((s, l) => s + l.per_unit_cost * l.units_to_renovate, 0) +

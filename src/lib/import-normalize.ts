@@ -63,18 +63,19 @@ Rules:
 - Extract EVERY unit listed
 - Use the unit number/label exactly as shown
 - For unit_type, normalize to patterns like "Studio", "1BR/1BA", "2BR/1BA", "2BR/2BA", "3BR/2BA", etc.
+- CRITICAL: only set unit_type when the source ACTUALLY states a bedroom/bath count or unit/floor-plan type. If the rent roll has no unit-type, bedroom, or bathroom column, set unit_type to "Unknown" — do NOT guess, and do NOT infer bedroom count from square footage. It is far better to return "Unknown" than to default every unit to "1BR/1BA".
 - current_rent and market_rent should be MONTHLY amounts
 - Status: "occupied", "vacant", "notice_to_vacate", or "down"
 - Dates in YYYY-MM-DD format when possible
 - Dollar amounts as raw numbers (no formatting)
-- If a field is not present, omit it`;
+- If a field is not present, omit it (except unit_type — use "Unknown" as above rather than omitting)`;
 
 const RENT_ROLL_PROMPT = `Parse this rent roll data and return a JSON array of units:
 
 [
   {
     "unit_number": "string",
-    "unit_type": "Studio|1BR/1BA|2BR/1BA|etc",
+    "unit_type": "Studio|1BR/1BA|2BR/1BA|etc — or \"Unknown\" if the source has no bedroom/unit-type column (do NOT guess)",
     "sqft": number,
     "status": "occupied|vacant|notice_to_vacate|down",
     "tenant_name": "string",
