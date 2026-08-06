@@ -175,7 +175,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    updatedScenario.monthly_pro_forma = result.monthly;
+    updatedScenario.monthly_pro_forma = []; // storage: recomputed on read
     updatedScenario.calculated_metrics = {
       irr: result.metrics.irr ?? undefined,
       cash_on_cash: result.metrics.average_cash_on_cash,

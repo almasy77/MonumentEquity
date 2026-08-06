@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
         name: cloneName,
         version: 1,
         is_active: true,
-        monthly_pro_forma: result.monthly,
+        monthly_pro_forma: [], // storage: recomputed on read, never persisted
         calculated_metrics: {
           irr: result.metrics.irr ?? undefined,
           cash_on_cash: result.metrics.average_cash_on_cash,
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
       },
       exit_assumptions: inputs.exit as unknown as Record<string, unknown>,
       depreciation_assumptions: (inputs.depreciation || {}) as unknown as Record<string, unknown>,
-      monthly_pro_forma: result.monthly,
+      monthly_pro_forma: [], // storage: recomputed on read, never persisted
       calculated_metrics: {
         irr: result.metrics.irr ?? undefined,
         cash_on_cash: result.metrics.average_cash_on_cash,

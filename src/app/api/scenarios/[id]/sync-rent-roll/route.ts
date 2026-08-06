@@ -62,7 +62,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
 
     const result = calculateUnderwriting(inputs);
 
-    updated.monthly_pro_forma = result.monthly;
+    updated.monthly_pro_forma = []; // storage: recomputed on read
     updated.calculated_metrics = {
       irr: result.metrics.irr ?? undefined,
       cash_on_cash: result.metrics.average_cash_on_cash,
