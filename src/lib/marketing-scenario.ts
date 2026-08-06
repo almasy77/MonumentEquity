@@ -233,7 +233,7 @@ export async function createOrUpdateMarketingScenario(
     },
     exit_assumptions: inputs.exit as unknown as Record<string, unknown>,
     depreciation_assumptions: (inputs.depreciation || {}) as unknown as Record<string, unknown>,
-    monthly_pro_forma: result.monthly,
+    monthly_pro_forma: [], // storage: recomputed on read, never persisted
     calculated_metrics,
     created_at: existing?.created_at ?? now,
     updated_at: now,

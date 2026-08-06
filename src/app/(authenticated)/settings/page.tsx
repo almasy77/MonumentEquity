@@ -13,6 +13,7 @@ import { NotificationPrefsForm } from "@/components/settings/notification-prefs-
 import { ChecklistTemplateViewer } from "@/components/settings/checklist-template-viewer";
 import { TeamManagement } from "@/components/settings/team-management";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
+import { StorageCleanupButton } from "@/components/settings/storage-cleanup-button";
 import { getEntity } from "@/lib/db";
 import type { User } from "@/lib/validations";
 
@@ -86,6 +87,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ChecklistTemplateViewer />
+        </CardContent>
+      </Card>
+
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader>
+          <CardTitle className="text-white">Storage</CardTitle>
+          <CardDescription className="text-slate-400">
+            Reclaim database space by clearing the recomputable pro-forma cache from
+            stored scenarios.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <StorageCleanupButton />
         </CardContent>
       </Card>
     </div>

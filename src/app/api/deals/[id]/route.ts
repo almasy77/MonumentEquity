@@ -5,6 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { extractImageFromUrl } from "@/lib/ai-extract";
+import { deleteBlobUrl } from "@/lib/blob-helpers";
 import type { Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -164,6 +165,14 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     await redis.del(`deal:${id}`);
     await removeFromIndex("deals:active", id);
     await removeFromIndex(`deals:by_stage:${deal.stage}`, id);
+
+    // Delete the deal's Blob attachments (source files + photos) so they don't
+    // orphan in Blob storage after the deal record is gone. Best-effort.
+    const blobUrls = [
+      ...(deal.files ?? []).map((f) => f.url),
+      ...(deal.photos ?? []),
+    ].filter((u): u is string => typeof u === "string" && u.length > 0);
+    await Promise.allSettled(blobUrls.map((u) => deleteBlobUrl(u)));
 
     // Cascade delete: scenarios, tasks, checklists for this deal
     const scenarioIds = await getFromIndex(`scenarios:by_deal:${id}`);
