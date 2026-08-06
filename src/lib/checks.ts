@@ -139,7 +139,7 @@ export function computeReconciliationChecks(
     const v2 = inputs.expenses.property_tax_v2;
     if (v2?.enabled) {
       let expected = 0;
-      for (let mo = 0; mo < 12; mo++) expected += propertyTaxForMonthV2(v2, inputs.purchase.purchase_price, mo);
+      for (let mo = 0; mo < 12; mo++) expected += propertyTaxForMonthV2(v2, inputs.purchase.purchase_price, mo, inputs.expenses.tax_escalation_rate);
       const actual = result.annual[0]?.opex_breakdown.property_tax ?? 0;
       const diff = Math.abs(actual - expected);
       checks.push({

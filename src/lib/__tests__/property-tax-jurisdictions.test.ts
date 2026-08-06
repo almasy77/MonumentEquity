@@ -100,3 +100,42 @@ describe("periodic_hold does not reassess toward the purchase price", () => {
     expect(holdFlatY5).toBeLessThan(reassessY5);
   });
 });
+
+describe("periodic_hold escalation + reappraisal step", () => {
+  const price = 2_500_000;
+
+  it("escalates the held bill by the deal's tax_escalation_rate (not HB920 levy drift)", () => {
+    const pt = base({ parcel: { state: "NC" }, reassessed_value: 900_000, effective_tax_rate: 0.012 });
+    // anchor = 2025 (closing 2025-01-01)
+    const y0 = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2025, 0.03);
+    const y3 = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2028, 0.03);
+    expect(y0).toBeCloseTo(900_000 * 0.012, 6);
+    // 3 years of 3% millage escalation on the frozen assessed value.
+    expect(y3).toBeCloseTo(900_000 * 0.012 * Math.pow(1.03, 3), 4);
+    // A higher escalation assumption produces a higher bill — the assumption is honored.
+    const y3hot = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2028, 0.05);
+    expect(y3hot).toBeGreaterThan(y3);
+  });
+
+  it("re-marks the assessed value at the next reappraisal year, then keeps escalating", () => {
+    const pt = base({
+      parcel: { state: "NC" },
+      reassessed_value: 900_000,
+      effective_tax_rate: 0.012,
+      next_reappraisal_year: 2028,
+      reappraisal_target_value: 1_400_000, // county steps the assessment up at the 2028 reval
+    });
+    const esc = 0.02;
+    // Before the reappraisal: still on the $900k assessment, escalated from anchor.
+    const y2 = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2027, esc);
+    expect(y2).toBeCloseTo(900_000 * 0.012 * Math.pow(1.02, 2), 4);
+    // Reappraisal year: re-marks to $1.4M (escalation resets to the reval year).
+    const yReval = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2028, esc);
+    expect(yReval).toBeCloseTo(1_400_000 * 0.012, 4);
+    // A step up at the reval, not a smooth ramp.
+    expect(yReval).toBeGreaterThan(y2 * 1.4);
+    // After the reval: escalates from the new base.
+    const yAfter = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2030, esc);
+    expect(yAfter).toBeCloseTo(1_400_000 * 0.012 * Math.pow(1.02, 2), 4);
+  });
+});
