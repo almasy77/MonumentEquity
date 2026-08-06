@@ -84,6 +84,9 @@ export async function POST(req: NextRequest) {
         ...source,
         id,
         name: cloneName,
+        // A clone can retype the copy (e.g. seed a Base Case FROM the Current
+        // scenario) — otherwise it inherits the source's type.
+        type: body.type || source.type,
         version: 1,
         is_active: true,
         monthly_pro_forma: [], // storage: recomputed on read, never persisted
