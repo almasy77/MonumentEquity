@@ -82,3 +82,21 @@ export async function getEntitiesByIndex<T>(
 export function generateId(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * SCAN all keys matching a glob pattern (e.g. "deal:*"). Cursor-paged so it
+ * returns the complete set even across large keyspaces. Use sparingly — SCAN
+ * is O(N) over the keyspace — but it's the only way to reach entities that are
+ * no longer in any index (e.g. dead/passed deals removed from deals:active).
+ */
+export async function scanKeys(pattern: string, count: number = 250): Promise<string[]> {
+  const r = getRedis();
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [next, batch] = await r.scan(cursor, { match: pattern, count });
+    cursor = next;
+    keys.push(...batch);
+  } while (cursor !== "0");
+  return keys;
+}
