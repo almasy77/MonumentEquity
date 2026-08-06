@@ -14,6 +14,7 @@ export const maxDuration = 60;
 type RouteContext = { params: Promise<{ id: string }> };
 
 const MAX_TEXT_LENGTH = 20000;
+const MAX_FILE_BASE64 = 12_000_000; // ~9MB decoded — a county tax PDF/scan is well under this
 
 const SYSTEM_PROMPT = `You are a data-extraction assistant for a real-estate underwriting tool. The user pastes the raw text of a US county tax / auditor record (e.g. a Franklin County, OH auditor "Printable Page", or any county assessor page or PDF text). Extract the property-tax facts by calling the "extract_tax_record" tool.
 
@@ -130,21 +131,45 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    const { text } = await req.json();
-    if (!text || typeof text !== "string" || text.trim().length === 0) {
-      return NextResponse.json({ error: "Tax record text is required" }, { status: 400 });
+    // Accept EITHER pasted text OR an uploaded file (PDF/image) sent as base64.
+    const body = await req.json();
+    const text: string | undefined = typeof body.text === "string" ? body.text : undefined;
+    const fileBase64: string | undefined = typeof body.fileBase64 === "string" ? body.fileBase64 : undefined;
+    const mediaType: string = typeof body.mediaType === "string" ? body.mediaType : "application/pdf";
+    const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+
+    if (!fileBase64 && (!text || text.trim().length === 0)) {
+      return NextResponse.json({ error: "Paste the tax record text or upload a PDF/image." }, { status: 400 });
     }
-    if (text.length > MAX_TEXT_LENGTH) {
+    if (text && text.length > MAX_TEXT_LENGTH) {
       return NextResponse.json(
         { error: `Tax record too long (max ${MAX_TEXT_LENGTH.toLocaleString()} characters)` },
         { status: 400 },
       );
+    }
+    if (fileBase64) {
+      if (mediaType !== "application/pdf" && !IMAGE_TYPES.includes(mediaType as (typeof IMAGE_TYPES)[number])) {
+        return NextResponse.json({ error: "Unsupported file type. Upload a PDF, PNG, or JPG." }, { status: 400 });
+      }
+      if (fileBase64.length > MAX_FILE_BASE64) {
+        return NextResponse.json({ error: "File too large. Maximum ~9MB." }, { status: 400 });
+      }
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "AI not configured" }, { status: 500 });
     }
+
+    // A document block for an uploaded PDF, an image block for a photo, else the pasted text.
+    const userContent: Anthropic.Messages.ContentBlockParam[] = fileBase64
+      ? [
+          mediaType === "application/pdf"
+            ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } }
+            : { type: "image", source: { type: "base64", media_type: mediaType as (typeof IMAGE_TYPES)[number], data: fileBase64 } },
+          { type: "text", text: "Extract the property-tax fields from this county tax / auditor record by calling the extract_tax_record tool." },
+        ]
+      : [{ type: "text", text: `Extract the property-tax fields from this county tax record:\n\n${text}` }];
 
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
@@ -153,18 +178,13 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       system: SYSTEM_PROMPT,
       tools: [EXTRACT_TOOL],
       tool_choice: { type: "tool", name: "extract_tax_record" },
-      messages: [
-        {
-          role: "user",
-          content: `Extract the property-tax fields from this county tax record:\n\n${text}`,
-        },
-      ],
+      messages: [{ role: "user", content: userContent }],
     });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {
       return NextResponse.json(
-        { error: "Could not read a tax record from that text. Try pasting the full auditor page." },
+        { error: "Could not read a tax record from that document. Try the full auditor page (PDF, image, or pasted text)." },
         { status: 422 },
       );
     }

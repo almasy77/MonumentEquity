@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Calculator,
   AlertTriangle,
+  Upload,
 } from "lucide-react";
 
 type Step = "input" | "extracting" | "review" | "saving" | "done";
@@ -74,6 +75,7 @@ export function TaxImportDialog({ dealId, trigger }: TaxImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("input");
   const [text, setText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
 
@@ -84,15 +86,31 @@ export function TaxImportDialog({ dealId, trigger }: TaxImportDialogProps) {
     setError("");
   }
 
-  async function handleExtract() {
-    if (!text.trim()) return;
+  // Read a picked PDF/image to base64 and extract from it (no upload/persistence).
+  async function handleFileSelected(file: File) {
+    const mediaType = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
+    if (!["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(mediaType)) {
+      setError("Upload a PDF, PNG, or JPG of the tax record.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1] ?? "";
+      handleExtract({ fileBase64: base64, mediaType });
+    };
+    reader.onerror = () => setError("Could not read that file. Try another.");
+    reader.readAsDataURL(file);
+  }
+
+  async function handleExtract(payload?: { fileBase64: string; mediaType: string }) {
+    if (!payload && !text.trim()) return;
     setStep("extracting");
     setError("");
     try {
       const res = await fetch(`/api/deals/${dealId}/import-tax`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(payload ?? { text }),
       });
       if (!res.ok) {
         let msg = "Failed to extract tax record";
@@ -174,16 +192,42 @@ export function TaxImportDialog({ dealId, trigger }: TaxImportDialogProps) {
         {step === "input" && (
           <div className="space-y-4 mt-2">
             <p className="text-sm text-slate-400">
-              Paste the raw text of a county tax / auditor record (e.g. a Franklin
-              County Auditor &ldquo;Printable Page&rdquo;, or any US county assessor page
-              or PDF text). AI will extract the tax figures and derive a clean,
-              self-consistent mill-rate basis for this deal.
+              Upload the county tax / auditor record (a PDF or a screenshot — e.g. a
+              Franklin County Auditor &ldquo;Printable Page&rdquo;), or paste the text.
+              AI reads it and derives a clean, self-consistent mill-rate basis for this deal.
             </p>
+
+            {/* Primary: upload a PDF/image (sent straight to the AI — not stored). */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileSelected(f);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-slate-600 bg-slate-800/40 py-6 text-slate-300 hover:border-blue-500 hover:bg-slate-800/70 transition"
+            >
+              <Upload className="h-6 w-6 text-blue-400" />
+              <span className="text-sm font-medium">Upload PDF or image</span>
+              <span className="text-[11px] text-slate-500">PDF, PNG, or JPG · not stored</span>
+            </button>
+
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <span className="h-px flex-1 bg-slate-700" /> or paste text <span className="h-px flex-1 bg-slate-700" />
+            </div>
+
             <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste the county tax record text here…"
-              className="min-h-[220px] bg-slate-950 border-slate-700 text-slate-200 placeholder:text-slate-600 font-mono text-xs"
+              className="min-h-[140px] bg-slate-950 border-slate-700 text-slate-200 placeholder:text-slate-600 font-mono text-xs"
             />
             <div className="flex items-center justify-between">
               <span className={`text-xs ${text.length > 20000 ? "text-red-400" : "text-slate-500"}`}>
@@ -194,12 +238,12 @@ export function TaxImportDialog({ dealId, trigger }: TaxImportDialogProps) {
             <div className="flex gap-3 pt-1">
               <Button
                 type="button"
-                onClick={handleExtract}
+                onClick={() => handleExtract()}
                 disabled={!text.trim() || text.length > 20000}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
               >
                 <Calculator className="h-4 w-4 mr-1.5" />
-                Extract
+                Extract from text
               </Button>
             </div>
           </div>
