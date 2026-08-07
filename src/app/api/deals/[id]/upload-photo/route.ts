@@ -28,11 +28,21 @@ export async function POST(req: NextRequest, context: RouteContext) {
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
+    // Only accept images, and cap the size — this route previously read the whole
+    // body into memory unbounded and stored arbitrary bytes labeled image/jpeg.
+    const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB
+    if (!file.type.startsWith("image/")) {
+      return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      return NextResponse.json({ error: "Image too large. Maximum 10MB." }, { status: 400 });
+    }
 
     const bytes = await file.arrayBuffer();
-    const blob = await put(`deal-photos/${id}-${Date.now()}.jpg`, bytes, {
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const blob = await put(`deal-photos/${id}-${Date.now()}.${ext}`, bytes, {
       access: "public",
-      contentType: "image/jpeg",
+      contentType: file.type, // the validated real type, not a hardcoded label
     });
 
     deal.photos = [blob.url];
@@ -41,8 +51,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ photo_url: blob.url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Upload photo error:", message, err);
-    return NextResponse.json({ error: `Failed to upload photo: ${message}` }, { status: 500 });
+    console.error("Upload photo error:", err);
+    return NextResponse.json({ error: "Failed to upload photo" }, { status: 500 });
   }
 }
