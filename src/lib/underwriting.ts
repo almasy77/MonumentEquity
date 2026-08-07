@@ -501,7 +501,13 @@ export function propertyTaxBillForTaxYear(
       return periodicHoldBill(pt, purchasePrice, taxYear, anchor, escalationRate ?? shape.levy_drift);
     }
     case "abatement_lost": {
-      const base = ab ? ab.unabated_annual_tax : (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
+      // Guard against a $0 unabated bill (an abatement record can be seeded with
+      // unabated_annual_tax = 0 when the deal has an assessment % but no mill rate,
+      // so the reassessed-rate estimate came out undefined). A $0 here would zero
+      // out property tax for the whole hold. Fall back to the reassessed basis.
+      const base = ab && ab.unabated_annual_tax > 0
+        ? ab.unabated_annual_tax
+        : (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
       return shapeBill(base, anchor, taxYear, shape);
     }
     case "abated_transfers": {
@@ -510,8 +516,11 @@ export function propertyTaxBillForTaxYear(
         return shapeBill(ab.abated_annual_tax, anchor, taxYear, shape);
       }
       // Post-abatement: the full bill, shaped from the anchor (the unabated
-      // levy kept drifting while the abatement ran).
-      return shapeBill(ab.unabated_annual_tax, anchor, taxYear, shape);
+      // levy kept drifting while the abatement ran). Same $0-guard as above.
+      const unabated = ab.unabated_annual_tax > 0
+        ? ab.unabated_annual_tax
+        : (pt.reassessed_value ?? purchasePrice) * pt.effective_tax_rate;
+      return shapeBill(unabated, anchor, taxYear, shape);
     }
   }
 }
@@ -1606,7 +1615,25 @@ export function calculateUnderwriting(
           "Periodic-revaluation jurisdiction: the tax bill defaults off the purchase price — enter the CURRENT assessed value so the held-flat bill reflects today's assessment, not the sale price"
         );
       }
+      // A $0 unabated bill would zero out property tax under abatement-lost — the
+      // engine falls back to the reassessed rate, but flag it so the user sets a real figure.
+      if (v2pt.abatement && !(v2pt.abatement.unabated_annual_tax > 0)) {
+        warnings.push(
+          "Abatement record has no unabated (full) bill — the model is estimating it from the reassessed rate; enter the post-abatement bill to avoid understating tax"
+        );
+      }
     }
+  }
+
+  // Over-specified renovation tiers: the capex spend bills every tier's full unit
+  // count, but only `totalUnits` units can actually reach the renovated state and
+  // earn a rent premium — so units beyond the property count are cash with no
+  // revenue benefit. (Well-partitioned tiers that sum to ≤ totalUnits are fine.)
+  const renoUnitsSum = getRenovationLines(capex).reduce((s, l) => s + l.units_to_renovate, 0);
+  if (totalUnits > 0 && renoUnitsSum > totalUnits) {
+    warnings.push(
+      `Renovation tiers cover ${renoUnitsSum} units but the property has ${totalUnits} — capex is billed for all ${renoUnitsSum}, yet only ${totalUnits} units earn a renovated-rent premium. Trim the tier unit counts to the property size.`
+    );
   }
 
   const totalCapex = getRenovationLines(capex).reduce((s, l) => s + l.per_unit_cost * l.units_to_renovate, 0) +

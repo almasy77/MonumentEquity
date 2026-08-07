@@ -2627,9 +2627,14 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                         // Seed the abatement record when the deal flags an abatement.
                                         if (d?.abatementPresent && !v2?.abatement) {
                                           const price = p.purchase_price || 0;
+                                          // Estimate the unabated (full) bill. Prefer price × effective rate;
+                                          // if no rate is known yet, fall back to the reassessed-rate default
+                                          // (0.0185) so the record is never seeded at $0 — a $0 unabated bill
+                                          // would zero out property tax under the abatement-lost scenario.
+                                          const effForUnabated = eff ?? patch.effective_tax_rate ?? 0.0185;
                                           patch.abatement = {
                                             abated_annual_tax: d.currentAnnualTax ?? 0, // current (abated) bill
-                                            unabated_annual_tax: eff != null && price ? Math.round(price * eff) : 0, // reassessed full bill
+                                            unabated_annual_tax: price ? Math.round(price * effForUnabated) : 0, // reassessed full bill
                                             final_abated_tax_year: new Date().getFullYear() + 2,
                                             transferable: "unconfirmed",
                                           };

@@ -6,6 +6,17 @@ import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, buildDefaultInputs, type ScenarioInputs } from "@/lib/underwriting";
 import type { Scenario, Deal } from "@/lib/validations";
 
+// Scenario-type growth-rate presets. Applied both when creating a scenario from
+// defaults and when a clone is RETYPED to one of these types (e.g. Renovation
+// seeded from Base) so the two paths produce the same starting assumptions.
+const SCENARIO_TYPE_PRESETS: Record<string, { rent_growth_rate?: number; tax_escalation_rate?: number; vacancy_rate?: number; exit_cap_rate?: number }> = {
+  upside: { rent_growth_rate: 0.05, tax_escalation_rate: 0.015, vacancy_rate: 0.05, exit_cap_rate: 0.06 },
+  downside: { rent_growth_rate: 0.01, tax_escalation_rate: 0.03, vacancy_rate: 0.10, exit_cap_rate: 0.08 },
+  value_add: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
+  renovation: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
+  // marketing / current are filled from documents — no growth-rate preset.
+};
+
 // GET /api/scenarios?deal_id=xxx — list scenarios for a deal
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -66,14 +77,35 @@ export async function POST(req: NextRequest) {
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       const cloneName = body.name || `${source.name} (Copy)`;
+      const clonedType = body.type || source.type;
+
+      // When a clone is RETYPED to a preset type (e.g. a Renovation seeded from
+      // Base), apply that type's growth-rate preset on top of the copied
+      // assumptions — otherwise the "Renovation" would be byte-identical to Base
+      // until hand-edited, differing from the non-clone create path. Only applied
+      // on an actual retype, and only for fields the preset defines.
+      const clonePreset = clonedType !== source.type ? (SCENARIO_TYPE_PRESETS[clonedType] || {}) : {};
+      const clonedRevenue = {
+        ...source.revenue_assumptions,
+        ...(clonePreset.rent_growth_rate !== undefined ? { rent_growth_rate: clonePreset.rent_growth_rate } : {}),
+        ...(clonePreset.vacancy_rate !== undefined ? { vacancy_rate: clonePreset.vacancy_rate } : {}),
+      };
+      const clonedExpenses = {
+        ...source.expense_assumptions,
+        ...(clonePreset.tax_escalation_rate !== undefined ? { tax_escalation_rate: clonePreset.tax_escalation_rate } : {}),
+      };
+      const clonedExit = {
+        ...source.exit_assumptions,
+        ...(clonePreset.exit_cap_rate !== undefined ? { exit_cap_rate: clonePreset.exit_cap_rate } : {}),
+      };
 
       const inputs = {
         purchase: source.purchase_assumptions,
         financing: source.financing_assumptions,
-        revenue: source.revenue_assumptions,
-        expenses: source.expense_assumptions,
+        revenue: clonedRevenue,
+        expenses: clonedExpenses,
         capex: source.capex_assumptions,
-        exit: source.exit_assumptions,
+        exit: clonedExit,
       tax: source.tax_assumptions,
         depreciation: (source as Record<string, unknown>).depreciation_assumptions || undefined,
       } as unknown as ScenarioInputs;
@@ -86,7 +118,10 @@ export async function POST(req: NextRequest) {
         name: cloneName,
         // A clone can retype the copy (e.g. seed a Base Case FROM the Current
         // scenario) — otherwise it inherits the source's type.
-        type: body.type || source.type,
+        type: clonedType,
+        revenue_assumptions: clonedRevenue,
+        expense_assumptions: clonedExpenses,
+        exit_assumptions: clonedExit,
         version: 1,
         is_active: true,
         monthly_pro_forma: [], // storage: recomputed on read, never persisted
@@ -172,14 +207,7 @@ export async function POST(req: NextRequest) {
 
     // Apply scenario-type-specific growth rate presets
     const scenarioType = body.type || "base";
-    const typePresets: Record<string, { rent_growth_rate?: number; tax_escalation_rate?: number; vacancy_rate?: number; exit_cap_rate?: number }> = {
-      upside: { rent_growth_rate: 0.05, tax_escalation_rate: 0.015, vacancy_rate: 0.05, exit_cap_rate: 0.06 },
-      downside: { rent_growth_rate: 0.01, tax_escalation_rate: 0.03, vacancy_rate: 0.10, exit_cap_rate: 0.08 },
-      value_add: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
-      renovation: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
-      // marketing / current are filled from documents — no growth-rate preset.
-    };
-    const preset = typePresets[scenarioType] || {};
+    const preset = SCENARIO_TYPE_PRESETS[scenarioType] || {};
 
     // Merge any provided overrides (explicit overrides > type presets > defaults)
     const inputs: ScenarioInputs = {
