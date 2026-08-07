@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     // Return 200 so Postmark doesn't retry on unexpected errors.
     return NextResponse.json({
       status: "error",
-      message: err instanceof Error ? err.message : "Internal error",
+      message: "Internal error",
     });
   }
 }

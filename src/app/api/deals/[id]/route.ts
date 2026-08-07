@@ -50,6 +50,34 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     const bodyOrError = await safeJson(req);
     if (isErrorResponse(bodyOrError)) return bodyOrError;
     const body = bodyOrError;
+
+    // Mass-assignment hardening. The update below spreads `body` onto the deal, so
+    // guard the untrusted input: (1) drop server-controlled/immutable keys so they
+    // can't be overwritten, and (2) type-check the fields the underwriting engine
+    // and exports consume, rejecting malformed types (e.g. asking_price: "abc")
+    // before they reach a calculation. (Deliberately a targeted guard, not a full
+    // schema strip — that would risk dropping legitimate editor fields.)
+    for (const k of ["id", "user_id", "created_by", "created_at", "updated_at", "last_activity_at"]) {
+      delete (body as Record<string, unknown>)[k];
+    }
+    const isNum = (v: unknown) => typeof v === "number" && isFinite(v);
+    if (body.asking_price !== undefined && !(isNum(body.asking_price) && body.asking_price > 0)) {
+      return NextResponse.json({ error: "asking_price must be a positive number" }, { status: 400 });
+    }
+    if (body.units !== undefined && !(isNum(body.units) && body.units > 0)) {
+      return NextResponse.json({ error: "units must be a positive number" }, { status: 400 });
+    }
+    for (const k of ["bid_price", "current_noi", "square_footage", "year_built"] as const) {
+      if (body[k] !== undefined && body[k] !== null && !isNum(body[k])) {
+        return NextResponse.json({ error: `${k} must be a number` }, { status: 400 });
+      }
+    }
+    for (const k of ["photos", "files", "rent_roll", "contact_ids", "amenities"] as const) {
+      if (body[k] !== undefined && body[k] !== null && !Array.isArray(body[k])) {
+        return NextResponse.json({ error: `${k} must be an array` }, { status: 400 });
+      }
+    }
+
     const now = new Date().toISOString();
     const oldStage = existing.stage;
     const newStage = body.stage as DealStage | undefined;

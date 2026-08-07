@@ -28,8 +28,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
     return NextResponse.json(jsonResponse);
   } catch (error) {
+    console.error("POST /api/upload error:", error);
     return NextResponse.json(
-      { error: (error as Error).message },
+      { error: "Upload failed" },
       { status: 400 },
     );
   }

@@ -47,8 +47,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, files: deal.files });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete file";
-    console.error("DELETE /api/deals/[id]/files/[fileId] error:", message, err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("DELETE /api/deals/[id]/files/[fileId] error:", err);
+    return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
   }
 }

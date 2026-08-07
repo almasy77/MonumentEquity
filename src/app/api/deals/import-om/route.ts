@@ -115,8 +115,7 @@ export async function POST(req: NextRequest) {
       error: errObj.error,
       stack: err instanceof Error ? err.stack : undefined,
     });
-    const message = err instanceof Error ? err.message : "Failed to process offering memo";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process offering memo" }, { status: 500 });
   }
 }
 

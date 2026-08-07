@@ -93,8 +93,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ file: dealFile, files: deal.files }, { status: 201 });
   } catch (err) {
     if (blobCleanup) await blobCleanup().catch(() => {});
-    const message = err instanceof Error ? err.message : "Failed to upload file";
-    console.error("POST /api/deals/[id]/files error:", message, err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("POST /api/deals/[id]/files error:", err);
+    return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
   }
 }
