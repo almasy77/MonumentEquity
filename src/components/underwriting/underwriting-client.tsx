@@ -7,6 +7,7 @@ import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, 
 import { useAiChatbot } from "./ai-chatbot-context";
 import { AssumptionsForm } from "./assumptions-form";
 import { MetricsBar } from "./metrics-bar";
+import { OperatingView } from "./operating-view";
 import { ProFormaTable } from "./pro-forma-table";
 import { PricingViewsCard } from "./pricing-views-card";
 import { SensitivityGrid } from "./sensitivity-grid";
@@ -772,6 +773,12 @@ function ScenarioAnalysis({
             }}
           />
         );
+      })()}
+
+      {/* Operations (Hold-Forever) — operating return with no sale assumption */}
+      {(() => {
+        const exit = (scenario.exit_assumptions ?? {}) as Partial<ExitAssumptions>;
+        return <OperatingView result={result} marketCapRate={exit.exit_cap_rate ?? result.metrics.going_in_cap} />;
       })()}
 
       {/* Pricing Views — valuation triangulation for the seller conversation */}
