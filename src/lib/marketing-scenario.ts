@@ -100,8 +100,32 @@ export function buildMarketingScenarioInputs(
   const base = buildDefaultInputs(toDealData(deal), {});
   const pf = data.marketing_pro_forma ?? {};
 
-  // ── Unit mix ── prefer the pro-forma unit mix; otherwise take the deal's
-  // rent-roll-derived mix but bill market rents as the operating rent.
+  const units = deal.units || base.revenue.unit_mix.reduce((sum, u) => sum + (u.count || 0), 0);
+  const dealHasRentRoll = (deal.rent_roll?.length ?? 0) > 0;
+
+  // Annual GPR stated (or derivable) from the OM's aggregate pro forma, cascading
+  // GPR → EGI → NOI. This is the source of truth for an aggregate-only OM that
+  // gives totals but no per-unit mix — without it the Marketing scenario would
+  // silently run on the deal's placeholder $1,000/unit rents.
+  const vacancyForDerive = pf.vacancy_rate ?? base.revenue.vacancy_rate;
+  const otherIncomeAnnualStated = pf.other_income ?? 0;
+  const statedTotalOpex =
+    pf.expenses?.total_operating_expenses ??
+    (pf.expenses
+      ? [pf.expenses.property_taxes, pf.expenses.insurance, pf.expenses.management_fees, pf.expenses.repairs_maintenance, pf.expenses.utilities, pf.expenses.payroll, pf.expenses.admin_marketing, pf.expenses.contract_services, pf.expenses.reserves]
+          .reduce<number>((s, v) => s + (v ?? 0), 0) || undefined
+      : undefined);
+  let derivedGprAnnual: number | undefined = pf.gross_potential_rent ?? undefined;
+  if (derivedGprAnnual == null && pf.effective_gross_income != null) {
+    derivedGprAnnual = (pf.effective_gross_income - otherIncomeAnnualStated) / Math.max(0.01, 1 - vacancyForDerive);
+  }
+  if (derivedGprAnnual == null && pf.net_operating_income != null && statedTotalOpex != null) {
+    const egi = pf.net_operating_income + statedTotalOpex;
+    derivedGprAnnual = (egi - otherIncomeAnnualStated) / Math.max(0.01, 1 - vacancyForDerive);
+  }
+
+  // ── Unit mix ── prefer the pro-forma unit mix; else derive per-unit market
+  // rent from the OM's stated GPR; else (real rent roll only) use the deal's mix.
   let unitMix: UnitMix[];
   if (pf.unit_mix && pf.unit_mix.length > 0) {
     unitMix = pf.unit_mix.map((r) => {
@@ -114,15 +138,17 @@ export function buildMarketingScenarioInputs(
         renovated_rent_premium: 0,
       };
     });
+  } else if (derivedGprAnnual != null && derivedGprAnnual > 0 && units > 0 && !dealHasRentRoll) {
+    // Aggregate-only OM with no rent roll: spread the stated GPR evenly across the
+    // units rather than fabricating a placeholder rent.
+    const perUnitMonthly = Math.round(derivedGprAnnual / units / 12);
+    unitMix = [{ type: "Average (from OM pro forma)", count: units, current_rent: perUnitMonthly, market_rent: perUnitMonthly, renovated_rent_premium: 0 }];
   } else {
     unitMix = base.revenue.unit_mix.map((u) => {
       const rent = u.market_rent > 0 ? u.market_rent : u.current_rent;
       return { ...u, current_rent: rent, market_rent: rent, renovated_rent_premium: 0 };
     });
   }
-
-  const units =
-    deal.units || unitMix.reduce((sum, u) => sum + (u.count || 0), 0);
 
   // ── EGI estimate (used only to convert a $ management fee into a rate) ──
   const gprAnnual =

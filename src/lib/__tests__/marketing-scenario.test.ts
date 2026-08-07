@@ -133,4 +133,35 @@ describe("buildMarketingScenarioInputs", () => {
     expect(result.monthly.length).toBeGreaterThan(0);
     expect(Number.isFinite(result.metrics.going_in_cap)).toBe(true);
   });
+
+  it("derives per-unit rent from a stated GPR when the OM has no unit mix and the deal has no rent roll", () => {
+    // Aggregate-only OM: totals but no unit_mix. Deal (10 units) has no rent roll.
+    const om = baseOM({
+      marketing_pro_forma: {
+        offering_price: 1_000_000,
+        gross_potential_rent: 240_000, // → $2,000/unit/mo across 10 units
+        vacancy_rate: 0.05,
+        expenses: { property_taxes: 20_000 },
+      },
+    });
+    const inp = buildMarketingScenarioInputs(DEAL, om);
+    const totalMarket = inp.revenue.unit_mix.reduce((s, u) => s + u.market_rent * u.count, 0);
+    // Rent comes from the OM's $240k GPR (→ $2,000/unit), NOT the $1,000/$1,100 placeholder.
+    expect(totalMarket).toBeCloseTo(20_000, 0); // 240,000 / 12
+    expect(inp.revenue.unit_mix.every((u) => u.market_rent === 2_000)).toBe(true);
+  });
+
+  it("derives GPR from a stated NOI + expenses when neither GPR nor EGI is given", () => {
+    const om = baseOM({
+      marketing_pro_forma: {
+        net_operating_income: 100_000,
+        vacancy_rate: 0,
+        expenses: { total_operating_expenses: 140_000 },
+      },
+    });
+    const inp = buildMarketingScenarioInputs(DEAL, om);
+    // EGI = NOI + opex = 240,000; GPR = 240,000 (vac 0, no other income) → $2,000/unit.
+    const totalMarket = inp.revenue.unit_mix.reduce((s, u) => s + u.market_rent * u.count, 0);
+    expect(totalMarket).toBeCloseTo(20_000, 0);
+  });
 });

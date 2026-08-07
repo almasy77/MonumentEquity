@@ -66,4 +66,21 @@ describe("renovation lines", () => {
     inp.capex.renovation_lines = [{ id: "full", per_unit_cost: 20_000, units_to_renovate: 6, renovation_start_month: 1, renovation_end_month: 6 }];
     expect(sumReno(calculateUnderwriting(inp))).toBe(0);
   });
+
+  it("warns when reno tiers over-spec the unit count (phantom capex)", () => {
+    const inp = bryden(); // Bryden is a 12-unit property
+    inp.capex.renovation_lines = [
+      { id: "full", per_unit_cost: 20_000, units_to_renovate: 8, renovation_start_month: 1, renovation_end_month: 6 },
+      { id: "partial", per_unit_cost: 8_000, units_to_renovate: 8, renovation_start_month: 1, renovation_end_month: 6 },
+    ]; // 16 units of reno on a 12-unit property
+    const r = calculateUnderwriting(inp);
+    expect(r.warnings.some((w) => w.includes("Renovation tiers cover 16 units"))).toBe(true);
+    // Well-partitioned tiers (sum ≤ units) do not warn.
+    const ok = bryden();
+    ok.capex.renovation_lines = [
+      { id: "full", per_unit_cost: 20_000, units_to_renovate: 6, renovation_start_month: 1, renovation_end_month: 6 },
+      { id: "partial", per_unit_cost: 8_000, units_to_renovate: 4, renovation_start_month: 1, renovation_end_month: 6 },
+    ];
+    expect(calculateUnderwriting(ok).warnings.some((w) => w.includes("Renovation tiers cover"))).toBe(false);
+  });
 });

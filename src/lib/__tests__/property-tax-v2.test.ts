@@ -82,6 +82,29 @@ describe("property tax v2 (Phase 2)", () => {
     }
   });
 
+  it("a $0 unabated abatement bill does not zero out tax (falls back to the reassessed rate)", () => {
+    const pt: PropertyTaxAssumptions = {
+      enabled: true,
+      closing_date: "2026-01-01",
+      effective_tax_rate: 0.02,
+      abatement: {
+        abated_annual_tax: 3000,
+        unabated_annual_tax: 0, // seeded at $0 (no mill rate was known)
+        final_abated_tax_year: 2028,
+        transferable: "unconfirmed", // → abatement_lost scenario in force
+      },
+    };
+    expect(propertyTaxScenarioInForce(pt)).toBe("abatement_lost");
+    const bill = propertyTaxBillForTaxYear(pt, 2_000_000, "abatement_lost", 2026);
+    // Falls back to reassessed basis 2,000,000 × 0.02 = 40,000, NOT $0.
+    expect(bill).toBeCloseTo(2_000_000 * 0.02, 0);
+    expect(bill).toBeGreaterThan(0);
+
+    // Post-abatement year on the abated_transfers path uses the same guard.
+    const post = propertyTaxBillForTaxYear(pt, 2_000_000, "abated_transfers", 2030);
+    expect(post).toBeGreaterThan(0);
+  });
+
   const XLSX_FIXTURE = "fixtures/Bryden___Fifth_St_-_Tax___Abatement_Analysis.xlsx";
   it.skipIf(!existsSync(XLSX_FIXTURE))(
     "reproduces the reference 6-Yr Projection Bryden row within $5 (activates when the xlsx lands in fixtures/)",
