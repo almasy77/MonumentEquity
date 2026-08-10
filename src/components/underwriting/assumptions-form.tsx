@@ -2624,6 +2624,20 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                         if (d?.state && !v2?.parcel?.state) {
                                           patch.parcel = { ...(v2?.parcel ?? {}), state: d.state };
                                         }
+                                        // For a periodic-revaluation state, seed the held basis (current
+                                        // market value) so the bill holds on it and grows only by escalation —
+                                        // otherwise the engine falls back to the purchase price, which defeats
+                                        // the whole point of the periodic model (the bill must NOT jump to price).
+                                        const resolvedState = (v2?.parcel?.state ?? d?.state);
+                                        if (
+                                          resolvedState &&
+                                          jurisdictionRulesFor(resolvedState).method !== "sale_price" &&
+                                          v2?.reassessed_value == null &&
+                                          tr?.reassessed_value == null &&
+                                          d?.marketValue
+                                        ) {
+                                          patch.reassessed_value = d.marketValue;
+                                        }
                                         // Seed the abatement record when the deal flags an abatement.
                                         if (d?.abatementPresent && !v2?.abatement) {
                                           const price = p.purchase_price || 0;
@@ -2713,27 +2727,36 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                       county revaluations and the bill grows only by the deal's tax
                                       escalation rate; at the next reval it re-marks to an estimated value. */}
                                   {v2.parcel?.state && jurisdictionRulesFor(v2.parcel.state).method !== "sale_price" && (
-                                    <div className="grid grid-cols-2 gap-3 rounded-md border border-slate-800 bg-slate-900/40 p-2">
+                                    <div className="space-y-3 rounded-md border border-slate-800 bg-slate-900/40 p-2">
                                       <div>
                                         <Label className="text-xs text-slate-400">
-                                          Next Reappraisal Year
-                                          <InfoDot tip="The TAX YEAR of the county's next revaluation. Until then the assessed value is held and the bill grows only by your tax escalation rate; at this year it re-marks to the estimated value at right." />
+                                          Current Market Value (held basis)
+                                          <InfoDot tip="The current market value the county's assessment reflects (the assessment ratio is already baked into the effective rate). In a periodic-revaluation state the bill is held on THIS basis and grows only by your tax escalation rate — it does NOT jump to the purchase price. Seeded from the deal's market value on file; leave blank to fall back to the purchase price as a conservative estimate." />
                                         </Label>
-                                        <Input
-                                          type="number"
-                                          inputMode="numeric"
-                                          value={v2.next_reappraisal_year ?? ""}
-                                          onChange={(ev) => { const n = parseInt(ev.target.value, 10); updateV2({ next_reappraisal_year: isNaN(n) ? undefined : n }); }}
-                                          placeholder="e.g. 2028"
-                                          className="bg-slate-800 border-slate-700 text-white text-sm h-8"
-                                        />
+                                        <BareCurrencyInput value={v2.reassessed_value ?? 0} onChange={(val) => updateV2({ reassessed_value: val || undefined })} />
                                       </div>
-                                      <div>
-                                        <Label className="text-xs text-slate-400">
-                                          Est. Assessed Value at Reappraisal
-                                          <InfoDot tip="Your estimate of the county's assessed (taxable) value from the next revaluation. Leave blank to simply hold the current assessment and escalate it. Enter the CURRENT assessed value in 'Reassessed Value' above — not the purchase price." />
-                                        </Label>
-                                        <BareCurrencyInput value={v2.reappraisal_target_value ?? 0} onChange={(val) => updateV2({ reappraisal_target_value: val || undefined })} />
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                          <Label className="text-xs text-slate-400">
+                                            Next Reappraisal Year
+                                            <InfoDot tip="The TAX YEAR of the county's next revaluation. Until then the held basis above is carried and the bill grows only by your tax escalation rate; at this year it re-marks to the estimated market value at right." />
+                                          </Label>
+                                          <Input
+                                            type="number"
+                                            inputMode="numeric"
+                                            value={v2.next_reappraisal_year ?? ""}
+                                            onChange={(ev) => { const n = parseInt(ev.target.value, 10); updateV2({ next_reappraisal_year: isNaN(n) ? undefined : n }); }}
+                                            placeholder="e.g. 2028"
+                                            className="bg-slate-800 border-slate-700 text-white text-sm h-8"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-slate-400">
+                                            Est. Market Value at Reappraisal
+                                            <InfoDot tip="Your estimate of the market value the county will set at the next revaluation (the assessment ratio is already in the effective rate). Leave blank to simply carry the current held basis and escalate it — do not enter the purchase price unless you expect the reval to mark all the way to it." />
+                                          </Label>
+                                          <BareCurrencyInput value={v2.reappraisal_target_value ?? 0} onChange={(val) => updateV2({ reappraisal_target_value: val || undefined })} />
+                                        </div>
                                       </div>
                                     </div>
                                   )}

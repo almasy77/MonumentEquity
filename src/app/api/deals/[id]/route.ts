@@ -6,7 +6,7 @@ import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { extractImageFromUrl } from "@/lib/ai-extract";
 import { deleteBlobUrl } from "@/lib/blob-helpers";
-import type { Deal } from "@/lib/validations";
+import type { Deal, Contact } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -245,6 +245,29 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
       await redis.del(`checklist:${cid}`);
     }
     if (checklistIds.length > 0) await redis.del(`checklists:by_deal:${id}`);
+
+    // Strip this deal from the back-reference on every linked contact, so a
+    // deleted deal never lingers in a contact's deal_ids (a dangling id that
+    // would 404 on the contact's deal list and skew "deals per contact").
+    for (const cid of deal.contact_ids ?? []) {
+      const contact = await redis.get<Contact>(`contact:${cid}`);
+      if (contact && (contact.deal_ids ?? []).includes(id)) {
+        contact.deal_ids = contact.deal_ids.filter((d) => d !== id);
+        contact.updated_at = new Date().toISOString();
+        await redis.set(`contact:${cid}`, JSON.stringify(contact));
+      }
+    }
+
+    // Purge the deal's activity-log entries and their indexes. Each entry is an
+    // activity:${aid} record indexed in activities:by_deal:${id} and the global
+    // activities:all feed — all three must go or the entries orphan and the
+    // recent-activity feed renders dead-deal rows.
+    const activityIds = await getFromIndex(`activities:by_deal:${id}`);
+    for (const aid of activityIds) {
+      await redis.del(`activity:${aid}`);
+      await removeFromIndex("activities:all", aid);
+    }
+    if (activityIds.length > 0) await redis.del(`activities:by_deal:${id}`);
 
     return NextResponse.json({ success: true });
   } catch (err) {
