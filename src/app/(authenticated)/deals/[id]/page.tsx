@@ -136,6 +136,12 @@ export default async function DealDetailPage({
     getScenarios(id),
   ]);
 
+  // Default scenario for the Share/Export menu — prefer the Base Case, else the
+  // primary (most-recent) active scenario, matching the KPI bar's default. Without
+  // this the XLSX/SDA exports were disabled ("No scenario") even when scenarios exist.
+  const activeScenarios = scenarios.filter((s) => s.is_active !== false);
+  const exportScenarioId = (activeScenarios.find((s) => s.type === "base") ?? activeScenarios[0])?.id;
+
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`
   )}`;
@@ -201,7 +207,7 @@ export default async function DealDetailPage({
             />
             <DealPhotoActions dealId={id} photos={deal.photos} sourceUrl={deal.source_url} />
             <AdminOnly>
-              <ShareDealButton dealId={id} />
+              <ShareDealButton dealId={id} scenarioId={exportScenarioId} />
             </AdminOnly>
             <AdminOnly>
               <DealStageSelector deal={deal} />
