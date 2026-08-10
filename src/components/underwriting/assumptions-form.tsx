@@ -1116,6 +1116,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
   const [c, setC] = useState(capex);
   const [ex, setEx] = useState(exit);
   const [dep, setDep] = useState(depreciation);
+  const [syn, setSyn] = useState<NonNullable<typeof scenario.syndication_assumptions>>(scenario.syndication_assumptions ?? {});
   const taxInitial = ((scenario as Record<string, unknown>).tax_assumptions ?? undefined) as TaxAssumptions | undefined;
   const [tx, setTx] = useState<TaxAssumptions | undefined>(taxInitial);
   const [notes, setNotes] = useState<string>(((scenario as Record<string, unknown>).notes as string) ?? "");
@@ -1244,6 +1245,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
       exit_assumptions: ex,
       depreciation_assumptions: dep,
       tax_assumptions: tx ?? null,
+      syndication_assumptions: syn,
       notes,
     };
   }
@@ -1274,7 +1276,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     }, 1200);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, p, f, r, e, c, ex, dep, tx]);
+  }, [dirty, p, f, r, e, c, ex, dep, tx, syn]);
 
   // Flush any pending edits on unmount (e.g. switching scenarios) so the last
   // ~1.2s of typing is never lost. The ref is refreshed each render via an
@@ -3053,6 +3055,52 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               ? "Exit cap rate is calculated from Sale Price and projected NOI."
               : "Enter a sale price to auto-calculate exit cap rate, or set the cap rate directly."}
           </p>
+        </Section>
+
+        <Section title="Syndication & Investor Returns">
+          <p className="text-xs text-slate-500 pb-1">
+            Feeds the SDA export&apos;s investor-returns waterfall (Summary tab). Leave at the
+            defaults (100% owner, no promote or fees) to see project-level returns; enter your
+            raise terms to model the LP/GP split. These don&apos;t change the deal&apos;s NOI, cap
+            rate, or DSCR.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <PctField
+              label="Member (LP) Equity"
+              value={syn.lp_equity_pct ?? 1}
+              onChange={(v) => { setSyn({ ...syn, lp_equity_pct: v }); markDirty(); }}
+              tooltip="Members' (LP) share of equity and cash flow. The Manager (GP) receives the rest as promote. 100% = you own the whole deal (project-level returns)."
+            />
+            <ReadOnlyField
+              label="Manager (GP) Equity"
+              suffix="(promote)"
+              value={`${((1 - (syn.lp_equity_pct ?? 1)) * 100).toFixed(1)}%`}
+            />
+            <PctField
+              label="Preferred Return"
+              value={syn.preferred_return_rate ?? 0}
+              onChange={(v) => { setSyn({ ...syn, preferred_return_rate: v }); markDirty(); }}
+              tooltip="Annual preferred return paid to members before the GP earns its promote."
+            />
+            <PctField
+              label="Acquisition Fee"
+              value={syn.acquisition_fee_pct ?? 0}
+              onChange={(v) => { setSyn({ ...syn, acquisition_fee_pct: v }); markDirty(); }}
+              tooltip="GP acquisition fee as a % of purchase price — a use of funds at close (raises the equity check)."
+            />
+            <PctField
+              label="Asset Mgmt Fee"
+              value={syn.asset_management_fee_pct ?? 0}
+              onChange={(v) => { setSyn({ ...syn, asset_management_fee_pct: v }); markDirty(); }}
+              tooltip="GP asset-management fee (% of income) charged each year during the hold."
+            />
+            <PctField
+              label="Capital Transaction Fee"
+              value={syn.capital_transaction_fee_pct ?? 0}
+              onChange={(v) => { setSyn({ ...syn, capital_transaction_fee_pct: v }); markDirty(); }}
+              tooltip="GP fee charged on refinance or sale proceeds."
+            />
+          </div>
         </Section>
 
         {/* Depreciation & Taxes — merged card (reserves-and-tax-card-ui-spec.md).

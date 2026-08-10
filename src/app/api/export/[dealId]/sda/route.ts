@@ -71,6 +71,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
         inputs,
         result: calculateUnderwriting(inputs),
         units: deal.units,
+        syndication: (s as Record<string, unknown>).syndication_assumptions as SdaScenarioColumnInput["syndication"],
       };
     });
 
@@ -80,7 +81,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     if (activeIndex < 0) activeIndex = ordered.findIndex((s) => s.type === "base");
     if (activeIndex < 0) activeIndex = 0;
 
-    const writes = buildSdaWrites(columns, activeIndex);
+    const dealInfo = {
+      propertyName: (deal as Record<string, unknown>).property_name as string | undefined ?? deal.address,
+      location: [deal.city, deal.state].filter(Boolean).join(", "),
+      yearBuilt: (deal as Record<string, unknown>).year_built as number | undefined,
+    };
+    const writes = buildSdaWrites(columns, activeIndex, dealInfo);
     const template = await loadTemplate();
     const buffer = await fillSdaTemplate(template, writes);
 

@@ -48,7 +48,7 @@ function splitRef(ref: string): { col: string; row: number } {
 /** Build the replacement `<c>` element for a value, preserving the style attr. */
 function buildCellXml(ref: string, styleAttr: string, value: SdaCellValue): string {
   const s = styleAttr ? ` ${styleAttr}` : "";
-  if (value === null || value === "") {
+  if (value === null || value === undefined || value === "") {
     // Empty the cell but keep its style so formatting survives.
     return `<c r="${ref}"${s}/>`;
   }
@@ -195,6 +195,9 @@ export async function fillSdaTemplate(templateBytes: Buffer | ArrayBuffer | Uint
     }
     let xml = await zip.file(path)!.async("string");
     for (const [ref, value] of Object.entries(w.cells)) {
+      // A missing optional input (undefined) should leave the template's own default
+      // in place rather than blank the cell or crash the export.
+      if (value === undefined) continue;
       xml = setCellInSheet(xml, ref, value);
     }
     zip.file(path, xml);
