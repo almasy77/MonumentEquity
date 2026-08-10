@@ -151,3 +151,123 @@ describe("returns chain — interest-only variant", () => {
     expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
   });
 });
+
+describe("returns chain — cash-out refinance path", () => {
+  const inp = controlledDeal();
+  Object.assign(inp.exit as object, {
+    refi_enabled: true, refi_year: 3, refi_cap_rate: 0.06, refi_ltv: 0.7,
+    refi_interest_rate: 0.055, refi_amortization_years: 30, refi_io_months: 0,
+    refi_cost_rate: 0.01, refi_prepayment_penalty_rate: 0,
+  });
+  const res = calculateUnderwriting(inp);
+  const m = res.metrics;
+
+  const gpr1 = 12 * 1000 * 12, opex1 = 20_000 + 500 * 12 + 300 * 12 + 15_000 + 600 * 12 + 4_000 + 3_000;
+  const noi = (y: number) => gpr1 * Math.pow(1.03, y - 1) * 0.95 - opex1 * Math.pow(1.03, y - 1);
+  const origLoan = 840_000, origRate = 0.06 / 12, amort = 360, hold = 5, refiYear = 3;
+  const oldDS = pmtMonthly(origLoan, origRate, amort) * 12;
+  // Refi at end of year 3, valued on year-3 NOI.
+  const refiValue = noi(refiYear) / 0.06;
+  const refiNewLoan = refiValue * 0.7;
+  const oldBalance = loanBalanceSim(origLoan, origRate, amort, refiYear * 12, 0);
+  const refiCost = refiNewLoan * 0.01;
+  const refiNet = refiNewLoan - oldBalance - refiCost;
+  const newRate = 0.055 / 12, newDS = pmtMonthly(refiNewLoan, newRate, amort) * 12;
+  const dsY = (y: number) => (y <= refiYear ? oldDS : newDS);
+
+  it("refi value, new loan, and cash-out proceeds match", () => {
+    expect(m.refi_year).toBe(3);
+    expect(m.refi_net_proceeds).toBeCloseTo(refiNet, -1);
+  });
+
+  it("IRR and net sale (on the NEW loan balance) match with the refi distribution", () => {
+    const exitBal = loanBalanceSim(refiNewLoan, newRate, amort, hold * 12 - refiYear * 12, 0);
+    const exitValue = noi(hold) / 0.065;
+    const netSale = exitValue - exitValue * 0.02 - exitBal;
+    const equity = 1_200_000 + 24_000 + 8_400 - origLoan;
+    const flows = [-equity];
+    for (let y = 1; y <= hold; y++) {
+      let cf = noi(y) - dsY(y);
+      if (y === refiYear) cf += refiNet;
+      if (y === hold) cf += netSale;
+      flows.push(cf);
+    }
+    expect(m.net_sale_proceeds).toBeCloseTo(netSale, -1);
+    expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
+  });
+});
+
+describe("returns chain — tax reassessment at exit", () => {
+  const inp = controlledDeal();
+  (inp.expenses as { tax_reassessment?: object }).tax_reassessment = {
+    enabled: true, effective_tax_rate: 0.015, phase_in_year: 1, apply_at_exit: true,
+  };
+  const res = calculateUnderwriting(inp);
+  const m = res.metrics;
+
+  const gpr1 = 12 * 1000 * 12;
+  const nonTaxOpex1 = 20_000 + 500 * 12 + 300 * 12 + 600 * 12 + 4_000 + 3_000; // 43,800 (no property tax)
+  const reTax = (y: number) => 1_200_000 * 0.015 * Math.pow(1.03, y - 1); // reassessed to purchase price
+  const noi = (y: number) => gpr1 * Math.pow(1.03, y - 1) * 0.95 - nonTaxOpex1 * Math.pow(1.03, y - 1) - reTax(y);
+
+  it("during-hold property tax is reassessed to purchase price (overrides the seller bill)", () => {
+    expect(res.annual[0].opex_breakdown.property_tax).toBeCloseTo(reTax(1), 0); // 18,000
+    expect(res.annual[4].opex_breakdown.property_tax).toBeCloseTo(reTax(5), 0);
+  });
+
+  it("multi-year NOI matches with the reassessed tax", () => {
+    for (let y = 1; y <= 5; y++) expect(res.annual[y - 1].noi).toBeCloseTo(noi(y), 0);
+  });
+
+  it("exit uses the closed-form NOI_exTax / (exitCap + effTaxRate)", () => {
+    const noiExTax = noi(5) + reTax(5);
+    const exitValue = noiExTax / (0.065 + 0.015);
+    expect(m.exit_noi).toBeCloseTo(noi(5), 0);
+    expect(m.exit_value).toBeCloseTo(exitValue, -1);
+  });
+});
+
+describe("returns chain — renovation (rent basis, capex conservation, cash-flow impact)", () => {
+  const inp = controlledDeal();
+  Object.assign(inp.revenue as object, {
+    unit_mix: [{ type: "1BR/1BA", count: 12, current_rent: 1000, market_rent: 1200, renovated_rent_premium: 100 }],
+  });
+  Object.assign(inp.capex as object, {
+    per_unit_cost: 8_000, units_to_renovate: 12, per_unit_enabled: true,
+    renovation_start_month: 1, renovation_end_month: 1, renovation_downtime_enabled: false,
+  });
+  Object.assign(inp.exit as object, { proforma_unrenovated_basis: "current", proforma_renovated_basis: "market_plus_premium" });
+  const res = calculateUnderwriting(inp);
+  const m = res.metrics;
+
+  const renovatedRent = 1200 + 100; // market + premium
+  const gpr1 = 12 * renovatedRent * 12; // 187,200
+  const opex1 = 20_000 + 500 * 12 + 300 * 12 + 15_000 + 600 * 12 + 4_000 + 3_000; // 58,800
+  const noi = (y: number) => gpr1 * Math.pow(1.03, y - 1) * 0.95 - opex1 * Math.pow(1.03, y - 1);
+  const ds = pmtMonthly(840_000, 0.06 / 12, 360) * 12;
+
+  it("renovated units earn market+premium, growing at rent growth", () => {
+    for (let y = 1; y <= 5; y++) expect(res.annual[y - 1].gpr).toBeCloseTo(gpr1 * Math.pow(1.03, y - 1), 0);
+  });
+
+  it("total renovation capex = per-unit cost × units (conserved over the hold)", () => {
+    const totalReno = res.annual.reduce((s, a) => s + (a.capex_renovation ?? 0), 0);
+    expect(totalReno).toBeCloseTo(8_000 * 12, 0);
+  });
+
+  it("renovation capex reduces year-1 cash flow (not upfront equity)", () => {
+    expect(m.total_equity).toBeCloseTo(1_200_000 + 24_000 + 8_400 - 840_000, 0); // capex NOT in equity
+    expect(res.annual[0].cash_flow).toBeCloseTo(noi(1) - ds - 8_000 * 12, 0); // year-1 CF absorbs the rehab
+  });
+
+  it("IRR and exit match independent calc with the rehab outflow", () => {
+    const loanBal = loanBalanceSim(840_000, 0.06 / 12, 360, 60, 0);
+    const exitValue = noi(5) / 0.065;
+    const netSale = exitValue - exitValue * 0.02 - loanBal;
+    const equity = 1_200_000 + 24_000 + 8_400 - 840_000;
+    const flows = [-equity];
+    for (let y = 1; y <= 5; y++) flows.push(noi(y) - ds - (y === 1 ? 96_000 : 0) + (y === 5 ? netSale : 0));
+    expect(m.exit_value).toBeCloseTo(exitValue, -1);
+    expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
+  });
+});
