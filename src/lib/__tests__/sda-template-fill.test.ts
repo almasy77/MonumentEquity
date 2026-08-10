@@ -57,6 +57,16 @@ describe("fillSdaTemplate — cell injection + fidelity", () => {
     expect(origCf).toBeGreaterThan(0);
   });
 
+  it("skips undefined values (leaves the template default) instead of crashing", async () => {
+    const before = await (await unzip(TEMPLATE)).file("xl/worksheets/sheet6.xml")!.async("string");
+    const f7Before = /<c r="F7"[^>]*>[\s\S]*?<\/c>/.exec(before)?.[0];
+    // P&L!F7 undefined must not throw and must not change the cell.
+    const out = await fillSdaTemplate(TEMPLATE, [{ sheet: "P&L", cells: { F7: undefined as unknown as number, F6: 0.03 } }]);
+    const after = await (await unzip(out)).file("xl/worksheets/sheet6.xml")!.async("string");
+    expect(/<c r="F7"[^>]*>[\s\S]*?<\/c>/.exec(after)?.[0]).toBe(f7Before); // unchanged
+    expect(after).toContain("<v>0.03</v>"); // F6 still written
+  });
+
   it("throws for an unknown worksheet name", async () => {
     await expect(fillSdaTemplate(TEMPLATE, [{ sheet: "Nope", cells: { A1: 1 } }])).rejects.toThrow(/worksheet/);
   });
@@ -69,13 +79,28 @@ function fakeColumn(name: string, type: SdaScenarioColumnInput["type"], override
   const loan = overrides?.loan ?? 1_500_000;
   const goingIn = overrides?.goingIn ?? 0.06;
   const inputs = {
-    financing: { io_period_months: 0, interest_rate: 0.055, amortization_years: 30 },
+    purchase: { closing_cost_mode: "rate", closing_cost_rate: 0.02 },
+    financing: { io_period_months: 0, interest_rate: 0.055, amortization_years: 30, origination_fee_rate: 0.01 },
     revenue: { rent_growth_rate: 0.03 },
     expenses: { expense_escalation_rate: 0.02 },
-    exit: { hold_period_years: 5, exit_cap_rate: 0.065 },
+    capex: {
+      per_unit_cost: 5_000,
+      units_to_renovate: 10,
+      projects: [{ name: "Roof", cost: 40_000, enabled: true }],
+      renovation_start_month: 1,
+    },
+    exit: { hold_period_years: 5, exit_cap_rate: 0.065, selling_cost_rate: 0.03 },
   } as unknown as ScenarioInputs;
   const result = {
-    metrics: { purchase_price: price, loan_amount: loan, going_in_cap: goingIn },
+    metrics: {
+      purchase_price: price,
+      loan_amount: loan,
+      going_in_cap: goingIn,
+      capex_reserve: 50_000,
+      closing_costs: 60_000,
+      origination_fee: loan * 0.01,
+      cost_seg_study_cost: 0,
+    },
     annual: [
       {
         gpr: 300_000,
@@ -119,6 +144,8 @@ describe("buildSdaWrites — scenario → SDA cells", () => {
     expect(scen.D6).toBe(2_000_000); // asking = purchase
     expect(scen.D8).toBe(24); // units
     expect(scen.D10).toBeCloseTo(1 - 1_500_000 / 2_000_000, 6); // down % → loan matches
+    expect(scen.D14).toBe(5_000 * 10 + 40_000); // Repairs = per-unit reno + projects
+    expect(scen.D15).toBe(50_000); // Operating Reserves ← capex_reserve (was hardcoded 0)
     expect(scen.D21).toBe(300_000); // GPR
     expect(scen.D22).toBe(-15_000); // vacancy (negative dollars)
     expect(scen.D35).toBe(30_000); // Real Estate Taxes ← property_tax
@@ -128,14 +155,44 @@ describe("buildSdaWrites — scenario → SDA cells", () => {
 
     const summary = writes.find((w) => w.sheet === "Summary")!.cells;
     expect(summary.G3).toBe(2); // active index 1 → scenario #2
+    expect(summary.C19).toBe(0); // no acquisition fee (app doesn't model one)
+    expect(summary.D41).toBe(1); // member equity 100% → SDA returns == project returns
 
     const exit = writes.find((w) => w.sheet === "Exit Strategy")!.cells;
     expect(exit.D5).toBe(5); // sale year
+    expect(exit.G13).toBe(0.03); // selling cost rate
     // capBump solves (exit 6.5% − goingIn 5.8%) / 5 years.
     expect(exit.I9).toBeCloseTo((0.065 - 0.058) / 5, 6);
+
+    const acq = writes.find((w) => w.sheet === "Acquisition Costs")!.cells;
+    expect(acq.C23).toBe(0.01); // origination fee rate
+    expect(acq.D13).toBe(60_000); // flat-rate closing → single labeled line = m.closing_costs
+    expect(acq.B13).toBe("Estimated Closing Costs");
 
     const pnl = writes.find((w) => w.sheet === "P&L")!.cells;
     expect(pnl.F6).toBe(0.03); // rent growth
     expect(pnl.F7).toBe(0.02); // expense growth
+  });
+
+  it("itemizes closing costs when the scenario itemizes, footing to the app total", () => {
+    const col = fakeColumn("Base", "base");
+    (col.inputs.purchase as unknown as Record<string, unknown>).closing_cost_mode = "itemized";
+    (col.inputs.purchase as unknown as Record<string, unknown>).closing_cost_breakdown = {
+      title_insurance: 10_000,
+      legal_fees: 8_000,
+      property_costs: 5_000,
+      prorations: 4_000,
+      third_party_reports: 3_000,
+      transfer_taxes: 6_000,
+      reserves_escrow: 2_000,
+      other_closing: 1_000,
+    };
+    const acq = buildSdaWrites([col], 0).find((w) => w.sheet === "Acquisition Costs")!.cells;
+    expect(acq.D28).toBe(10_000); // title
+    expect(acq.D13).toBe(8_000); // legal
+    expect(acq.D31).toBe(6_000); // transfer taxes
+    // The mapped lines sum to the app's total closing.
+    const sum = ["D13", "D18", "D19", "D28", "D31", "D38", "D39", "D48"].reduce((s, k) => s + (acq[k] as number), 0);
+    expect(sum).toBe(39_000);
   });
 });
