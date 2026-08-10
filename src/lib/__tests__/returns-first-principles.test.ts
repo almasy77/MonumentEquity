@@ -194,6 +194,7 @@ describe("returns chain — cash-out refinance path", () => {
     }
     expect(m.net_sale_proceeds).toBeCloseTo(netSale, -1);
     expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
+    expect(m.equity_multiple).toBeCloseTo(flows.slice(1).reduce((s, v) => s + v, 0) / equity, 2);
   });
 });
 
@@ -224,6 +225,18 @@ describe("returns chain — tax reassessment at exit", () => {
     const exitValue = noiExTax / (0.065 + 0.015);
     expect(m.exit_noi).toBeCloseTo(noi(5), 0);
     expect(m.exit_value).toBeCloseTo(exitValue, -1);
+  });
+
+  it("IRR and equity multiple match through the reassessed exit", () => {
+    const ds = pmtMonthly(840_000, 0.06 / 12, 360) * 12;
+    const exitValue = (noi(5) + reTax(5)) / (0.065 + 0.015);
+    const loanBal = loanBalanceSim(840_000, 0.06 / 12, 360, 60, 0);
+    const netSale = exitValue - exitValue * 0.02 - loanBal;
+    const equity = 1_200_000 + 24_000 + 8_400 - 840_000;
+    const flows = [-equity];
+    for (let y = 1; y <= 5; y++) flows.push(noi(y) - ds + (y === 5 ? netSale : 0));
+    expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
+    expect(m.equity_multiple).toBeCloseTo(flows.slice(1).reduce((s, v) => s + v, 0) / equity, 2);
   });
 });
 
@@ -269,5 +282,6 @@ describe("returns chain — renovation (rent basis, capex conservation, cash-flo
     for (let y = 1; y <= 5; y++) flows.push(noi(y) - ds - (y === 1 ? 96_000 : 0) + (y === 5 ? netSale : 0));
     expect(m.exit_value).toBeCloseTo(exitValue, -1);
     expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
+    expect(m.equity_multiple).toBeCloseTo(flows.slice(1).reduce((s, v) => s + v, 0) / equity, 2);
   });
 });
