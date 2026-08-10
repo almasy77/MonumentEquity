@@ -161,7 +161,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   } catch (err) {
     if (blobCleanup) await blobCleanup().catch(() => {});
     console.error("POST /api/scenarios/[id]/import-rent-roll error:", err);
-    const message = err instanceof Error ? err.message : "Failed to import rent roll";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to import rent roll" }, { status: 500 });
   }
 }
