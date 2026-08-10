@@ -69,6 +69,12 @@ export function ShareDealButton({ dealId, scenarioId }: ShareDealButtonProps) {
     window.open(`/api/export/${dealId}?scenario_id=${scenarioId}`, "_blank");
   }
 
+  function handleExportSda() {
+    if (!scenarioId) return;
+    setOpen(false);
+    window.open(`/api/export/${dealId}/sda?scenario_id=${scenarioId}`, "_blank");
+  }
+
   function handleExportPdf() {
     setOpen(false);
     const url = scenarioId
@@ -123,6 +129,18 @@ export function ShareDealButton({ dealId, scenarioId }: ShareDealButtonProps) {
               <span className="ml-auto text-xs text-slate-500">
                 No scenario
               </span>
+            )}
+          </button>
+
+          <button
+            onClick={handleExportSda}
+            disabled={!scenarioId}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-300"
+          >
+            <Download className="h-4 w-4 text-slate-400" />
+            Export SDA (Syndicated Deal Analyzer)
+            {!scenarioId && (
+              <span className="ml-auto text-xs text-slate-500">No scenario</span>
             )}
           </button>
 
