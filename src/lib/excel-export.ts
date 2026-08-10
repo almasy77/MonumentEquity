@@ -1442,7 +1442,7 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
     ["CapEx Schedule", "Per-unit renovation pacing, downtime, and project-level CapEx by month."],
     ["Depreciation", "Cost-seg breakdown if accelerated depreciation is configured."],
     ["Validation", "Engine self-checks: GPR + premium math, NOI = EGI - OpEx, CF = NOI - DS - Reserves - CapEx."],
-    ["Tax (After-Tax)", "Only when Tax Treatment is enabled: dual federal/NY schedules, per-year tax or shield, both after-tax IRRs, deferred-gain memo. Estimate — not tax advice."],
+    ["Tax (After-Tax)", "Only when Tax Treatment is enabled: dual federal/state schedules, per-year tax or shield, both after-tax IRRs, deferred-gain memo. Estimate — not tax advice."],
   ];
   styleHeaderRow(ws.addRow(["Sheet", "What's on it"]), 2);
   for (const [name, desc] of sheets) {
@@ -1463,7 +1463,7 @@ function buildReadmeSheet(wb: ExcelJS.Workbook) {
     "Operating expense ratio (OpEx ÷ EGI) excludes reserves. Add reserves back if comparing to brokers or appraisers who include them above the line.",
     "Renovation rent ramp: unrenovated units pay the unrenovated basis (current/market). Renovated units pay the renovated basis (current/market + premium). Schedule is per-unit per CapEx assumptions.",
     "Turnover cost rate only multiplies per-unit inputs. If you entered Turnover Cost as a total annual figure, no rate is applied — the entered value IS the annual cost.",
-    "After-tax (when Tax Treatment is on): TWO depreciation schedules — federal takes bonus on the 5-yr and 15-yr cost-seg buckets; NY adds bonus back. Federal loss × federal rate, NY loss × NY rate — never blended.",
+    "After-tax (when Tax Treatment is on): TWO depreciation schedules — federal takes bonus on the 5-yr and 15-yr cost-seg buckets; the state may add bonus back. Federal loss × federal rate, state loss × state rate — never blended.",
     "ATCF PropCo = the property's after-tax cash flow with the management fee as a real expense (what a lender/buyer underwrites). ATCF Household = PropCo + the fee recycled back through OpCo minus payroll/SE leakage (what actually lands in the owner's pocket). Household drives decisions.",
     "REPS is attested PER YEAR. ON: losses offset W-2 (capped by §461(l); excess → NOL). OFF: losses suspend as PALs — and a 1031 exit does NOT release them.",
     "1031 exit: gain and recapture are DEFERRED, not eliminated — the deferred-gain memo carries into the replacement property as reduced basis.",
@@ -1657,7 +1657,7 @@ function buildTaxSheet(
   addMetricRow(ws, "Household After-Tax IRR (fee recycled)", tax.after_tax_irr_household, PCT_FMT);
   addMetricRow(ws, "PropCo After-Tax IRR (standalone)", tax.after_tax_irr_propco, PCT_FMT);
   addLabelValue(ws, "Year-1 Federal Shield", tax.year1_federal_shield, CURRENCY_FMT);
-  addLabelValue(ws, "Year-1 NY Shield", tax.year1_state_shield, CURRENCY_FMT);
+  addLabelValue(ws, "Year-1 State Shield", tax.year1_state_shield, CURRENCY_FMT);
   // 1031 exit → deferred-gain memo (taxes deferred, not eliminated).
   if (!taxableExit) {
     addLabelValue(ws, "Deferred Gain at Exit (memo)", tax.deferred_gain_memo.deferred_gain, CURRENCY_FMT);
@@ -1695,11 +1695,11 @@ function buildTaxSheet(
 
   addSectionHeader(ws, "Assumptions", 10);
   addInputRow(ws, "Federal Ordinary Rate", assumptions.federal_ordinary_rate, PCT_FMT);
-  addInputRow(ws, "NY + NYC Ordinary Rate", assumptions.state_local_ordinary_rate, PCT_FMT);
+  addInputRow(ws, "State / Local Ordinary Rate", assumptions.state_local_ordinary_rate, PCT_FMT);
   addInputRow(ws, "NIIT Rate", assumptions.niit_rate, PCT_FMT);
   addInputRow(ws, "§461(l) Cap (MFJ)", assumptions.ebl_cap_mfj, CURRENCY_FMT);
   addInputRow(ws, "Federal Bonus %", assumptions.federal_bonus_pct, PCT_FMT);
-  addLabelValue(ws, "NY Conforms to Bonus", assumptions.state_conforms_bonus ? "Yes" : "No (bonus added back)");
+  addLabelValue(ws, "State Conforms to Bonus", assumptions.state_conforms_bonus ? "Yes" : "No (bonus added back)");
   addInputRow(ws, "Land Allocation", assumptions.land_allocation_pct, PCT_FMT);
   addInputRow(ws, "5-yr Cost-Seg", assumptions.costseg_5yr_pct, PCT_FMT);
   addInputRow(ws, "15-yr Land Improvements", assumptions.costseg_15yr_pct, PCT_FMT);
@@ -1711,8 +1711,8 @@ function buildTaxSheet(
 
   addSectionHeader(ws, "Per-Year Detail", 10);
   const hdr = ws.addRow([
-    "Year", "REPS", "Fed Dep", "NY Dep", "Fed Taxable",
-    "Fed Tax/(Shield)", "NY Tax/(Shield)", "NIIT", "ATCF PropCo", "ATCF Household",
+    "Year", "REPS", "Fed Dep", "State Dep", "Fed Taxable",
+    "Fed Tax/(Shield)", "State Tax/(Shield)", "NIIT", "ATCF PropCo", "ATCF Household",
   ]);
   styleHeaderRow(hdr, 10);
   for (const y of tax.years) {

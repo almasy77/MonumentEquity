@@ -107,7 +107,11 @@ export function buildMarketingScenarioInputs(
   // GPR → EGI → NOI. This is the source of truth for an aggregate-only OM that
   // gives totals but no per-unit mix — without it the Marketing scenario would
   // silently run on the deal's placeholder $1,000/unit rents.
-  const vacancyForDerive = pf.vacancy_rate ?? base.revenue.vacancy_rate;
+  // Normalize a vacancy that came through as a whole-number percent (e.g. 7 → 0.07)
+  // and clamp to a sane 0–50% band. Without this, a mis-scaled OM vacancy (7 → 1−7 =
+  // −6) would blow the GPR derivation up ~100×, fabricating absurd per-unit rents.
+  const rawVacancy = pf.vacancy_rate ?? base.revenue.vacancy_rate;
+  const vacancyForDerive = Math.min(0.5, Math.max(0, rawVacancy > 1 ? rawVacancy / 100 : rawVacancy));
   const otherIncomeAnnualStated = pf.other_income ?? 0;
   const statedTotalOpex =
     pf.expenses?.total_operating_expenses ??

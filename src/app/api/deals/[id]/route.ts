@@ -88,6 +88,12 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     if (body.status !== undefined && !["active", "dead", "passed"].includes(body.status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
+    // Same guard for stage — an out-of-enum stage skips index maintenance below
+    // (DEAL_STAGES.includes is false) yet still persists via the spread, orphaning
+    // the deal in its old by_stage index while showing a garbage stage.
+    if (body.stage !== undefined && !DEAL_STAGES.includes(body.stage)) {
+      return NextResponse.json({ error: "Invalid stage" }, { status: 400 });
+    }
 
     // Viewers cannot edit deals
     if (session.user.role === "viewer") {

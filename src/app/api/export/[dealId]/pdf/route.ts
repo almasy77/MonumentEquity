@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
+import { calculateUnderwriting } from "@/lib/underwriting";
+import type { ScenarioInputs } from "@/lib/underwriting";
 import type { Deal, Scenario } from "@/lib/validations";
+
+// Metrics shape the PDF renders (matches the persisted calculated_metrics naming).
+interface PdfMetrics {
+  irr?: number;
+  equity_multiple?: number;
+  cash_on_cash?: number;
+  dscr?: number;
+  going_in_cap?: number;
+  stabilized_cap?: number;
+}
 
 type RouteContext = { params: Promise<{ dealId: string }> };
 
@@ -32,7 +44,38 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     }
   }
 
-  const html = buildPdfHtml(deal, scenario);
+  // Recompute metrics fresh from the current inputs (like every other export) —
+  // the persisted calculated_metrics blob can be stale relative to edited inputs
+  // or a changed engine, making the PDF disagree with the XLSX/one-pagers.
+  let metrics: PdfMetrics | undefined;
+  if (scenario) {
+    try {
+      const inputs = {
+        purchase: scenario.purchase_assumptions,
+        financing: scenario.financing_assumptions,
+        revenue: scenario.revenue_assumptions,
+        expenses: scenario.expense_assumptions,
+        capex: scenario.capex_assumptions,
+        exit: scenario.exit_assumptions,
+        tax: scenario.tax_assumptions,
+        depreciation: (scenario as Record<string, unknown>).depreciation_assumptions || undefined,
+      } as unknown as ScenarioInputs;
+      const m = calculateUnderwriting(inputs).metrics;
+      metrics = {
+        irr: m.irr ?? undefined,
+        equity_multiple: m.equity_multiple,
+        cash_on_cash: m.average_cash_on_cash,
+        dscr: m.year1_dscr,
+        going_in_cap: m.going_in_cap,
+        stabilized_cap: m.stabilized_cap,
+      };
+    } catch (err) {
+      console.error("PDF export recompute failed:", err);
+      metrics = scenario.calculated_metrics as PdfMetrics | undefined; // fall back to cached
+    }
+  }
+
+  const html = buildPdfHtml(deal, scenario, metrics);
 
   return new NextResponse(html, {
     status: 200,
@@ -53,10 +96,10 @@ function fmt(n: number | undefined | null, style: "currency" | "percent" | "numb
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: decimals ?? 0 }).format(n);
 }
 
-function buildPdfHtml(deal: Deal, scenario: Scenario | null): string {
+function buildPdfHtml(deal: Deal, scenario: Scenario | null, freshMetrics?: PdfMetrics): string {
   const pricePerUnit = deal.units > 0 ? deal.asking_price / deal.units : null;
 
-  const metrics = scenario?.calculated_metrics;
+  const metrics = freshMetrics ?? (scenario?.calculated_metrics as PdfMetrics | undefined);
 
   return `<!DOCTYPE html>
 <html lang="en">
