@@ -40,7 +40,7 @@ export function calculateIRR(
     if (Math.abs(dnpv) < 1e-12) {
       // Derivative too small — try a different guess
       rate += 0.01;
-      continue;
+      break;
     }
 
     const newRate = rate - npv / dnpv;
@@ -51,13 +51,15 @@ export function calculateIRR(
 
     rate = newRate;
 
-    // Guard against divergence
+    // Newton wandered outside the plausible band — hand off to bisection, which
+    // brackets the root reliably even for near-total-loss or multi-sign flows.
     if (rate < -0.99 || rate > 10) {
-      return null;
+      break;
     }
   }
 
-  return null;
+  // Newton didn't converge — fall back to a bracketing bisection over the NPV curve.
+  return bracketRoot((r) => calculateNPV(cashFlows, r), tolerance);
 }
 
 /**
@@ -84,6 +86,16 @@ export function calculateXIRR(
   );
   const d0 = sorted[0].date.getTime();
 
+  // NPV of the dated flows at a given annual rate (shared by Newton + bisection).
+  const npvAt = (r: number): number => {
+    let npv = 0;
+    for (const cf of sorted) {
+      const years = (cf.date.getTime() - d0) / (365.25 * 86400000);
+      npv += cf.amount / Math.pow(1 + r, years);
+    }
+    return npv;
+  };
+
   let rate = guess;
 
   for (let i = 0; i < maxIterations; i++) {
@@ -101,7 +113,7 @@ export function calculateXIRR(
 
     if (Math.abs(dnpv) < 1e-12) {
       rate += 0.01;
-      continue;
+      break;
     }
 
     const newRate = rate - npv / dnpv;
@@ -113,8 +125,57 @@ export function calculateXIRR(
     rate = newRate;
 
     if (rate < -0.99 || rate > 10) {
-      return null;
+      break;
     }
+  }
+
+  // Newton didn't converge — fall back to a bracketing bisection over the NPV curve.
+  return bracketRoot(npvAt, tolerance);
+}
+
+/**
+ * Bracketing + bisection root finder for the NPV curve — the robust fallback for
+ * flows Newton's method can't solve: near-total-loss deals whose IRR sits just
+ * above −100%, and multi-sign-change flows (e.g. a mid-hold refinance cash-out)
+ * where a bad Newton step diverges. Scans a coarse grid from just above −100% up
+ * to 1000% for the first sign change in NPV, then bisects that bracket. Returns
+ * the first (lowest-rate) root, which is the economically meaningful IRR for the
+ * standard "outflow then inflows" shape. Returns null only when no sign change
+ * exists on the grid (no real IRR in range).
+ */
+function bracketRoot(
+  npv: (r: number) => number,
+  tolerance: number,
+  lo: number = -0.9999,
+  hi: number = 10,
+  step: number = 0.01
+): number | null {
+  let aRate = lo;
+  let aVal = npv(aRate);
+  if (isFinite(aVal) && Math.abs(aVal) < tolerance) return aRate;
+
+  for (let r = lo + step; r <= hi + 1e-9; r += step) {
+    const bVal = npv(r);
+    if (isFinite(aVal) && isFinite(bVal) && aVal * bVal <= 0) {
+      // Root bracketed in [aRate, r] — bisect.
+      let x0 = aRate;
+      let x1 = r;
+      let f0 = aVal;
+      for (let i = 0; i < 200; i++) {
+        const mid = (x0 + x1) / 2;
+        const fm = npv(mid);
+        if (Math.abs(fm) < tolerance || x1 - x0 < 1e-12) return mid;
+        if (f0 * fm <= 0) {
+          x1 = mid;
+        } else {
+          x0 = mid;
+          f0 = fm;
+        }
+      }
+      return (x0 + x1) / 2;
+    }
+    aRate = r;
+    aVal = bVal;
   }
 
   return null;
