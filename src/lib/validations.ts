@@ -398,6 +398,17 @@ export const scenarioSchema = z.object({
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),
+  // Syndication / investor-returns waterfall (used by the SDA export's Summary tab).
+  // Optional + backwards-compatible; absent fields fall back to a 100%-owner model.
+  syndication_assumptions: z
+    .object({
+      lp_equity_pct: z.number().optional(), // members' share of equity & cash flow (0-1)
+      preferred_return_rate: z.number().optional(), // annual preferred return to members
+      acquisition_fee_pct: z.number().optional(), // GP acquisition fee, % of purchase price
+      asset_management_fee_pct: z.number().optional(), // GP asset-management fee, % of income
+      capital_transaction_fee_pct: z.number().optional(), // GP fee on refi/sale proceeds
+    })
+    .optional(),
   depreciation_assumptions: z.record(z.string(), z.unknown()).default({}),
   tax_assumptions: z.record(z.string(), z.unknown()).nullish(), // TAX_TREATMENT_SPEC — absent/null = tax layer off
   pricing_views: z.record(z.string(), z.unknown()).optional(), // Pricing Views market inputs (CAGR, caps, $/unit, GRM, $/SF)

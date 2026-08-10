@@ -31,12 +31,29 @@ import { getRenovationLines, applyCapexToggles } from "./underwriting";
 import type { ScenarioType } from "./constants";
 import type { SdaSheetWrite, SdaCellValue } from "./sda-template-fill";
 
+/** Investor-returns waterfall inputs (from the scenario's Syndication card). */
+export interface SdaSyndicationInputs {
+  lp_equity_pct?: number;
+  preferred_return_rate?: number;
+  acquisition_fee_pct?: number;
+  asset_management_fee_pct?: number;
+  capital_transaction_fee_pct?: number;
+}
+
 export interface SdaScenarioColumnInput {
   name: string;
   type: ScenarioType;
   inputs: ScenarioInputs;
   result: UnderwritingResult;
   units: number;
+  syndication?: SdaSyndicationInputs;
+}
+
+/** Deal-level info for the One Pager header (not per-scenario). */
+export interface SdaDealInfo {
+  propertyName?: string;
+  location?: string; // "City, ST"
+  yearBuilt?: number;
 }
 
 // The four scenario input columns on the SDA "Scenarios" sheet.
@@ -108,7 +125,7 @@ function buildAcquisitionCosts(active: SdaScenarioColumnInput): Record<string, S
 }
 
 /** Build all input-cell writes for the SDA template from the ordered scenario columns. */
-export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: number): SdaSheetWrite[] {
+export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: number, deal?: SdaDealInfo): SdaSheetWrite[] {
   const cols = columns.slice(0, 4);
   const active = cols[activeIndex] ?? cols[0];
 
@@ -165,16 +182,37 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   // matches ours (our reserves sit below NOI, not in operating expenses).
   scenarioCells["AE42"] = 0;
 
+  // Target Rent Analysis (Scenarios AC8:AH14) — a standalone rent-roll reference on
+  // the Scenarios tab (not wired into the model's GPR). Populate it from the active
+  // scenario's unit mix so it shows the real rent roll instead of "Unit type" / $0
+  // placeholders. AF/AH (totals) are formulas (avg × units); we only set the inputs.
+  const unitMix = ((active.inputs.revenue as { unit_mix?: Array<{ type?: string; count?: number; current_rent?: number; market_rent?: number; renovated_rent_premium?: number }> }).unit_mix) ?? [];
+  unitMix.slice(0, 7).forEach((u, i) => {
+    const row = 8 + i;
+    scenarioCells[`AC${row}`] = u.type ?? "Unit type"; // Type
+    scenarioCells[`AD${row}`] = u.count ?? 0; // # Units
+    scenarioCells[`AE${row}`] = u.current_rent ?? 0; // Current Rent (avg $/mo)
+    // Target = market rent (or current + renovated premium when market isn't set).
+    scenarioCells[`AG${row}`] = u.market_rent ?? ((u.current_rent ?? 0) + (u.renovated_rent_premium ?? 0));
+  });
+
   // ── Global knobs, driven by the active scenario ──
   const am = active.result.metrics;
   const ax = active.inputs.exit;
   const hold = ax.hold_period_years;
   const capBump = hold > 0 ? Math.max(0, (ax.exit_cap_rate - am.going_in_cap) / hold) : 0;
 
+  // Investor-returns waterfall from the active scenario's Syndication card. When a
+  // field is unset we default to a 100%-owner model (member equity 100%, no pref/fees),
+  // so the SDA's investor returns equal our project-level returns until a raise is modeled.
+  const syn = active.syndication ?? {};
   const summaryCells: Record<string, SdaCellValue> = {
     G3: activeIndex + 1, // "Populate with scenario #"
-    C19: 0, // Acquisition Fee % — the app doesn't model a GP acq fee; set on Summary to add one
-    D41: 1, // Member Equity 100% → SDA investor returns == our project returns (set a real split for a raise)
+    C19: syn.acquisition_fee_pct ?? 0, // Acquisition Fee (% of purchase price)
+    D41: syn.lp_equity_pct ?? 1, // Member Equity (members' share; Manager Equity D42 = 1 − this)
+    D43: syn.preferred_return_rate ?? 0, // Preferred Return to Members
+    D44: syn.asset_management_fee_pct ?? 0, // Asset Management Fee
+    D45: syn.capital_transaction_fee_pct ?? 0, // Capital Transaction Fee to Mgr
   };
 
   // Exit Strategy: sale year, exit-cap escalation, selling cost, and (optional) refi.
@@ -197,11 +235,44 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     F7: active.inputs.expenses.expense_escalation_rate, // Annual Expense Escalator
   };
 
+  // One Pager — the only inputs are the deal header (D4/D5/D6); everything else is
+  // formulas pulling from Summary/P&L/Returns/Exit. Merged cells: write the anchor.
+  const onePagerCells: Record<string, SdaCellValue> = {
+    D4: deal?.propertyName ?? "", // Property Name
+    D5: deal?.location ?? "", // City, State
+    D6: deal?.yearBuilt ?? 0, // Year Built
+  };
+
+  // Repairs detail tab — the app doesn't itemize interior/exterior, so we put the
+  // active scenario's total rehab on one interior line (relabeled) with 0 contingency.
+  // This makes Repairs!E17/E35 equal the total, so the One Pager's renovation
+  // breakdown (which reads Repairs!E17/E30/E34) foots instead of showing 0.
+  const rehabTotal = totalRehabSpend(active.inputs.capex);
+  const repairsCells: Record<string, SdaCellValue> = {
+    B4: "Renovation (from underwriting)",
+    C4: rehabTotal, // cost
+    D4: 1, // × units → E4 = rehabTotal
+    D34: 0, // contingency % off (the app's total already includes contingency)
+  };
+
+  // 2-Minute Analysis — a rough back-of-envelope screen. Feed the active scenario's
+  // year-1 income, vacancy, expense ratio, and going-in cap.
+  const a0 = active.result.annual[0];
+  const twoMinCells: Record<string, SdaCellValue> = {
+    C4: a0.gpr, // Gross Potential Annual Income
+    C5: a0.gpr > 0 ? a0.vacancy_loss / a0.gpr : 0, // vacancy %
+    C8: a0.egi > 0 ? a0.total_opex / a0.egi : 0, // expense ratio
+    C12: am.going_in_cap, // Market Cap Rate
+  };
+
   return [
     { sheet: "Scenarios", cells: scenarioCells },
     { sheet: "Summary", cells: summaryCells },
     { sheet: "Exit Strategy", cells: exitCells },
     { sheet: "Acquisition Costs", cells: buildAcquisitionCosts(active) },
     { sheet: "P&L", cells: pnlCells },
+    { sheet: "One Pager", cells: onePagerCells },
+    { sheet: "Repairs", cells: repairsCells },
+    { sheet: "2-Minute Analysis", cells: twoMinCells },
   ];
 }

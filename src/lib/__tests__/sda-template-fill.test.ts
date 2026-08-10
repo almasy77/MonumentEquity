@@ -81,7 +81,13 @@ function fakeColumn(name: string, type: SdaScenarioColumnInput["type"], override
   const inputs = {
     purchase: { closing_cost_mode: "rate", closing_cost_rate: 0.02 },
     financing: { io_period_months: 0, interest_rate: 0.055, amortization_years: 30, origination_fee_rate: 0.01 },
-    revenue: { rent_growth_rate: 0.03 },
+    revenue: {
+      rent_growth_rate: 0.03,
+      unit_mix: [
+        { type: "1BR/1BA", count: 12, current_rent: 900, market_rent: 1100 },
+        { type: "2BR/1BA", count: 12, current_rent: 1100, market_rent: 1350 },
+      ],
+    },
     expenses: { expense_escalation_rate: 0.02 },
     capex: {
       per_unit_cost: 5_000,
@@ -194,5 +200,45 @@ describe("buildSdaWrites — scenario → SDA cells", () => {
     // The mapped lines sum to the app's total closing.
     const sum = ["D13", "D18", "D19", "D28", "D31", "D38", "D39", "D48"].reduce((s, k) => s + (acq[k] as number), 0);
     expect(sum).toBe(39_000);
+  });
+
+  it("maps syndication, One Pager deal info, Repairs detail, 2-Minute, and Target Rent", () => {
+    const col = fakeColumn("Base", "base");
+    col.syndication = { lp_equity_pct: 0.8, preferred_return_rate: 0.08, acquisition_fee_pct: 0.02, asset_management_fee_pct: 0.015, capital_transaction_fee_pct: 0.01 };
+    const writes = buildSdaWrites([col], 0, { propertyName: "Maple Court", location: "Columbus, OH", yearBuilt: 1975 });
+
+    const summary = writes.find((w) => w.sheet === "Summary")!.cells;
+    expect(summary.D41).toBe(0.8); // member equity from card
+    expect(summary.D43).toBe(0.08); // preferred return
+    expect(summary.C19).toBe(0.02); // acquisition fee
+    expect(summary.D44).toBe(0.015); // asset mgmt fee
+    expect(summary.D45).toBe(0.01); // capital transaction fee
+
+    const one = writes.find((w) => w.sheet === "One Pager")!.cells;
+    expect(one.D4).toBe("Maple Court");
+    expect(one.D5).toBe("Columbus, OH");
+    expect(one.D6).toBe(1975);
+
+    const rep = writes.find((w) => w.sheet === "Repairs")!.cells;
+    expect(rep.C4).toBe(5_000 * 10 + 40_000); // total rehab on one interior line
+    expect(rep.D34).toBe(0); // contingency off
+
+    const two = writes.find((w) => w.sheet === "2-Minute Analysis")!.cells;
+    expect(two.C4).toBe(300_000); // GPI
+    expect(two.C5).toBeCloseTo(15_000 / 300_000, 6); // vacancy %
+
+    const scen = writes.find((w) => w.sheet === "Scenarios")!.cells;
+    expect(scen.AC8).toBe("1BR/1BA"); // Target Rent Analysis unit type
+    expect(scen.AD8).toBe(12); // # units
+    expect(scen.AE8).toBe(900); // current rent
+    expect(scen.AG8).toBe(1100); // target (market) rent
+  });
+
+  it("defaults syndication to a 100%-owner model when no card is set", () => {
+    const writes = buildSdaWrites([fakeColumn("Base", "base")], 0);
+    const summary = writes.find((w) => w.sheet === "Summary")!.cells;
+    expect(summary.D41).toBe(1); // 100% member equity
+    expect(summary.C19).toBe(0); // no acq fee
+    expect(summary.D43).toBe(0); // no pref
   });
 });
