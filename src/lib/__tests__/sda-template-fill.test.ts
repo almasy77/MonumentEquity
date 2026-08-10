@@ -114,6 +114,9 @@ function fakeColumn(name: string, type: SdaScenarioColumnInput["type"], override
         bad_debt: 3_000,
         concessions: 2_000,
         other_income: 12_000,
+        egi: 292_000, // 300k - 15k - (3k+2k) + 12k
+        total_opex: 90_000,
+        noi: 202_000,
         opex_breakdown: {
           management_fees: 12_000,
           payroll: 20_000,
@@ -156,6 +159,13 @@ describe("buildSdaWrites — scenario → SDA cells", () => {
     expect(scen.D22).toBe(-15_000); // vacancy (negative dollars)
     expect(scen.D35).toBe(30_000); // Real Estate Taxes ← property_tax
     expect(scen.AE42).toBe(0); // phantom reserve killed
+    // Percent helpers the P&L actually reads (col 1 → F, col 2 → I).
+    const egi = 300_000 - 15_000 - 5_000 + 12_000; // gpr - vac - (bad+conc) + other
+    expect(scen.F22).toBeCloseTo(15_000 / 300_000, 6); // vacancy % col1
+    expect(scen.F23).toBeCloseTo(5_000 / 300_000, 6); // concessions % col1
+    expect(scen.F37).toBeCloseTo(12_000 / egi, 6); // mgmt fee % col1
+    expect(scen.I22).toBeCloseTo(15_000 / 300_000, 6); // vacancy % col2 (was the bug)
+    expect(scen.I37).toBeCloseTo(12_000 / egi, 6); // mgmt fee % col2 (was the bug)
     // Second column lands in G.
     expect(scen.G6).toBe(2_000_000);
 

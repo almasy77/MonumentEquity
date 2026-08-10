@@ -176,6 +176,20 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
       [`${L}54`]: col.inputs.financing.amortization_years, // Amortization (years)
       [`${L}60`]: m.going_in_cap, // Market Cap Rate (current) — drives FMV and the exit base
     });
+
+    // CRITICAL: the P&L reads vacancy and concessions as a PERCENT of GPR from a
+    // per-column helper (Summary!C27/C28 → cols F/I/L/O rows 22/23), NOT the dollar
+    // cell. In column D the % is derived from the dollar, but in columns G/J/M the %
+    // is the input and the dollar derives from it — so we must set the % helper for
+    // every column, or the P&L uses the template's default 10% / 5% whenever a
+    // non-first scenario is active. Set both (they're consistent) for robustness.
+    const pctCol = ["F", "I", "L", "O"][i];
+    scenarioCells[`${pctCol}22`] = a0.gpr > 0 ? a0.vacancy_loss / a0.gpr : 0; // vacancy %
+    scenarioCells[`${pctCol}23`] = a0.gpr > 0 ? (a0.bad_debt + a0.concessions) / a0.gpr : 0; // concessions %
+    // Management fee is also modeled as a PERCENT (of income): the P&L computes it as
+    // E27×D16 where E27 = CHOOSE(...F37/I37/L37/O37). Same column-2-4 default trap, so
+    // set the % helper = mgmt$/EGI. (It then scales correctly across the P&L years.)
+    scenarioCells[`${pctCol}37`] = a0.egi > 0 ? ob.management_fees / a0.egi : 0; // management fee %
   });
 
   // Kill the template's $250/unit rule-of-thumb replacement reserve so the SDA's NOI
