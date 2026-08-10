@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: '50mb',
   },
+  // The SDA export reads the bundled template at runtime; trace it into the
+  // serverless function so it's present in production.
+  outputFileTracingIncludes: {
+    "/api/export/[dealId]/sda": ["./src/lib/sda/sda-template.xlsx"],
+  },
   async headers() {
     return [
       {
