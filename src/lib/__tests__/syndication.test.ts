@@ -82,12 +82,17 @@ describe("computeSyndication — pref deficiency accrues and is paid at sale", (
     expect(y1.excess_to_lp).toBe(0); // nothing left to split
   });
 
-  it("pays accrued pref deficiency from sale proceeds before profit split", () => {
-    // Year-2 pref due = 1M×8% + 40k prior deficiency = 120k; still only 40k paid → deficiency grows.
+  it("pays the CUMULATIVE unpaid pref from sale proceeds before profit split (no double-count)", () => {
+    // Each year 80k due, 40k paid → 40k shortfall; the running deficiency compounds:
+    // 40k, 80k, 120k, 160k, 200k. Year-2 due = 1M×8% + 40k prior = 120k.
     expect(r.years[1].pref_due).toBeCloseTo(120_000, 0);
-    // Sale pays down the accrued deficiency ahead of any profit split.
-    expect(r.sale_pref_deficiency_paid).toBeGreaterThan(0);
+    expect(r.years[4].pref_deficiency).toBeCloseTo(200_000, 0); // cumulative unpaid at sale
+    // Sale pays exactly the cumulative 200k (NOT the old bug's summed 600k) before profit.
     expect(r.sale_return_of_capital).toBeCloseTo(1_000_000, 0);
+    expect(r.sale_pref_deficiency_paid).toBeCloseTo(200_000, 0);
+    // Remaining profit splits 80/20: net 2M − 1M cap − 200k pref = 800k → GP 160k.
+    expect(r.sale_net_profit).toBeCloseTo(800_000, 0);
+    expect(r.sale_profit_to_gp).toBeCloseTo(160_000, 0);
   });
 });
 

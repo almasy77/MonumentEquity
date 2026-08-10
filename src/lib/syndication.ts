@@ -121,7 +121,6 @@ export function computeSyndication(input: SyndicationInput): SyndicationResult {
   const years: SyndicationYearResult[] = [];
   let capBegin = input.initial_lp_capital;
   let priorDeficiency = 0;
-  let accruedDeficiency = 0; // running total of unpaid pref, paid down at sale
   let amFeesTotal = 0;
   let gpExcessTotal = 0;
 
@@ -164,7 +163,11 @@ export function computeSyndication(input: SyndicationInput): SyndicationResult {
       const capTxnFeeSale = a.capital_transaction_fee_pct * (input.sale_price ?? 0);
       const netSaleEquity = input.net_sale_equity - capTxnFeeSale;
       const returnOfCapital = Math.max(0, Math.min(capAtSale, netSaleEquity));
-      const prefDefPaid = Math.max(0, Math.min(netSaleEquity - returnOfCapital, accruedDeficiency + prefDeficiency));
+      // prefDeficiency is ALREADY the cumulative unpaid pref: prefDue rolls the
+      // prior year's deficiency forward (prefDue = capBegin*rate + priorDeficiency),
+      // so this year's prefDeficiency is the running balance. Pay that — do NOT add
+      // a separate sum of prior balances (that double-counts the carryforward).
+      const prefDefPaid = Math.max(0, Math.min(netSaleEquity - returnOfCapital, prefDeficiency));
       const netProfit = Math.max(0, netSaleEquity - returnOfCapital - prefDefPaid);
       const profitToLp = netProfit * lpSplit;
       // stash sale detail on the result via closure vars
@@ -183,7 +186,6 @@ export function computeSyndication(input: SyndicationInput): SyndicationResult {
 
     amFeesTotal += amFee;
     gpExcessTotal += excessGp;
-    accruedDeficiency += prefDeficiency;
 
     years.push({
       year: y.year,

@@ -9,6 +9,8 @@
  *    the purchase price.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   jurisdictionRulesFor,
   assertJurisdictionResolved,
@@ -16,7 +18,9 @@ import {
 import {
   propertyTaxScenarioInForce,
   propertyTaxBillForTaxYear,
+  calculateUnderwriting,
   type PropertyTaxAssumptions,
+  type ScenarioInputs,
 } from "../underwriting";
 
 const base = (over: Partial<PropertyTaxAssumptions> = {}): PropertyTaxAssumptions => ({
@@ -137,5 +141,36 @@ describe("periodic_hold escalation + reappraisal step", () => {
     // After the reval: escalates from the new base.
     const yAfter = propertyTaxBillForTaxYear(pt, price, "periodic_hold", 2030, esc);
     expect(yAfter).toBeCloseTo(1_400_000 * 0.012 * Math.pow(1.02, 2), 4);
+  });
+});
+
+describe("periodic_hold exit does NOT reassess to the buyer's price", () => {
+  function withV2(state: string | undefined) {
+    const inp = JSON.parse(
+      readFileSync(join(__dirname, "golden", "fifth_st_tax_phasein.input.json"), "utf8"),
+    ) as ScenarioInputs;
+    // Replace v1 reassessment with a v2 record; state selects the mechanic.
+    inp.expenses.tax_reassessment = undefined;
+    inp.expenses.property_tax_v2 = {
+      enabled: true,
+      effective_tax_rate: 0.02,
+      apply_at_exit: true,
+      closing_date: "2026-01-01",
+      parcel: state ? { state } : undefined,
+    };
+    return { result: calculateUnderwriting(inp), exitCap: inp.exit.exit_cap_rate };
+  }
+
+  it("a periodic (NC) deal caps exit NOI at the exit cap with no price-linked tax load", () => {
+    const { result, exitCap } = withV2("NC"); // periodic_hold
+    // Naive exit: exit_value ≈ exit_noi / exit_cap (buyer inherits the held bill in NOI).
+    expect(result.metrics.exit_value).toBeCloseTo(result.metrics.exit_noi / exitCap, 0);
+  });
+
+  it("a sale-price (no-state) deal DOES load the reassessed tax into the exit cap → lower value", () => {
+    const nc = withV2("NC");
+    const oh = withV2(undefined); // no state → reassessed_to_price
+    // Same NOI basis, but the reassess path divides by (cap + rate) → strictly lower exit value.
+    expect(oh.result.metrics.exit_value).toBeLessThan(nc.result.metrics.exit_value);
   });
 });

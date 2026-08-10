@@ -1315,9 +1315,19 @@ export function calculateUnderwriting(
   // Circular (value depends on NOI depends on tax depends on value) — closed
   // form: exitValue = NOI_excluding_tax / (cap + effective_tax_rate).
   const ptV2 = expenses.property_tax_v2;
+  const v2InForce = ptV2?.enabled ? propertyTaxScenarioInForce(ptV2) : null;
   const exitRateSource = ptV2?.enabled ? ptV2 : expenses.tax_reassessment;
   const reassess = exitRateSource;
-  const exitReassess = !!(reassess?.enabled && (reassess.apply_at_exit ?? true) && reassess.effective_tax_rate > 0);
+  // Only load tax into the exit cap for SALE-PRICE (reassess-to-price) mechanics.
+  // A periodic-revaluation jurisdiction does NOT reassess the buyer to their
+  // purchase price at sale — the buyer inherits the held/escalated bill, which is
+  // already inside NOI — so those deals use the naive NOI/cap exit below.
+  const exitReassess = !!(
+    reassess?.enabled &&
+    (reassess.apply_at_exit ?? true) &&
+    reassess.effective_tax_rate > 0 &&
+    v2InForce !== "periodic_hold"
+  );
   let exitValue: number;
   if (exit.sale_price && exit.sale_price > 0) {
     exitValue = exit.sale_price; // explicit price — buyer's tax is their problem

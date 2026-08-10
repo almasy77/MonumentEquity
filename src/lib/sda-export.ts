@@ -176,6 +176,10 @@ function buildPnL(wb: ExcelJS.Workbook, inputs: ScenarioInputs, result: Underwri
   dataRow(ws, "Net Operating Income", annual.map((a) => a.noi), USD, true);
   section(ws, "Debt Service", n + 1);
   dataRow(ws, "Total Debt Service", annual.map((a) => a.debt_service));
+  // Reserves sit below NOI in this app's convention (the SDA folds them into OpEx),
+  // so show them explicitly here — otherwise NOI − Debt Service wouldn't foot to
+  // Cash Flow available for Distribution.
+  dataRow(ws, "Less: Reserves & Replacement", annual.map((a) => -(a.reserves + (a.capital_reserve ?? 0))));
   dataRow(ws, "Cash Flow available for Distribution", syn.years.map((y) => y.distributable_cash_flow), USD, true);
 
   section(ws, "Distributions from Cash Flow", n + 1);
