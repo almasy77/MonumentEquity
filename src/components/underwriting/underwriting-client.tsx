@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Loader2, AlertTriangle, Download, Archive, Trash2, MoreVertical, Eye, EyeOff, Copy, Pencil, FileText, Upload } from "lucide-react";
@@ -15,7 +15,8 @@ import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
 import { computeTaxFlags } from "@/lib/tax-flags";
 import { describeScenario } from "@/lib/scenario-description";
-import type { UnderwritingResult, RentBasis, UnrenovatedBasis, RenovatedBasis, ExitAssumptions } from "@/lib/underwriting";
+import { checkInputPlausibility } from "@/lib/input-checks";
+import type { UnderwritingResult, RentBasis, UnrenovatedBasis, RenovatedBasis, ExitAssumptions, ScenarioInputs } from "@/lib/underwriting";
 import { uploadFile } from "@/lib/upload-client";
 
 interface ScenarioWithResult {
@@ -688,8 +689,54 @@ function ScenarioAnalysis({
   baseScenario?: Scenario;
 }) {
   const description = describeScenario(scenario, baseScenario);
+
+  // Input-plausibility linter — catches data-entry typos (a rate typed as a percent,
+  // a rent typed as annual, $0 tax/insurance) before they become a clean wrong number.
+  const inputFlags = useMemo(() => checkInputPlausibility({
+    purchase: scenario.purchase_assumptions,
+    financing: scenario.financing_assumptions,
+    revenue: scenario.revenue_assumptions,
+    expenses: scenario.expense_assumptions,
+    capex: scenario.capex_assumptions,
+    exit: scenario.exit_assumptions,
+  } as unknown as ScenarioInputs, { units: deal.units }), [scenario, deal.units]);
+  const inputErrors = inputFlags.filter((f) => f.severity === "error");
+  const inputWarnings = inputFlags.filter((f) => f.severity === "warning");
+
   return (
     <div className="space-y-4">
+      {/* Input checks — data-entry errors (red) and things to verify (amber) */}
+      {inputErrors.length > 0 && (
+        <Card className="bg-red-900/25 border-red-700/60">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-red-300 uppercase tracking-wide">Input errors — likely data-entry mistakes</p>
+                {inputErrors.map((f, i) => (
+                  <p key={i} className="text-sm text-red-200">{f.message}</p>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {inputWarnings.length > 0 && (
+        <Card className="bg-amber-900/20 border-amber-700/50">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-amber-300/90 uppercase tracking-wide">Verify these inputs</p>
+                {inputWarnings.map((f, i) => (
+                  <p key={i} className="text-sm text-amber-200/90">{f.message}</p>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Warnings */}
       {result.warnings.length > 0 && (
         <Card className="bg-yellow-900/20 border-yellow-700/50">
