@@ -2317,10 +2317,17 @@ export function buildUnitStateSchedule(args: {
     }));
 
     if (useLinear) {
-      // Spread eligibility evenly across the absorption window, deepest gap first.
+      // Vacant units are pure downside — they lease up AS FAST AS capacity allows
+      // (eligible from month 0). Only the OCCUPIED below-market units mark to
+      // market gradually across the absorption window, since they can only be
+      // re-tenanted at market as leases roll (Bryan's "variability as we get
+      // tenants that match rents"). Vacancies therefore stay eligible at 0; the
+      // mark-up turns get the linear absorption spread, deepest gap first. Both
+      // still draw on the shared max_turns_per_month throughput, so vacancies —
+      // eligible first and deepest-gap — fill ahead of the mark-ups.
       const span = Math.max(1, ramp.absorption_months);
-      queue.sort((a, b) => b.gap - a.gap);
-      queue.forEach((q, k) => { q.eligible = Math.floor((k * span) / Math.max(1, queue.length)); });
+      const markups = queue.filter((q) => q.kind === "turn").sort((a, b) => b.gap - a.gap);
+      markups.forEach((q, k) => { q.eligible = Math.floor((k * span) / Math.max(1, markups.length)); });
     } else {
       // Schedule mode: occupied units become eligible when their lease ends;
       // vacant and mtm units are eligible immediately.

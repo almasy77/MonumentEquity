@@ -17,9 +17,14 @@
  *
  * Exact post-fix EGI/NOI are the ENGINE'S reported figures for the 4443 fixture
  * and were reported back before locking, per the spec. They reveal the real
- * economics the Market-basis bug hid: an 8.6% going-in cap collapses to ~0.5%
- * in Year 1 because 15 of 24 units pay nothing and lease up through a 2-turn/mo
- * cap. That is the point of the fix.
+ * economics the Market-basis bug hid: an 8.6% going-in cap collapses to ~1.4%
+ * in Year 1 because 15 of 24 units pay nothing and lease up over the ramp.
+ *
+ * Lease-up model (Bryan's decision): vacant units lease up as fast as the
+ * turn/lease throughput allows (eligible from month 1); occupied below-market
+ * units mark to market gradually across the absorption window as leases roll.
+ * So the vacancy-fill speed is governed by max_turns_per_month, while the
+ * mark-up pace is governed by absorption_months.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -60,13 +65,13 @@ describe("ENG-2: mark-to-market ramp + loss to lease (4443 Likely, Market basis)
     expect(res.annual[res.annual.length - 1].loss_to_lease).toBeCloseTo(0, 2);
   });
 
-  it("Year 1 EGI falls materially below the Market-basis $359,546 (reported: $205,772.90)", () => {
+  it("Year 1 EGI falls materially below the Market-basis $359,546 (reported: $253,436.90)", () => {
     expect(y1.egi).toBeLessThan(300_000);
-    expect(y1.egi).toBeCloseTo(205772.90, 0);
+    expect(y1.egi).toBeCloseTo(253436.90, 0);
   });
 
-  it("Year 1 NOI reflects the true collectible, not full market (reported: $9,620.75)", () => {
-    expect(y1.noi).toBeCloseTo(9620.75, 0);
+  it("Year 1 NOI reflects the true collectible, not full market (reported: $28,671.63)", () => {
+    expect(y1.noi).toBeCloseTo(28671.63, 0);
   });
 });
 
