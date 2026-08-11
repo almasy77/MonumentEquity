@@ -1588,8 +1588,9 @@ export function calculateUnderwriting(
     };
   }
 
-  // ── Sensitivity ──
-  const sensitivity = buildSensitivityGrid(inputs);
+  // ── Sensitivity ── anchored to the headline IRR so the "no change" center cell
+  // reconciles exactly (the grid itself uses a fast annual approximation).
+  const sensitivity = buildSensitivityGrid(inputs, irr);
 
   // ── Sanity Checks ──
   if (goingInCap < 0.03) warnings.push("Going-in cap rate below 3% — verify pricing");
@@ -2450,6 +2451,7 @@ function calculateMonthCapex(capex: CapexAssumptions, month: number): number {
 
 function buildSensitivityGrid(
   inputs: ScenarioInputs,
+  anchorIrr?: number | null,
 ): SensitivityCell[] {
   const priceDeltaOptions = [-0.10, -0.05, 0, 0.05, 0.10];
   const capRateDeltas = [-0.01, -0.005, 0, 0.005, 0.01];
@@ -2531,6 +2533,24 @@ function buildSensitivityGrid(
         irr: calculateAnnualXIRR(irrFlows),
       });
     }
+  }
+
+  // Anchor the grid to the headline IRR. The grid uses a fast annual approximation
+  // that can drift from the full monthly engine by a few tenths of a point (more for
+  // tax-phase-in deals), which left the "no change" center cell disagreeing with the
+  // headline IRR shown right above it. Shift every cell by (headline − center) so the
+  // center reconciles exactly and the sensitivity SHAPE (how IRR moves with price/cap)
+  // is preserved.
+  //
+  // ONLY when the grid inherits the headline rent bases. An EXPLICIT
+  // sensitivity_rent_basis is a deliberate stress scenario (e.g. "what if we only
+  // achieve current, un-renovated rents") whose center is MEANT to differ from the
+  // headline — anchoring there would erase the very thing the user asked to see.
+  const hasExplicitBasis = !!(inputs.exit as { sensitivity_rent_basis?: string }).sensitivity_rent_basis;
+  const center = grid.find((c) => Math.abs(c.purchase_price_delta) < 1e-9 && Math.abs(c.exit_cap_rate - inputs.exit.exit_cap_rate) < 1e-9);
+  if (!hasExplicitBasis && anchorIrr != null && Number.isFinite(anchorIrr) && center?.irr != null) {
+    const shift = anchorIrr - center.irr;
+    for (const c of grid) if (c.irr != null) c.irr += shift;
   }
 
   return grid;
