@@ -68,7 +68,8 @@ export function checkInputPlausibility(inputs: ScenarioInputs, deal?: { units?: 
   }
 
   // 2) Rents that look annual (or mistyped) — monthly residential rent is ~$200–$8,000.
-  const units = (inputs.revenue as { unit_mix?: Array<{ type?: string; current_rent?: number; market_rent?: number; renovated_rent_premium?: number; count?: number }> }).unit_mix ?? [];
+  type UnitRow = { type?: string; current_rent?: number; market_rent?: number; renovated_rent_premium?: number; count?: number; zero_rent_treatment?: string; units?: Array<{ current_rent?: number; zero_rent_treatment?: string }> };
+  const units = (inputs.revenue as { unit_mix?: UnitRow[] }).unit_mix ?? [];
   units.forEach((u, i) => {
     const label = u.type || `unit type ${i + 1}`;
     for (const [k, v] of [["current_rent", u.current_rent], ["market_rent", u.market_rent]] as const) {
@@ -84,6 +85,31 @@ export function checkInputPlausibility(inputs: ScenarioInputs, deal?: { units?: 
       add("warning", `revenue.unit_mix[${i}].renovated_rent_premium`, `${label} renovated-rent premium is negative — verify.`);
     }
   });
+
+  // VAL-4: a $0 current rent is ambiguous — genuinely vacant, or producing under
+  // other terms (STR) and not captured as a monthly LTR rent. Both lease up to
+  // market, but the user should DECLARE which so the $0 isn't a silent data gap.
+  // Count $0 units (by count) whose treatment is undeclared (undefined/unknown).
+  let undeclaredZero = 0;
+  units.forEach((u) => {
+    const details = u.units ?? [];
+    if (details.length > 0) {
+      for (const d of details) {
+        const declared = d.zero_rent_treatment === "vacant" || d.zero_rent_treatment === "str";
+        if ((d.current_rent ?? 0) <= 0 && !declared) undeclaredZero += 1;
+      }
+    } else if ((u.current_rent ?? 0) <= 0) {
+      const declared = u.zero_rent_treatment === "vacant" || u.zero_rent_treatment === "str";
+      if (!declared) undeclaredZero += u.count ?? 1;
+    }
+  });
+  if (undeclaredZero > 0) {
+    add(
+      "warning",
+      "revenue.unit_mix.zero_rent_treatment",
+      `${undeclaredZero} unit${undeclaredZero === 1 ? "" : "s"} bill $0 — mark each as Vacant or STR / available-at-market so the model knows they lease up to market (they are treated as leasing up to market until you classify them).`,
+    );
+  }
 
   // 4) Missing critical expenses (a $0 bill silently inflates NOI).
   const exp = inputs.expenses as unknown as Record<string, number | undefined> & { tax_reassessment?: { enabled?: boolean }; property_tax_v2?: { enabled?: boolean } };

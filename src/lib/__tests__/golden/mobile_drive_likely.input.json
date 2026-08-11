@@ -1,5 +1,5 @@
 {
-  "_comment": "4443 Mobile Drive — LIKELY CASE (Fixture A). Reconstructed from MonumentEquity_Underwriter_Fix_Spec_20260811.md Section 5 + the reconciled operating chain. Encodes the deal AS THE APP MODELS IT TODAY: proforma_unrenovated_basis='market' (every occupied unit priced at market from month 1, %MTM=0) and 15 of 24 units carrying $0 current rent but NOT flagged vacant (the underlying data problem in spec Section 4). The 9 non-zero current rents (930..1195, summing 9,723/mo) are reconstructed from the spec's aggregates; under market basis they do not affect Year-1 GPR/EGI/turnover, so ENG-1 is exact regardless of their exact split. Property tax reproduces the spec's Year-1 as-billed blend (11 months at the seller's current bill, step to reassessed at month 12) to the cent.",
+  "_comment": "4443 Mobile Drive — LIKELY CASE (Fixture A). Reconstructed from MonumentEquity_Underwriter_Fix_Spec_20260811.md Section 5 + the reconciled operating chain. 15 of 24 units bill $0 in the LTR rent roll because they are rented as short-term rentals under other terms; per Bryan they are available to convert to market LTR (zero_rent_treatment='str') and lease up to market over the absorption window — the only question is absorption speed (max_turns_per_month / absorption_months). The 9 non-zero current rents (930..1195, summing 9,723/mo) are reconstructed from the spec's aggregates. Property tax reproduces the spec's Year-1 as-billed blend (11 months at the seller's current bill, step to reassessed at month 12) to the cent. NOTE: this fixture keeps proforma_unrenovated_basis='market', but post-ENG-2 the ramp runs under either basis, so the basis no longer changes the operating result here.",
   "purchase": {
     "purchase_price": 2050000,
     "closing_cost_rate": 0.025,
@@ -26,8 +26,8 @@
       { "unit_number": "107", "type": "2BR/1BA", "count": 1, "current_rent": 1150, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "107", "status": "mtm", "current_rent": 1150 }] },
       { "unit_number": "108", "type": "2BR/1BA", "count": 1, "current_rent": 1195, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "108", "status": "mtm", "current_rent": 1195 }] },
       { "unit_number": "109", "type": "2BR/1BA", "count": 1, "current_rent": 1133, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "109", "status": "mtm", "current_rent": 1133 }] },
-      { "unit_number": "110", "type": "2BR/1BA", "count": 9, "current_rent": 0, "market_rent": 1295, "renovated_rent_premium": 0 },
-      { "unit_number": "201", "type": "1BR/1BA", "count": 6, "current_rent": 0, "market_rent": 1095, "renovated_rent_premium": 0 }
+      { "unit_number": "110", "type": "2BR/1BA", "count": 9, "current_rent": 0, "market_rent": 1295, "renovated_rent_premium": 0, "zero_rent_treatment": "str" },
+      { "unit_number": "201", "type": "1BR/1BA", "count": 6, "current_rent": 0, "market_rent": 1095, "renovated_rent_premium": 0, "zero_rent_treatment": "str" }
     ],
     "other_income_monthly": 3070.1666666667,
     "vacancy_rate": 0.07,

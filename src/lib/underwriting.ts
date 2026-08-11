@@ -84,12 +84,27 @@ export interface FinancingAssumptions {
 // these drive a unit-level absorption schedule: each unit gets its own
 // time-to-market (vacant ~lease-up months, MTM per pacing policy, fixed
 // lease = lease end + turn downtime) instead of the linear approximation.
+/**
+ * How to model a unit that bills $0 in the rent roll (spec VAL-4). A $0 can mean
+ * genuinely empty, or a unit producing under other terms (short-term rental)
+ * that is not captured as a monthly LTR rent. Both lease up to market over the
+ * absorption window — the tag is a DECLARATION so the engine doesn't guess and
+ * the validation layer doesn't flag an intentional $0 as a data gap:
+ *   "vacant" — empty, leasing up to market.
+ *   "str"    — occupied under short-term/other terms, available to convert to
+ *              market LTR; leases up to market over absorption.
+ *   "unknown"/undefined — unclassified; the run still computes (treated as
+ *              leasing up to market) but VAL-4 warns the $0 is undeclared.
+ */
+export type ZeroRentTreatment = "vacant" | "str" | "unknown";
+
 export interface UnitDetail {
   unit_id: string; // e.g. "A-3"
   status: "occupied" | "mtm" | "vacant"; // occupied = fixed lease; mtm = month-to-month
   current_rent: number; // $0 for vacant
   market_rent?: number; // per-unit override; defaults to the row's market_rent
   lease_end?: string; // ISO date — required for "occupied" to schedule its turn
+  zero_rent_treatment?: ZeroRentTreatment; // only meaningful when current_rent === 0
 }
 
 export interface UnitMix {
@@ -101,6 +116,7 @@ export interface UnitMix {
   renovated_rent_premium: number; // additional rent after renovation
   unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
   units?: UnitDetail[]; // optional per-unit expansion; when present, count/current_rent should mirror it
+  zero_rent_treatment?: ZeroRentTreatment; // row-level tag for aggregate $0 rows (no per-unit detail)
 }
 
 // Itemized breakdown of other income (stored $/mo per line; the UI offers
