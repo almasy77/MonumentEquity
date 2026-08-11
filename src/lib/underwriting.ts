@@ -936,6 +936,14 @@ export interface DealMetrics {
   // Coverage
   year1_dscr: number;
   min_dscr: number;
+  min_dscr_year: number; // 1-based hold year of the minimum DSCR (the lease-up trough)
+  // Lease-up carry: the cumulative operating cash SHORTFALL across any years where
+  // NOI does not cover debt service (before capex/reserves) — the cash a lease-up
+  // deal must fund from an interest/operating reserve or bridge financing, since a
+  // permanent amortizing loan will not carry a sub-1.0x year.
+  operating_shortfall_total: number; // ≥ 0; sum of negative pre-reserve cash-flow years
+  operating_shortfall_years: number; // count of years with negative pre-reserve cash flow
+  operating_reserve_covers_shortfall: boolean; // funded operating reserve ≥ the shortfall
   year1_debt_yield: number; // year-1 NOI / origination loan amount
   min_debt_yield: number; // lowest (annual NOI / outstanding balance that year) across the hold
   // Exit
@@ -1443,10 +1451,25 @@ export function calculateUnderwriting(
   // DSCR
   const year1DS = annual.length > 0 ? annual[0].debt_service : 0;
   const year1DSCR = year1DS > 0 ? year1NOI / year1DS : 0;
-  const minDSCR = annual.reduce((min, a) => {
+  let minDSCR = Infinity;
+  let minDSCRYear = 1;
+  annual.forEach((a, i) => {
     const dscr = a.debt_service > 0 ? a.noi / a.debt_service : Infinity;
-    return Math.min(min, dscr);
-  }, Infinity);
+    if (dscr < minDSCR) { minDSCR = dscr; minDSCRYear = i + 1; }
+  });
+
+  // Lease-up carry: total operating cash shortfall across sub-coverage years —
+  // the cash a lease-up deal burns before it stabilizes, which must be funded by
+  // an interest/operating reserve or bridge debt (spec OUT-3 / financing reality).
+  let operatingShortfallTotal = 0;
+  let operatingShortfallYears = 0;
+  for (const a of annual) {
+    if (a.cash_flow_before_capex_and_reserves < 0) {
+      operatingShortfallTotal += -a.cash_flow_before_capex_and_reserves;
+      operatingShortfallYears += 1;
+    }
+  }
+  const operatingReserveCoversShortfall = capexReserve >= operatingShortfallTotal;
 
   // Debt Yield = NOI / outstanding loan balance. Year-1 uses the origination
   // balance; the hold-period minimum tracks the amortizing balance year by year.
@@ -1509,6 +1532,10 @@ export function calculateUnderwriting(
     average_cash_on_cash: avgCoC,
     year1_dscr: year1DSCR,
     min_dscr: !isFinite(minDSCR) ? year1DSCR : minDSCR,
+    min_dscr_year: minDSCRYear,
+    operating_shortfall_total: operatingShortfallTotal,
+    operating_shortfall_years: operatingShortfallYears,
+    operating_reserve_covers_shortfall: operatingReserveCoversShortfall,
     year1_debt_yield: year1DebtYield,
     min_debt_yield: !isFinite(minDebtYield) ? year1DebtYield : minDebtYield,
     exit_value: exitValue,
@@ -1640,6 +1667,15 @@ export function calculateUnderwriting(
   if (goingInCap < 0.03) warnings.push("Going-in cap rate below 3% — verify pricing");
   if (goingInCap > 0.12) warnings.push("Going-in cap rate above 12% — verify pricing");
   if (year1DSCR > 0 && year1DSCR < 1.0) warnings.push("DSCR below 1.0 — negative cash flow");
+  // Lease-up carry (spec OUT-3 / financing reality): a sub-1.0x coverage year can't
+  // be funded by a permanent amortizing loan. Surface the cash burn and whether the
+  // funded operating reserve covers it, and flag the bridge-financing implication.
+  if (isFinite(minDSCR) && minDSCR < 1.0 && operatingShortfallTotal > 0) {
+    const fmt0 = (n: number) => `$${Math.round(n).toLocaleString()}`;
+    warnings.push(
+      `Lease-up carry: coverage bottoms at ${minDSCR.toFixed(2)}x in year ${minDSCRYear}; the deal burns ${fmt0(operatingShortfallTotal)} of operating cash over ${operatingShortfallYears} year${operatingShortfallYears === 1 ? "" : "s"} before it stabilizes. A permanent amortizing loan will not fund a sub-1.0x year — this needs an interest reserve or bridge financing. Funded operating reserve ${fmt0(capexReserve)} ${operatingReserveCoversShortfall ? "covers" : "does NOT cover"} the shortfall.`,
+    );
+  }
   if (revenue.vacancy_rate < 0.03) warnings.push("Vacancy below 3% — may be aggressive");
   if (revenue.vacancy_rate > 0.20) warnings.push("Vacancy above 20% — verify assumption");
   if (revenue.rent_growth_rate > 0.05) warnings.push("Rent growth above 5%/yr — may be aggressive");
