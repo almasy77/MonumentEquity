@@ -1,0 +1,85 @@
+{
+  "_comment": "4443 Mobile Drive — LIKELY CASE (Fixture A). Reconstructed from MonumentEquity_Underwriter_Fix_Spec_20260811.md Section 5 + the reconciled operating chain. Encodes the deal AS THE APP MODELS IT TODAY: proforma_unrenovated_basis='market' (every occupied unit priced at market from month 1, %MTM=0) and 15 of 24 units carrying $0 current rent but NOT flagged vacant (the underlying data problem in spec Section 4). The 9 non-zero current rents (930..1195, summing 9,723/mo) are reconstructed from the spec's aggregates; under market basis they do not affect Year-1 GPR/EGI/turnover, so ENG-1 is exact regardless of their exact split. Property tax reproduces the spec's Year-1 as-billed blend (11 months at the seller's current bill, step to reassessed at month 12) to the cent.",
+  "purchase": {
+    "purchase_price": 2050000,
+    "closing_cost_rate": 0.025,
+    "cost_seg_study_cost": 7500,
+    "capex_reserve": 143940,
+    "operating_reserve_yield_rate": 0.02
+  },
+  "financing": {
+    "ltv": 0.7,
+    "interest_rate": 0.065,
+    "amortization_years": 30,
+    "io_period_months": 0,
+    "origination_fee_rate": 0.01,
+    "size_to_dscr": false
+  },
+  "revenue": {
+    "unit_mix": [
+      { "unit_number": "101", "type": "2BR/1BA", "count": 1, "current_rent": 930, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "101", "status": "mtm", "current_rent": 930 }] },
+      { "unit_number": "102", "type": "2BR/1BA", "count": 1, "current_rent": 995, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "102", "status": "mtm", "current_rent": 995 }] },
+      { "unit_number": "103", "type": "2BR/1BA", "count": 1, "current_rent": 1050, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "103", "status": "mtm", "current_rent": 1050 }] },
+      { "unit_number": "104", "type": "2BR/1BA", "count": 1, "current_rent": 1075, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "104", "status": "mtm", "current_rent": 1075 }] },
+      { "unit_number": "105", "type": "2BR/1BA", "count": 1, "current_rent": 1095, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "105", "status": "mtm", "current_rent": 1095 }] },
+      { "unit_number": "106", "type": "2BR/1BA", "count": 1, "current_rent": 1100, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "106", "status": "mtm", "current_rent": 1100 }] },
+      { "unit_number": "107", "type": "2BR/1BA", "count": 1, "current_rent": 1150, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "107", "status": "mtm", "current_rent": 1150 }] },
+      { "unit_number": "108", "type": "2BR/1BA", "count": 1, "current_rent": 1195, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "108", "status": "mtm", "current_rent": 1195 }] },
+      { "unit_number": "109", "type": "2BR/1BA", "count": 1, "current_rent": 1133, "market_rent": 1295, "renovated_rent_premium": 0, "units": [{ "unit_id": "109", "status": "mtm", "current_rent": 1133 }] },
+      { "unit_number": "110", "type": "2BR/1BA", "count": 9, "current_rent": 0, "market_rent": 1295, "renovated_rent_premium": 0 },
+      { "unit_number": "201", "type": "1BR/1BA", "count": 6, "current_rent": 0, "market_rent": 1095, "renovated_rent_premium": 0 }
+    ],
+    "other_income_monthly": 3070.1666666667,
+    "vacancy_rate": 0.07,
+    "bad_debt_rate": 0.03,
+    "concessions_rate": 0,
+    "rent_growth_rate": 0.02,
+    "rent_ramp": {
+      "enabled": true,
+      "mode": "linear",
+      "absorption_months": 24,
+      "turn_downtime_months": 1,
+      "max_turns_per_month": 2,
+      "initial_vacant_units": 0,
+      "vacant_leaseup_months": 2
+    }
+  },
+  "expenses": {
+    "management_fee_rate": 0.08,
+    "payroll_annual": 0,
+    "repairs_maintenance_per_unit": 750,
+    "turnover_cost_per_unit": 2500,
+    "turnover_rate": 0.08,
+    "insurance_per_unit": 800,
+    "property_tax_total": 34903.2545,
+    "tax_escalation_rate": 0.02,
+    "expense_escalation_rate": 0.02,
+    "utilities_per_unit": 2031.6666666667,
+    "admin_legal_marketing": 5000,
+    "contract_services": 22836,
+    "reserves_per_unit": 500,
+    "tax_reassessment": {
+      "enabled": true,
+      "effective_tax_rate": 0.02,
+      "reassessed_value": 2689800,
+      "phase_in_month": 12,
+      "apply_at_exit": true
+    }
+  },
+  "capex": {
+    "per_unit_cost": 0,
+    "units_to_renovate": 0,
+    "per_unit_enabled": false,
+    "renovation_start_month": 1,
+    "projects": [],
+    "capital_reserve_total": 75000
+  },
+  "exit": {
+    "hold_period_years": 10,
+    "exit_cap_rate": 0.065,
+    "selling_cost_rate": 0.02,
+    "proforma_unrenovated_basis": "market",
+    "proforma_renovated_basis": "market_plus_premium"
+  },
+  "tax": null
+}

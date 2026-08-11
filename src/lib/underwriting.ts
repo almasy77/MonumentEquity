@@ -257,9 +257,20 @@ export function applyTurnoverRate(
  *      are absorbed by the renovation CapEx (the reno covers the make-ready),
  *      so only NON-reno absorption turns book this cost. Captures the spike
  *      during the absorption ramp.
- *   2. Stabilized units × (annual turnover_rate / 12) × per-unit cost. Captures
- *      ongoing steady-state churn on units that have already reached market or
- *      been renovated.
+ *   2. Occupied units × (annual turnover_rate / 12) × per-unit cost. Captures
+ *      ongoing steady-state churn. Natural tenant churn happens on EVERY
+ *      rent-paying unit — a unit still at its in-place rent turns over just as a
+ *      unit that has reached market or been renovated does — so the churn base
+ *      is all occupied units (in_place + market + renovated), not only the ones
+ *      that have finished migrating (ENG-1).
+ *
+ * ENG-1 root cause (fixed): this term used to key off "stabilized" units (only
+ * market/renovated states). Under a MARKET pro-forma basis every occupied unit
+ * stays in the `in_place` state at market rent and never migrates, so the
+ * stabilized count was 0 and turnover collapsed to $0 for all 120 months even
+ * though `turnover_rate` and `turnover_cost_per_unit` were both positive. Basing
+ * ongoing churn on occupied units restores the assumption-derived expense
+ * (units × rate × cost) regardless of display basis.
  *
  * Called only when ramp.enabled === true. The legacy applyTurnoverRate path
  * is preserved for backwards compat when ramp is off.
@@ -268,12 +279,12 @@ export function computeRampTurnoverCost(args: {
   perUnitCost: number;                // turnover_cost_per_unit, escalated
   marketTurnsThisMonth: number;       // delta of markedToMarketByMonth
   renoTurnsThisMonth: number;         // delta of renovatedByMonth
-  stabilizedUnits: number;            // payingMarket + payingRenovated this month
+  occupiedUnits: number;              // rent-paying units this month (in_place + market + renovated)
   turnoverRate: number;               // annual churn rate (e.g. 0.10 = 10%/yr)
 }): number {
   const nonRenoTurns = Math.max(0, args.marketTurnsThisMonth - args.renoTurnsThisMonth);
   const rampMakeReady = nonRenoTurns * args.perUnitCost;
-  const ongoingChurn = args.stabilizedUnits * (args.turnoverRate / 12) * args.perUnitCost;
+  const ongoingChurn = args.occupiedUnits * (args.turnoverRate / 12) * args.perUnitCost;
   return rampMakeReady + ongoingChurn;
 }
 
@@ -1082,7 +1093,6 @@ export function calculateUnderwriting(
     // GPR: direct read from the unit-state schedule (pre-growth), times the
     // year growth factor. Offline/vacant states contribute $0 by construction.
     const gpr = unitSchedule.gprByMonth[m - 1] * monthlyRentGrowth;
-    const stabilizedUnitsThisMonth = unitSchedule.stabilizedByMonth[m - 1];
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
@@ -1146,7 +1156,7 @@ export function calculateUnderwriting(
             perUnitCost: (expenses.turnover_cost_per_unit ?? 0) * annualExpEscalation,
             marketTurnsThisMonth: unitSchedule.marketTurnsByMonth[m - 1],
             renoTurnsThisMonth: unitSchedule.renoTurnsByMonth[m - 1],
-            stabilizedUnits: stabilizedUnitsThisMonth,
+            occupiedUnits: occupiedUnitsThisMonth,
             turnoverRate: expenses.turnover_rate ?? 0.50,
           })
         : applyTurnoverRate(
