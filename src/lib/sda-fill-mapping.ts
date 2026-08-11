@@ -124,6 +124,29 @@ function buildAcquisitionCosts(active: SdaScenarioColumnInput): Record<string, S
   return cells;
 }
 
+/**
+ * Which pro-forma year to feed the SDA's single income column. The SDA is a
+ * STABILIZED model — one income year grown over the hold; it cannot represent a
+ * lease-up ramp. So for a deal that leases up (loss to lease in early years, or a
+ * sub-coverage operating shortfall), feeding Year 1 would make the SDA compound
+ * the lease-up hole. Feed the first STABILIZED year instead (ramp complete, debt
+ * covered); the lease-up carry is separately funded by the operating reserve
+ * (row 15), which is already in the SDA's uses of funds. A deal that is
+ * stabilized from Year 1 returns annual[0] unchanged.
+ */
+type SdaAnnual = SdaScenarioColumnInput["result"]["annual"][number];
+export function pickSdaBaseYear(result: SdaScenarioColumnInput["result"]): { year: SdaAnnual; index: number } {
+  const annual = result.annual;
+  const shortfall = (result.metrics as { operating_shortfall_total?: number }).operating_shortfall_total ?? 0;
+  const hasLeaseUp = shortfall > 0 || annual.some((a) => ((a as { loss_to_lease?: number }).loss_to_lease ?? 0) > 0.005);
+  if (!hasLeaseUp) return { year: annual[0], index: 0 };
+  const idx = annual.findIndex(
+    (a) => ((a as { loss_to_lease?: number }).loss_to_lease ?? 0) <= 0.005 && (a.cash_flow_before_capex_and_reserves ?? 0) >= 0,
+  );
+  const index = idx >= 0 ? idx : annual.length - 1;
+  return { year: annual[index], index };
+}
+
 /** Build all input-cell writes for the SDA template from the ordered scenario columns. */
 export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: number, deal?: SdaDealInfo): SdaSheetWrite[] {
   const cols = columns.slice(0, 4);
@@ -134,7 +157,9 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   cols.forEach((col, i) => {
     const L = COLS[i];
     const m = col.result.metrics;
-    const a0 = col.result.annual[0];
+    // SDA is stabilized-basis: feed the stabilized year for a lease-up deal (see
+    // pickSdaBaseYear), not the Year-1 hole. Stabilized deals feed Year 1 as before.
+    const a0 = pickSdaBaseYear(col.result).year;
     const ob = a0.opex_breakdown;
     const price = m.purchase_price;
     const units = col.units || 1;
@@ -270,8 +295,9 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   };
 
   // 2-Minute Analysis — a rough back-of-envelope screen. Feed the active scenario's
-  // year-1 income, vacancy, expense ratio, and going-in cap.
-  const a0 = active.result.annual[0];
+  // stabilized income, vacancy, expense ratio, and going-in cap (stabilized year
+  // for a lease-up deal, Year 1 otherwise — see pickSdaBaseYear).
+  const a0 = pickSdaBaseYear(active.result).year;
   const twoMinCells: Record<string, SdaCellValue> = {
     C4: a0.gpr, // Gross Potential Annual Income
     C5: a0.gpr > 0 ? a0.vacancy_loss / a0.gpr : 0, // vacancy %
