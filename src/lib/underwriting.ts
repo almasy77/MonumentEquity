@@ -819,7 +819,8 @@ export interface OpexBreakdown {
 export interface MonthlyRow {
   month: number; // 1-indexed
   // Revenue
-  gpr: number; // Gross Potential Rent
+  gpr: number; // collectible scheduled rent (= market once stabilized); market ceiling = gpr + loss_to_lease
+  loss_to_lease: number; // gap from collectible up to full market potential (mark-to-market ramp); ≥ 0
   vacancy_loss: number;
   bad_debt: number;
   concessions: number;
@@ -857,7 +858,8 @@ export interface MonthlyRow {
 
 export interface AnnualSummary {
   year: number;
-  gpr: number;
+  gpr: number; // collectible scheduled rent (= market once stabilized); market ceiling = gpr + loss_to_lease
+  loss_to_lease: number; // gap from collectible up to full market potential (mark-to-market ramp); ≥ 0
   vacancy_loss: number;
   bad_debt: number;
   concessions: number;
@@ -1090,9 +1092,17 @@ export function calculateUnderwriting(
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
     const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
 
-    // GPR: direct read from the unit-state schedule (pre-growth), times the
-    // year growth factor. Offline/vacant states contribute $0 by construction.
+    // Collectible in-place rent (pre-growth read from the unit-state schedule,
+    // × the year growth factor). Below market until each unit marks to market;
+    // offline/vacant states contribute $0. Vacancy, bad debt, concessions and
+    // %-of-GPR opex are all keyed off the collectible — you can only lose, or
+    // spend against, rent you are actually scheduled to collect.
     const gpr = unitSchedule.gprByMonth[m - 1] * monthlyRentGrowth;
+    // Gross Potential Rent (every unit at stabilized/market potential) and the
+    // Loss to Lease bridging down to the collectible (ENG-2). Reported on their
+    // own lines; they do not change EGI, which is collectible-based.
+    const marketGpr = unitSchedule.marketGprByMonth[m - 1] * monthlyRentGrowth;
+    const lossToLease = Math.max(0, marketGpr - gpr);
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
@@ -1231,7 +1241,14 @@ export function calculateUnderwriting(
 
     monthly.push({
       month: m,
+      // `gpr` carries the collectible scheduled rent (below market until each
+      // unit marks to market; = market once stabilized). Loss to Lease is the
+      // gap up to full market potential, exposed as its own line. Keeping `gpr`
+      // = collectible means EGI and every downstream export/onepager stay
+      // correct without change; consumers that want the market ceiling read
+      // `gpr + loss_to_lease` (ENG-2).
       gpr,
+      loss_to_lease: lossToLease,
       vacancy_loss: vacancyLoss,
       bad_debt: badDebt,
       concessions,
@@ -1274,6 +1291,7 @@ export function calculateUnderwriting(
     annual.push({
       year: y + 1,
       gpr: sum((r) => r.gpr),
+      loss_to_lease: sum((r) => r.loss_to_lease),
       vacancy_loss: sum((r) => r.vacancy_loss),
       bad_debt: sum((r) => r.bad_debt),
       concessions: sum((r) => r.concessions),
@@ -2107,8 +2125,21 @@ export interface UnitTimeline {
 
 export interface UnitStateSchedule {
   units: UnitTimeline[];
-  /** Pre-growth GPR per month (caller applies the yearly growth factor). */
+  /**
+   * Pre-growth COLLECTIBLE rent per month — the actual scheduled in-place rent
+   * (below-market until each unit marks to market; $0 while vacant/offline).
+   * The caller applies the yearly growth factor. Named `gprByMonth` for
+   * historical reasons; economically it is the collectible line, and Gross
+   * Potential Rent is `marketGprByMonth`.
+   */
   gprByMonth: number[];
+  /**
+   * Pre-growth Gross Potential Rent per month — every unit at its stabilized
+   * potential (market, or renovated where the reno schedule lifts it, or the
+   * in-place rent where that already exceeds market). Loss to Lease is the gap
+   * `marketGprByMonth − gprByMonth`. Constant across months by construction.
+   */
+  marketGprByMonth: number[];
   /** Units entering "market" each month (non-reno turns completing). */
   marketTurnsByMonth: number[];
   /** Units entering "renovated" each month. */
@@ -2178,14 +2209,20 @@ export function buildUnitStateSchedule(args: {
         });
       }
     } else {
+      // Aggregate row (no per-unit detail): a $0 current rent means the unit
+      // bills nothing today, which is VACANT, not "at market" (ENG-2). Mirror
+      // the per-unit-detail vacancy derivation above so a zero-rent aggregate
+      // row leases up rather than silently booking full market from month 1.
+      const rowVacant = (row.current_rent ?? 0) <= 0;
       for (let i = 0; i < row.count; i++) {
+        if (rowVacant) detailVacantCount++;
         expanded.push({
           unit_id: row.unit_number ? `${row.unit_number}-${i + 1}` : `${rowIdx + 1}-${i + 1}`,
           row_index: rowIdx,
-          current_rent: row.current_rent,
+          current_rent: rowVacant ? 0 : row.current_rent,
           market_rent: row.market_rent,
           premium: row.renovated_rent_premium,
-          status: "mtm",
+          status: rowVacant ? "vacant" : "mtm",
           hasDetail: false,
         });
       }
@@ -2193,8 +2230,9 @@ export function buildUnitStateSchedule(args: {
   });
   const total = expanded.length;
 
-  // Aggregate-row vacancy comes only from the ramp override; with per-unit
-  // details the DERIVED count wins and a disagreeing override warns.
+  // Aggregate-row vacancy is derived from $0 current rents above and may also be
+  // set by the ramp override; with per-unit details the DERIVED count wins and a
+  // disagreeing override warns.
   const overrideVacant = Math.max(0, ramp?.initial_vacant_units ?? 0);
   if (anyDetails) {
     if (rampEnabled && overrideVacant !== detailVacantCount && warnings) {
@@ -2210,17 +2248,23 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
-  // ── Timelines start fully in_place (in_place rent depends on ramp mode) ──
+  // ── Timelines start fully in_place ──
+  // In-place rent is the ACTUAL current/in-place rent — the real collectible
+  // floor the mark-to-market ramp migrates up from. The pro-forma unrenovated
+  // basis no longer GATES the ramp (ENG-2): a below-market unit ramps current →
+  // market under either basis. The basis only decides the OVER-market case —
+  // under Market basis an in-place rent above market is valued DOWN to market
+  // (the conservative "STR underwritten as long-term" markdown, 595 E Broad),
+  // while under Current basis over-market rents are held. With the ramp DISABLED
+  // the legacy stabilized-view path (whole deal at basis rent) still applies.
+  const inPlaceRentFor = (e: Expanded) =>
+    inPlaceBasis === "market" && e.current_rent > e.market_rent ? e.market_rent : e.current_rent;
   const units: UnitTimeline[] = expanded.map((e) => ({
     unit_id: e.unit_id,
     row_index: e.row_index,
-    // In-place rent honors the pro-forma unrenovated basis in BOTH ramp states:
-    //   "current" → the actual in-place rent (with the ramp on, below-market
-    //               units then migrate up to market via the queue below);
-    //   "market"  → value every occupied unit at market rent — a stabilized
-    //               view that works even when market < current (e.g. modeling a
-    //               short-term-rental building underwritten as long-term).
-    in_place_rent: inPlaceBasis === "market" ? e.market_rent : e.current_rent,
+    in_place_rent: rampEnabled
+      ? inPlaceRentFor(e)
+      : (inPlaceBasis === "market" ? e.market_rent : e.current_rent),
     market_rent: e.market_rent,
     // Renovated rent = base + premium. Under the "market_plus_premium" basis the
     // base is always market. Under "current_plus_premium" the base is the in-place
@@ -2234,7 +2278,11 @@ export function buildUnitStateSchedule(args: {
     states: new Array<UnitState>(totalMonths).fill("in_place"),
   }));
 
-  // ── Market-turn queue (ramp ON only) ──
+  // ── Absorption queue (ramp ON only) ──
+  // Vacant lease-ups and below-market mark-up turns share ONE turn-slot budget
+  // (max_turns_per_month): both are make-readies competing for the same crew and
+  // downtime capacity (ENG-2). Runs under every basis — the ramp is driven by
+  // in-place rent being below market, not by the display basis.
   if (rampEnabled && ramp) {
     const turnDowntime = Math.max(0, ramp.turn_downtime_months);
     const vacantLeaseup = Math.max(0, ramp.vacant_leaseup_months ?? 0);
@@ -2248,50 +2296,43 @@ export function buildUnitStateSchedule(args: {
       return (d.getFullYear() - anchor.getFullYear()) * 12 + (d.getMonth() - anchor.getMonth());
     };
 
-    // Vacant units: lease-up path, not paced.
-    expanded.forEach((e, i) => {
-      if (e.status !== "vacant") return;
-      const t = units[i].states;
-      for (let m = 0; m < totalMonths; m++) {
-        t[m] = m < vacantLeaseup ? "vacant_leaseup" : "market";
-      }
-    });
+    // Every unit that must be turned to reach market: vacant units (lease-up,
+    // downtime = vacant_leaseup_months) and below-market occupied/mtm units
+    // (mark-up, downtime = turn_downtime_months). At-/above-market occupied units
+    // need no turn. A vacant unit's gap is the full market rent (it collects $0).
+    type TurnKind = "leaseup" | "turn";
+    interface QueueItem { idx: number; eligible: number; gap: number; kind: TurnKind; downtime: number }
+    const gapOf = (e: Expanded) => e.market_rent - (e.status === "vacant" ? 0 : e.current_rent);
+    const actionable = expanded
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.status === "vacant" || e.current_rent < e.market_rent);
 
-    // Below-market occupied/mtm units → eligibility queue. Mark-up turns only
-    // apply under a CURRENT basis (the ramp migrates current → market). Under a
-    // MARKET basis every occupied unit is already valued at market, so there is
-    // no migration to schedule — the vacant lease-up above still runs.
-    interface QueueItem { idx: number; eligible: number; gap: number }
-    const queue: QueueItem[] = [];
-    if (inPlaceBasis === "current") {
-      const useLinear = ramp.mode !== "schedule" || !anyDetails;
-      const belowMarketIdxs = expanded
-        .map((e, i) => ({ e, i }))
-        .filter(({ e }) => e.status !== "vacant" && e.current_rent < e.market_rent);
+    const useLinear = ramp.mode !== "schedule" || !anyDetails;
+    const queue: QueueItem[] = actionable.map(({ e, i }) => ({
+      idx: i,
+      eligible: 0,
+      gap: gapOf(e),
+      kind: e.status === "vacant" ? "leaseup" : "turn",
+      downtime: e.status === "vacant" ? vacantLeaseup : turnDowntime,
+    }));
 
-      if (useLinear) {
-        // Linear mode GENERATED over the machine: spread eligibility evenly
-        // across the absorption window (deepest gap first), same pacing rules.
-        const span = Math.max(1, ramp.absorption_months);
-        const sorted = [...belowMarketIdxs].sort(
-          (a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent)
-        );
-        sorted.forEach(({ e, i }, k) => {
-          const eligible = Math.floor((k * span) / Math.max(1, sorted.length));
-          queue.push({ idx: i, eligible, gap: e.market_rent - e.current_rent });
-        });
-      } else {
-        for (const { e, i } of belowMarketIdxs) {
-          if (e.status === "occupied" && e.lease_end) {
-            const mi = monthIndexOf(e.lease_end);
-            queue.push({ idx: i, eligible: mi === null ? 0 : Math.max(0, mi + 1), gap: e.market_rent - e.current_rent });
-          } else {
-            queue.push({ idx: i, eligible: 0, gap: e.market_rent - e.current_rent });
-          }
+    if (useLinear) {
+      // Spread eligibility evenly across the absorption window, deepest gap first.
+      const span = Math.max(1, ramp.absorption_months);
+      queue.sort((a, b) => b.gap - a.gap);
+      queue.forEach((q, k) => { q.eligible = Math.floor((k * span) / Math.max(1, queue.length)); });
+    } else {
+      // Schedule mode: occupied units become eligible when their lease ends;
+      // vacant and mtm units are eligible immediately.
+      for (const q of queue) {
+        const e = expanded[q.idx];
+        if (e.status === "occupied" && e.lease_end) {
+          const mi = monthIndexOf(e.lease_end);
+          q.eligible = mi === null ? 0 : Math.max(0, mi + 1);
         }
       }
-      queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
     }
+    queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
 
     let qi = 0;
     const pending: QueueItem[] = [];
@@ -2302,8 +2343,9 @@ export function buildUnitStateSchedule(args: {
       while (pending.length > 0 && started < maxPerMonth) {
         const item = pending.shift()!;
         const t = units[item.idx].states;
-        for (let k = m; k < Math.min(m + turnDowntime, totalMonths); k++) t[k] = "offline_turn";
-        for (let k = m + turnDowntime; k < totalMonths; k++) t[k] = "market";
+        const offState: UnitState = item.kind === "leaseup" ? "vacant_leaseup" : "offline_turn";
+        for (let k = m; k < Math.min(m + item.downtime, totalMonths); k++) t[k] = offState;
+        for (let k = m + item.downtime; k < totalMonths; k++) t[k] = "market";
         started++;
       }
     }
@@ -2346,8 +2388,21 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
+  // ── Gross Potential Rent ceiling ──
+  // Each unit's potential = the highest rent it reaches across the whole hold
+  // (market, or renovated where the reno schedule lifts it), floored at market
+  // so a unit that never leases inside the horizon still contributes its market
+  // potential. Guarantees Loss to Lease = potential − collectible ≥ 0.
+  let totalPotential = 0;
+  for (const u of units) {
+    let best = u.market_rent;
+    for (const s of u.states) best = Math.max(best, rentForState(u, s));
+    totalPotential += best;
+  }
+
   // ── Derive monthly aggregates ──
   const gprByMonth = new Array<number>(totalMonths).fill(0);
+  const marketGprByMonth = new Array<number>(totalMonths).fill(totalPotential);
   const marketTurnsByMonth = new Array<number>(totalMonths).fill(0);
   const renoTurnsByMonth = new Array<number>(totalMonths).fill(0);
   const stabilizedByMonth = new Array<number>(totalMonths).fill(0);
@@ -2379,7 +2434,7 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
-  return { units, gprByMonth, marketTurnsByMonth, renoTurnsByMonth, stabilizedByMonth, pctMarkedByMonth };
+  return { units, gprByMonth, marketGprByMonth, marketTurnsByMonth, renoTurnsByMonth, stabilizedByMonth, pctMarkedByMonth };
 }
 
 /**
