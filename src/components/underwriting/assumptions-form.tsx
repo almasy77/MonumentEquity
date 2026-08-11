@@ -276,7 +276,12 @@ function RentRampPanel({
   }
 
   // Warning: market basis selected for pro forma but no ramp → year-1 rents jump to market.
-  const showMarketWithoutRampWarning = proformaUnrenovatedBasis === "market" && !enabled;
+  // Market basis prices every in-place unit at market from month 1. Critically, the
+  // rent-migration ramp is gated to the "current" basis in the engine, so enabling
+  // the ramp does NOT migrate occupied units under Market basis (it only leases up
+  // vacant units) — which previously left the user with no warning at all. Warn
+  // whenever the basis is Market, and say plainly what the ramp does and doesn't do.
+  const showMarketBasisWarning = proformaUnrenovatedBasis === "market";
 
   // Soft tooltip: with ramp on, vacancy_rate should be set to stabilized economic vacancy
   // (~4–5%); the turn_downtime already captures value-add turnover loss.
@@ -311,12 +316,14 @@ function RentRampPanel({
         </label>
       </div>
 
-      {showMarketWithoutRampWarning && (
+      {showMarketBasisWarning && (
         <div className="bg-amber-950/30 border border-amber-800/50 rounded p-2 text-[11px] text-amber-300">
           <span className="font-semibold">Heads up:</span>{" "}
-          Pro Forma unrenovated basis is set to <span className="font-mono">Market</span> and Rent Ramp is off.
-          All in-place units will price at market from month 1, ignoring lease-up and tenant rollover.
-          Enable Rent Ramp, or set the Pro Forma unrenovated basis to <span className="font-mono">Current</span>.
+          Pro Forma unrenovated basis is set to <span className="font-mono">Market</span> — every in-place unit prices at market from month 1, ignoring the below-market lease-up and tenant rollover.
+          {enabled
+            ? " Note: the Rent Ramp does NOT migrate occupied units under Market basis — it only leases up vacant units. Turnover cost is also dropped."
+            : ""}{" "}
+          To model the in-place → market lease-up on occupied units, set the Pro Forma unrenovated basis to <span className="font-mono">Current</span>.
         </div>
       )}
 
