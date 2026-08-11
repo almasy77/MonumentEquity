@@ -2535,6 +2535,17 @@ function buildSensitivityGrid(
     }
   }
 
+  // ENG-4: when the headline IRR is undefined (the equity cash-flow vector has no
+  // sign change — a fundamentally broken return, e.g. negative NOI with no exit
+  // value), the grid's fast path can still emit a spurious number: it zeroes the
+  // exit value for a negative-NOI deal, so a small positive reserve-return terminal
+  // manufactures a sign change and a meaningless deeply-negative IRR. Render every
+  // cell n/a to match the headline instead of showing a fabricated value.
+  if (anchorIrr == null || !Number.isFinite(anchorIrr)) {
+    for (const c of grid) c.irr = null;
+    return grid;
+  }
+
   // Anchor the grid to the headline IRR. The grid uses a fast annual approximation
   // that can drift from the full monthly engine by a few tenths of a point (more for
   // tax-phase-in deals), which left the "no change" center cell disagreeing with the
