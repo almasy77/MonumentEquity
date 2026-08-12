@@ -257,9 +257,13 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   // reserve row); both are below-NOI in our model, so both belong in the SDA's
   // distribution deduction. Driven by the ACTIVE scenario's stabilized year
   // since row 42 is a single global $/unit assumption, not per-column.
-  const activeReserveBase = pickSdaBaseYear(active.result).year;
+  // SDA-11: use the engine's UNESCALATED base reserve (Year-1 replacement +
+  // capital), not the stabilized/escalated year — otherwise "same inputs" isn't
+  // literally true. 4443: $500/unit×24 + $7,500 = $19,500 = $812.50/unit (was
+  // reading the Year-3 escalated $832.70/unit off the SDA's fed year).
   const activeUnits = active.units || 1;
-  const activeAnnualReserve = (activeReserveBase.reserves ?? 0) + (activeReserveBase.capital_reserve ?? 0);
+  const y1Reserve = active.result.annual[0];
+  const activeAnnualReserve = (y1Reserve.reserves ?? 0) + (y1Reserve.capital_reserve ?? 0);
   scenarioCells["AE42"] = activeUnits > 0 ? activeAnnualReserve / activeUnits : 0; // $/unit/yr
 
   // Target Rent Analysis (Scenarios AC8:AH14) — a standalone rent-roll reference on

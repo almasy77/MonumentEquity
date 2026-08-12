@@ -28,14 +28,15 @@ function cellsFor(sheet: string) {
 }
 
 describe("SDA-2: reserves reach the SDA distribution line", () => {
-  it("AE42 carries the engine's per-unit annual reserve (replacement + capital), not $0", () => {
+  it("AE42 carries the engine's UNESCALATED base per-unit reserve (SDA-11), not $0 or the escalated year", () => {
     const { cells, result } = cellsFor("Scenarios");
-    // Engine reserves for the SDA's stabilized base year, per unit.
-    const base = result.annual.find((a) => (a.loss_to_lease ?? 0) <= 0.005 && a.cash_flow_before_capex_and_reserves >= 0)
-      ?? result.annual[result.annual.length - 1];
-    const expectedPerUnit = ((base.reserves ?? 0) + (base.capital_reserve ?? 0)) / 24;
+    // Year-1 (base) replacement + capital reserve, per unit — the engine's assumption.
+    const y1 = result.annual[0];
+    const expectedPerUnit = ((y1.reserves ?? 0) + (y1.capital_reserve ?? 0)) / 24;
     expect(expectedPerUnit).toBeGreaterThan(0);
     expect(cells["AE42"]).toBeCloseTo(expectedPerUnit, 6);
+    // 4443: $500/unit×24 + $7,500 = $19,500 → $812.50/unit.
+    expect(cells["AE42"]).toBeCloseTo(812.5, 2);
   });
 });
 
