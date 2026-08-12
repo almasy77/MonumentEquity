@@ -307,6 +307,20 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     D45: syn.capital_transaction_fee_pct ?? 0, // Capital Transaction Fee to Mgr
   };
 
+  // SDA-12: the SDA is fed the STABILIZED pro-forma year for a lease-up deal (see
+  // pickSdaBaseYear), but its Summary labels say "(Year 1)". Relabel them to the
+  // stabilized year so the label matches what's underneath — the same class of
+  // mismatch VAL-1 fixed. Only relabel when the fed year is NOT Year 1; a deal
+  // stabilized from day 1 keeps the template's "(Year 1)" labels.
+  const activeBase = pickSdaBaseYear(active.result);
+  if (activeBase.index > 0) {
+    const yr = activeBase.index + 1; // 1-based hold year
+    summaryCells["B24"] = `INCOME & EXPENSES (Stabilized, Yr ${yr})`;
+    summaryCells["B38"] = `Debt Coverage Ratio (Stabilized, Yr ${yr})`;
+    summaryCells["B46"] = `Cash Flow to Members (Stabilized, Yr ${yr})`;
+    summaryCells["B47"] = `Member Cash-on-Cash Return (Stabilized, Yr ${yr})`;
+  }
+
   // Exit Strategy: sale year, exit-cap escalation, selling cost, and (optional) refi.
   const exitCells: Record<string, SdaCellValue> = {
     D5: hold, // Sale / Disposition at end of year
