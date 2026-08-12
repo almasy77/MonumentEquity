@@ -199,7 +199,13 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
       // Debt + valuation
       [`${L}53`]: col.inputs.financing.interest_rate, // Interest Rate
       [`${L}54`]: col.inputs.financing.amortization_years, // Amortization (years)
-      [`${L}60`]: m.going_in_cap, // Market Cap Rate (current) — drives FMV and the exit base
+      // Market Cap Rate (row 60) drives both the going-in FMV cell and the exit
+      // base. Use the STABILIZED cap, not the Year-1 going-in cap: the SDA is fed
+      // stabilized income (pickSdaBaseYear), and on a lease-up deal the Year-1
+      // going-in cap is computed on depressed lease-up NOI (~1.4% on 4443), which
+      // would value stabilized NOI absurdly. Stabilized cap == going-in cap for a
+      // deal that's stabilized from day 1.
+      [`${L}60`]: m.stabilized_cap ?? m.going_in_cap,
     });
 
     // CRITICAL: the P&L reads vacancy and concessions as a PERCENT of GPR from a
@@ -217,9 +223,21 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     scenarioCells[`${pctCol}37`] = a0.egi > 0 ? ob.management_fees / a0.egi : 0; // management fee %
   });
 
-  // Kill the template's $250/unit rule-of-thumb replacement reserve so the SDA's NOI
-  // matches ours (our reserves sit below NOI, not in operating expenses).
-  scenarioCells["AE42"] = 0;
+  // Replacement/capital reserves (SDA-2). Our engine deducts reserves BELOW NOI
+  // (a capital item); the SDA deducts its row-42 reserve ABOVE NOI (in opex). If
+  // we zero row 42 to make SDA NOI match ours, the SDA's cash-flow-for-
+  // distribution then skips the reserve entirely and overstates CoC / IRR (the
+  // 08-12 export ran ~2x CoC, +175bps IRR vs the engine). We instead write the
+  // reserve to row 42 so the SDA's DISTRIBUTION ties to ours. Consequence, by
+  // design: SDA NOI now sits below engine NOI by the annual reserve. We lump the
+  // replacement AND capital reserve into this one line (the SDA has a single
+  // reserve row); both are below-NOI in our model, so both belong in the SDA's
+  // distribution deduction. Driven by the ACTIVE scenario's stabilized year
+  // since row 42 is a single global $/unit assumption, not per-column.
+  const activeReserveBase = pickSdaBaseYear(active.result).year;
+  const activeUnits = active.units || 1;
+  const activeAnnualReserve = (activeReserveBase.reserves ?? 0) + (activeReserveBase.capital_reserve ?? 0);
+  scenarioCells["AE42"] = activeUnits > 0 ? activeAnnualReserve / activeUnits : 0; // $/unit/yr
 
   // Target Rent Analysis (Scenarios AC8:AH14) — a standalone rent-roll reference on
   // the Scenarios tab (not wired into the model's GPR). Populate it from the active
@@ -239,7 +257,15 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   const am = active.result.metrics;
   const ax = active.inputs.exit;
   const hold = ax.hold_period_years;
-  const capBump = hold > 0 ? Math.max(0, (ax.exit_cap_rate - am.going_in_cap) / hold) : 0;
+  // Exit cap (SDA-1). Row 60 carries the STABILIZED cap (it also drives the going-in
+  // FMV cell). The SDA reaches the EXIT cap via a per-year escalator: exit cap =
+  // row60 + var_capRateBump * sale-year, so bump = (exit - stabilized) / hold. This
+  // MUST be allowed to go NEGATIVE — underwriting to a lower exit cap than the
+  // stabilized cap is cap COMPRESSION, and the old Math.max(0, ...) clamp silently
+  // forced the SDA to exit at the stabilized cap (7.96% instead of 6.5% on 4443),
+  // overstating the exit and the returns. No clamp: the SDA exits at the true cap.
+  const sdaCap = am.stabilized_cap ?? am.going_in_cap;
+  const capBump = hold > 0 ? (ax.exit_cap_rate - sdaCap) / hold : 0;
 
   // Investor-returns waterfall from the active scenario's Syndication card. When a
   // field is unset we default to a 100%-owner model (member equity 100%, no pref/fees),
@@ -302,7 +328,7 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     C4: a0.gpr, // Gross Potential Annual Income
     C5: a0.gpr > 0 ? a0.vacancy_loss / a0.gpr : 0, // vacancy %
     C8: a0.egi > 0 ? a0.total_opex / a0.egi : 0, // expense ratio
-    C12: am.going_in_cap, // Market Cap Rate
+    C12: am.stabilized_cap ?? am.going_in_cap, // Market Cap Rate (stabilized basis)
   };
 
   return [
