@@ -124,6 +124,45 @@ function buildAcquisitionCosts(active: SdaScenarioColumnInput): Record<string, S
   return cells;
 }
 
+/**
+ * Which pro-forma year to feed the SDA's single income column. The SDA is a
+ * STABILIZED model — one income year grown over the hold; it cannot represent a
+ * lease-up ramp. So for a deal that leases up (loss to lease in early years, or a
+ * sub-coverage operating shortfall), feeding Year 1 would make the SDA compound
+ * the lease-up hole. Feed the first STABILIZED year instead (ramp complete, debt
+ * covered); the lease-up carry is separately funded by the operating reserve
+ * (row 15), which is already in the SDA's uses of funds. A deal that is
+ * stabilized from Year 1 returns annual[0] unchanged.
+ */
+type SdaAnnual = SdaScenarioColumnInput["result"]["annual"][number];
+export function pickSdaBaseYear(result: SdaScenarioColumnInput["result"]): { year: SdaAnnual; index: number } {
+  const annual = result.annual;
+  const shortfall = (result.metrics as { operating_shortfall_total?: number }).operating_shortfall_total ?? 0;
+  const hasLeaseUp = shortfall > 0 || annual.some((a) => ((a as { loss_to_lease?: number }).loss_to_lease ?? 0) > 0.005);
+  if (!hasLeaseUp) return { year: annual[0], index: 0 };
+  const idx = annual.findIndex(
+    (a) => ((a as { loss_to_lease?: number }).loss_to_lease ?? 0) <= 0.005 && (a.cash_flow_before_capex_and_reserves ?? 0) >= 0,
+  );
+  const index = idx >= 0 ? idx : annual.length - 1;
+  return { year: annual[index], index };
+}
+
+/**
+ * SDA-9: reasons a scenario must not be written into the SDA. A negative (or
+ * zero) going-in NOI or a negative cap rate makes the SDA's FMV = NOI/cap and its
+ * returns nonsensical — a negative-NOI Base Case otherwise reports a positive IRR
+ * and a >1x equity multiple. The exporter flags such a column and skips its
+ * numeric writes rather than presenting fabricated returns.
+ */
+export function sdaExportBlockers(result: SdaScenarioColumnInput["result"]): string[] {
+  const issues: string[] = [];
+  const stab = pickSdaBaseYear(result).year;
+  if ((stab.noi ?? 0) <= 0) issues.push("stabilized NOI is not positive");
+  const cap = (result.metrics as { stabilized_cap?: number }).stabilized_cap ?? result.metrics.going_in_cap;
+  if (cap < 0) issues.push("cap rate is negative");
+  return issues;
+}
+
 /** Build all input-cell writes for the SDA template from the ordered scenario columns. */
 export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: number, deal?: SdaDealInfo): SdaSheetWrite[] {
   const cols = columns.slice(0, 4);
@@ -134,7 +173,16 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   cols.forEach((col, i) => {
     const L = COLS[i];
     const m = col.result.metrics;
-    const a0 = col.result.annual[0];
+    // SDA-9: never write a broken scenario's numbers (they produce fabricated
+    // returns). Flag the column header and skip its numeric cells.
+    const blockers = sdaExportBlockers(col.result);
+    if (blockers.length > 0) {
+      scenarioCells[`${L}3`] = `${col.name} — NOT SDA-SAFE: ${blockers.join("; ")}`;
+      return;
+    }
+    // SDA is stabilized-basis: feed the stabilized year for a lease-up deal (see
+    // pickSdaBaseYear), not the Year-1 hole. Stabilized deals feed Year 1 as before.
+    const a0 = pickSdaBaseYear(col.result).year;
     const ob = a0.opex_breakdown;
     const price = m.purchase_price;
     const units = col.units || 1;
@@ -174,7 +222,13 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
       // Debt + valuation
       [`${L}53`]: col.inputs.financing.interest_rate, // Interest Rate
       [`${L}54`]: col.inputs.financing.amortization_years, // Amortization (years)
-      [`${L}60`]: m.going_in_cap, // Market Cap Rate (current) — drives FMV and the exit base
+      // Market Cap Rate (row 60) drives both the going-in FMV cell and the exit
+      // base. Use the STABILIZED cap, not the Year-1 going-in cap: the SDA is fed
+      // stabilized income (pickSdaBaseYear), and on a lease-up deal the Year-1
+      // going-in cap is computed on depressed lease-up NOI (~1.4% on 4443), which
+      // would value stabilized NOI absurdly. Stabilized cap == going-in cap for a
+      // deal that's stabilized from day 1.
+      [`${L}60`]: m.stabilized_cap ?? m.going_in_cap,
     });
 
     // CRITICAL: the P&L reads vacancy and concessions as a PERCENT of GPR from a
@@ -192,9 +246,21 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     scenarioCells[`${pctCol}37`] = a0.egi > 0 ? ob.management_fees / a0.egi : 0; // management fee %
   });
 
-  // Kill the template's $250/unit rule-of-thumb replacement reserve so the SDA's NOI
-  // matches ours (our reserves sit below NOI, not in operating expenses).
-  scenarioCells["AE42"] = 0;
+  // Replacement/capital reserves (SDA-2). Our engine deducts reserves BELOW NOI
+  // (a capital item); the SDA deducts its row-42 reserve ABOVE NOI (in opex). If
+  // we zero row 42 to make SDA NOI match ours, the SDA's cash-flow-for-
+  // distribution then skips the reserve entirely and overstates CoC / IRR (the
+  // 08-12 export ran ~2x CoC, +175bps IRR vs the engine). We instead write the
+  // reserve to row 42 so the SDA's DISTRIBUTION ties to ours. Consequence, by
+  // design: SDA NOI now sits below engine NOI by the annual reserve. We lump the
+  // replacement AND capital reserve into this one line (the SDA has a single
+  // reserve row); both are below-NOI in our model, so both belong in the SDA's
+  // distribution deduction. Driven by the ACTIVE scenario's stabilized year
+  // since row 42 is a single global $/unit assumption, not per-column.
+  const activeReserveBase = pickSdaBaseYear(active.result).year;
+  const activeUnits = active.units || 1;
+  const activeAnnualReserve = (activeReserveBase.reserves ?? 0) + (activeReserveBase.capital_reserve ?? 0);
+  scenarioCells["AE42"] = activeUnits > 0 ? activeAnnualReserve / activeUnits : 0; // $/unit/yr
 
   // Target Rent Analysis (Scenarios AC8:AH14) — a standalone rent-roll reference on
   // the Scenarios tab (not wired into the model's GPR). Populate it from the active
@@ -214,7 +280,15 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   const am = active.result.metrics;
   const ax = active.inputs.exit;
   const hold = ax.hold_period_years;
-  const capBump = hold > 0 ? Math.max(0, (ax.exit_cap_rate - am.going_in_cap) / hold) : 0;
+  // Exit cap (SDA-1). Row 60 carries the STABILIZED cap (it also drives the going-in
+  // FMV cell). The SDA reaches the EXIT cap via a per-year escalator: exit cap =
+  // row60 + var_capRateBump * sale-year, so bump = (exit - stabilized) / hold. This
+  // MUST be allowed to go NEGATIVE — underwriting to a lower exit cap than the
+  // stabilized cap is cap COMPRESSION, and the old Math.max(0, ...) clamp silently
+  // forced the SDA to exit at the stabilized cap (7.96% instead of 6.5% on 4443),
+  // overstating the exit and the returns. No clamp: the SDA exits at the true cap.
+  const sdaCap = am.stabilized_cap ?? am.going_in_cap;
+  const capBump = hold > 0 ? (ax.exit_cap_rate - sdaCap) / hold : 0;
 
   // Investor-returns waterfall from the active scenario's Syndication card. When a
   // field is unset we default to a 100%-owner model (member equity 100%, no pref/fees),
@@ -270,13 +344,14 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   };
 
   // 2-Minute Analysis — a rough back-of-envelope screen. Feed the active scenario's
-  // year-1 income, vacancy, expense ratio, and going-in cap.
-  const a0 = active.result.annual[0];
+  // stabilized income, vacancy, expense ratio, and going-in cap (stabilized year
+  // for a lease-up deal, Year 1 otherwise — see pickSdaBaseYear).
+  const a0 = pickSdaBaseYear(active.result).year;
   const twoMinCells: Record<string, SdaCellValue> = {
     C4: a0.gpr, // Gross Potential Annual Income
     C5: a0.gpr > 0 ? a0.vacancy_loss / a0.gpr : 0, // vacancy %
     C8: a0.egi > 0 ? a0.total_opex / a0.egi : 0, // expense ratio
-    C12: am.going_in_cap, // Market Cap Rate
+    C12: am.stabilized_cap ?? am.going_in_cap, // Market Cap Rate (stabilized basis)
   };
 
   return [

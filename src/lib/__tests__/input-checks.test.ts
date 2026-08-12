@@ -97,3 +97,38 @@ describe("input plausibility — missing costs, price/unit, hold, exit", () => {
     expect(has(flags, "exit.exit_cap_rate")?.severity).toBe("error");
   });
 });
+
+describe("input plausibility — VAL-4 $0-rent classification", () => {
+  it("warns about undeclared $0 units and reports the count (by row count)", () => {
+    const inp = clean();
+    (inp.revenue as { unit_mix: unknown[] }).unit_mix = [
+      { type: "1BR/1BA", count: 12, current_rent: 1_000, market_rent: 1_150, renovated_rent_premium: 0 },
+      { type: "2BR/1BA", count: 5, current_rent: 0, market_rent: 1_300, renovated_rent_premium: 0 }, // undeclared $0
+    ];
+    const f = has(checkInputPlausibility(inp), "revenue.unit_mix.zero_rent_treatment");
+    expect(f?.severity).toBe("warning");
+    expect(f?.message).toContain("5 units");
+  });
+
+  it("is silent once every $0 unit is declared vacant or STR", () => {
+    const inp = clean();
+    (inp.revenue as { unit_mix: unknown[] }).unit_mix = [
+      { type: "1BR/1BA", count: 12, current_rent: 1_000, market_rent: 1_150, renovated_rent_premium: 0 },
+      { type: "2BR/1BA", count: 5, current_rent: 0, market_rent: 1_300, renovated_rent_premium: 0, zero_rent_treatment: "str" },
+      { type: "Studio", count: 3, current_rent: 0, market_rent: 900, renovated_rent_premium: 0, zero_rent_treatment: "vacant" },
+    ];
+    expect(has(checkInputPlausibility(inp), "revenue.unit_mix.zero_rent_treatment")).toBeUndefined();
+  });
+
+  it("counts undeclared $0 units from per-unit detail too", () => {
+    const inp = clean();
+    (inp.revenue as { unit_mix: unknown[] }).unit_mix = [
+      { type: "2BR/1BA", count: 2, current_rent: 0, market_rent: 1_300, renovated_rent_premium: 0, units: [
+        { unit_id: "A", status: "vacant", current_rent: 0, zero_rent_treatment: "vacant" },
+        { unit_id: "B", status: "vacant", current_rent: 0 }, // undeclared
+      ] },
+    ];
+    const f = has(checkInputPlausibility(inp), "revenue.unit_mix.zero_rent_treatment");
+    expect(f?.message).toContain("1 unit ");
+  });
+});

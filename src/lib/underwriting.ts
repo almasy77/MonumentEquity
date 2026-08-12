@@ -84,12 +84,27 @@ export interface FinancingAssumptions {
 // these drive a unit-level absorption schedule: each unit gets its own
 // time-to-market (vacant ~lease-up months, MTM per pacing policy, fixed
 // lease = lease end + turn downtime) instead of the linear approximation.
+/**
+ * How to model a unit that bills $0 in the rent roll (spec VAL-4). A $0 can mean
+ * genuinely empty, or a unit producing under other terms (short-term rental)
+ * that is not captured as a monthly LTR rent. Both lease up to market over the
+ * absorption window — the tag is a DECLARATION so the engine doesn't guess and
+ * the validation layer doesn't flag an intentional $0 as a data gap:
+ *   "vacant" — empty, leasing up to market.
+ *   "str"    — occupied under short-term/other terms, available to convert to
+ *              market LTR; leases up to market over absorption.
+ *   "unknown"/undefined — unclassified; the run still computes (treated as
+ *              leasing up to market) but VAL-4 warns the $0 is undeclared.
+ */
+export type ZeroRentTreatment = "vacant" | "str" | "unknown";
+
 export interface UnitDetail {
   unit_id: string; // e.g. "A-3"
   status: "occupied" | "mtm" | "vacant"; // occupied = fixed lease; mtm = month-to-month
   current_rent: number; // $0 for vacant
   market_rent?: number; // per-unit override; defaults to the row's market_rent
   lease_end?: string; // ISO date — required for "occupied" to schedule its turn
+  zero_rent_treatment?: ZeroRentTreatment; // only meaningful when current_rent === 0
 }
 
 export interface UnitMix {
@@ -101,6 +116,7 @@ export interface UnitMix {
   renovated_rent_premium: number; // additional rent after renovation
   unit_class?: "residential" | "commercial"; // informational tag for mixed-use; does NOT affect totals
   units?: UnitDetail[]; // optional per-unit expansion; when present, count/current_rent should mirror it
+  zero_rent_treatment?: ZeroRentTreatment; // row-level tag for aggregate $0 rows (no per-unit detail)
 }
 
 // Itemized breakdown of other income (stored $/mo per line; the UI offers
@@ -257,9 +273,20 @@ export function applyTurnoverRate(
  *      are absorbed by the renovation CapEx (the reno covers the make-ready),
  *      so only NON-reno absorption turns book this cost. Captures the spike
  *      during the absorption ramp.
- *   2. Stabilized units × (annual turnover_rate / 12) × per-unit cost. Captures
- *      ongoing steady-state churn on units that have already reached market or
- *      been renovated.
+ *   2. Occupied units × (annual turnover_rate / 12) × per-unit cost. Captures
+ *      ongoing steady-state churn. Natural tenant churn happens on EVERY
+ *      rent-paying unit — a unit still at its in-place rent turns over just as a
+ *      unit that has reached market or been renovated does — so the churn base
+ *      is all occupied units (in_place + market + renovated), not only the ones
+ *      that have finished migrating (ENG-1).
+ *
+ * ENG-1 root cause (fixed): this term used to key off "stabilized" units (only
+ * market/renovated states). Under a MARKET pro-forma basis every occupied unit
+ * stays in the `in_place` state at market rent and never migrates, so the
+ * stabilized count was 0 and turnover collapsed to $0 for all 120 months even
+ * though `turnover_rate` and `turnover_cost_per_unit` were both positive. Basing
+ * ongoing churn on occupied units restores the assumption-derived expense
+ * (units × rate × cost) regardless of display basis.
  *
  * Called only when ramp.enabled === true. The legacy applyTurnoverRate path
  * is preserved for backwards compat when ramp is off.
@@ -268,12 +295,12 @@ export function computeRampTurnoverCost(args: {
   perUnitCost: number;                // turnover_cost_per_unit, escalated
   marketTurnsThisMonth: number;       // delta of markedToMarketByMonth
   renoTurnsThisMonth: number;         // delta of renovatedByMonth
-  stabilizedUnits: number;            // payingMarket + payingRenovated this month
+  occupiedUnits: number;              // rent-paying units this month (in_place + market + renovated)
   turnoverRate: number;               // annual churn rate (e.g. 0.10 = 10%/yr)
 }): number {
   const nonRenoTurns = Math.max(0, args.marketTurnsThisMonth - args.renoTurnsThisMonth);
   const rampMakeReady = nonRenoTurns * args.perUnitCost;
-  const ongoingChurn = args.stabilizedUnits * (args.turnoverRate / 12) * args.perUnitCost;
+  const ongoingChurn = args.occupiedUnits * (args.turnoverRate / 12) * args.perUnitCost;
   return rampMakeReady + ongoingChurn;
 }
 
@@ -808,7 +835,8 @@ export interface OpexBreakdown {
 export interface MonthlyRow {
   month: number; // 1-indexed
   // Revenue
-  gpr: number; // Gross Potential Rent
+  gpr: number; // collectible scheduled rent (= market once stabilized); market ceiling = gpr + loss_to_lease
+  loss_to_lease: number; // gap from collectible up to full market potential (mark-to-market ramp); ≥ 0
   vacancy_loss: number;
   bad_debt: number;
   concessions: number;
@@ -846,7 +874,8 @@ export interface MonthlyRow {
 
 export interface AnnualSummary {
   year: number;
-  gpr: number;
+  gpr: number; // collectible scheduled rent (= market once stabilized); market ceiling = gpr + loss_to_lease
+  loss_to_lease: number; // gap from collectible up to full market potential (mark-to-market ramp); ≥ 0
   vacancy_loss: number;
   bad_debt: number;
   concessions: number;
@@ -907,6 +936,14 @@ export interface DealMetrics {
   // Coverage
   year1_dscr: number;
   min_dscr: number;
+  min_dscr_year: number; // 1-based hold year of the minimum DSCR (the lease-up trough)
+  // Lease-up carry: the cumulative operating cash SHORTFALL across any years where
+  // NOI does not cover debt service (before capex/reserves) — the cash a lease-up
+  // deal must fund from an interest/operating reserve or bridge financing, since a
+  // permanent amortizing loan will not carry a sub-1.0x year.
+  operating_shortfall_total: number; // ≥ 0; sum of negative pre-reserve cash-flow years
+  operating_shortfall_years: number; // count of years with negative pre-reserve cash flow
+  operating_reserve_covers_shortfall: boolean; // funded operating reserve ≥ the shortfall
   year1_debt_yield: number; // year-1 NOI / origination loan amount
   min_debt_yield: number; // lowest (annual NOI / outstanding balance that year) across the hold
   // Exit
@@ -1079,10 +1116,17 @@ export function calculateUnderwriting(
     const yearIndex = Math.floor((m - 1) / 12); // 0-indexed year
     const monthlyRentGrowth = Math.pow(1 + revenue.rent_growth_rate, yearIndex); // compound annually
 
-    // GPR: direct read from the unit-state schedule (pre-growth), times the
-    // year growth factor. Offline/vacant states contribute $0 by construction.
+    // Collectible in-place rent (pre-growth read from the unit-state schedule,
+    // × the year growth factor). Below market until each unit marks to market;
+    // offline/vacant states contribute $0. Vacancy, bad debt, concessions and
+    // %-of-GPR opex are all keyed off the collectible — you can only lose, or
+    // spend against, rent you are actually scheduled to collect.
     const gpr = unitSchedule.gprByMonth[m - 1] * monthlyRentGrowth;
-    const stabilizedUnitsThisMonth = unitSchedule.stabilizedByMonth[m - 1];
+    // Gross Potential Rent (every unit at stabilized/market potential) and the
+    // Loss to Lease bridging down to the collectible (ENG-2). Reported on their
+    // own lines; they do not change EGI, which is collectible-based.
+    const marketGpr = unitSchedule.marketGprByMonth[m - 1] * monthlyRentGrowth;
+    const lossToLease = Math.max(0, marketGpr - gpr);
 
     const vacancyLoss = gpr * revenue.vacancy_rate;
     const badDebt = gpr * revenue.bad_debt_rate;
@@ -1146,7 +1190,7 @@ export function calculateUnderwriting(
             perUnitCost: (expenses.turnover_cost_per_unit ?? 0) * annualExpEscalation,
             marketTurnsThisMonth: unitSchedule.marketTurnsByMonth[m - 1],
             renoTurnsThisMonth: unitSchedule.renoTurnsByMonth[m - 1],
-            stabilizedUnits: stabilizedUnitsThisMonth,
+            occupiedUnits: occupiedUnitsThisMonth,
             turnoverRate: expenses.turnover_rate ?? 0.50,
           })
         : applyTurnoverRate(
@@ -1221,7 +1265,14 @@ export function calculateUnderwriting(
 
     monthly.push({
       month: m,
+      // `gpr` carries the collectible scheduled rent (below market until each
+      // unit marks to market; = market once stabilized). Loss to Lease is the
+      // gap up to full market potential, exposed as its own line. Keeping `gpr`
+      // = collectible means EGI and every downstream export/onepager stay
+      // correct without change; consumers that want the market ceiling read
+      // `gpr + loss_to_lease` (ENG-2).
       gpr,
+      loss_to_lease: lossToLease,
       vacancy_loss: vacancyLoss,
       bad_debt: badDebt,
       concessions,
@@ -1264,6 +1315,7 @@ export function calculateUnderwriting(
     annual.push({
       year: y + 1,
       gpr: sum((r) => r.gpr),
+      loss_to_lease: sum((r) => r.loss_to_lease),
       vacancy_loss: sum((r) => r.vacancy_loss),
       bad_debt: sum((r) => r.bad_debt),
       concessions: sum((r) => r.concessions),
@@ -1399,10 +1451,25 @@ export function calculateUnderwriting(
   // DSCR
   const year1DS = annual.length > 0 ? annual[0].debt_service : 0;
   const year1DSCR = year1DS > 0 ? year1NOI / year1DS : 0;
-  const minDSCR = annual.reduce((min, a) => {
+  let minDSCR = Infinity;
+  let minDSCRYear = 1;
+  annual.forEach((a, i) => {
     const dscr = a.debt_service > 0 ? a.noi / a.debt_service : Infinity;
-    return Math.min(min, dscr);
-  }, Infinity);
+    if (dscr < minDSCR) { minDSCR = dscr; minDSCRYear = i + 1; }
+  });
+
+  // Lease-up carry: total operating cash shortfall across sub-coverage years —
+  // the cash a lease-up deal burns before it stabilizes, which must be funded by
+  // an interest/operating reserve or bridge debt (spec OUT-3 / financing reality).
+  let operatingShortfallTotal = 0;
+  let operatingShortfallYears = 0;
+  for (const a of annual) {
+    if (a.cash_flow_before_capex_and_reserves < 0) {
+      operatingShortfallTotal += -a.cash_flow_before_capex_and_reserves;
+      operatingShortfallYears += 1;
+    }
+  }
+  const operatingReserveCoversShortfall = capexReserve >= operatingShortfallTotal;
 
   // Debt Yield = NOI / outstanding loan balance. Year-1 uses the origination
   // balance; the hold-period minimum tracks the amortizing balance year by year.
@@ -1465,6 +1532,10 @@ export function calculateUnderwriting(
     average_cash_on_cash: avgCoC,
     year1_dscr: year1DSCR,
     min_dscr: !isFinite(minDSCR) ? year1DSCR : minDSCR,
+    min_dscr_year: minDSCRYear,
+    operating_shortfall_total: operatingShortfallTotal,
+    operating_shortfall_years: operatingShortfallYears,
+    operating_reserve_covers_shortfall: operatingReserveCoversShortfall,
     year1_debt_yield: year1DebtYield,
     min_debt_yield: !isFinite(minDebtYield) ? year1DebtYield : minDebtYield,
     exit_value: exitValue,
@@ -1596,6 +1667,15 @@ export function calculateUnderwriting(
   if (goingInCap < 0.03) warnings.push("Going-in cap rate below 3% — verify pricing");
   if (goingInCap > 0.12) warnings.push("Going-in cap rate above 12% — verify pricing");
   if (year1DSCR > 0 && year1DSCR < 1.0) warnings.push("DSCR below 1.0 — negative cash flow");
+  // Lease-up carry (spec OUT-3 / financing reality): a sub-1.0x coverage year can't
+  // be funded by a permanent amortizing loan. Surface the cash burn and whether the
+  // funded operating reserve covers it, and flag the bridge-financing implication.
+  if (isFinite(minDSCR) && minDSCR < 1.0 && operatingShortfallTotal > 0) {
+    const fmt0 = (n: number) => `$${Math.round(n).toLocaleString()}`;
+    warnings.push(
+      `Lease-up carry: coverage bottoms at ${minDSCR.toFixed(2)}x in year ${minDSCRYear}; the deal burns ${fmt0(operatingShortfallTotal)} of operating cash over ${operatingShortfallYears} year${operatingShortfallYears === 1 ? "" : "s"} before it stabilizes. A permanent amortizing loan will not fund a sub-1.0x year — this needs an interest reserve or bridge financing. Funded operating reserve ${fmt0(capexReserve)} ${operatingReserveCoversShortfall ? "covers" : "does NOT cover"} the shortfall.`,
+    );
+  }
   if (revenue.vacancy_rate < 0.03) warnings.push("Vacancy below 3% — may be aggressive");
   if (revenue.vacancy_rate > 0.20) warnings.push("Vacancy above 20% — verify assumption");
   if (revenue.rent_growth_rate > 0.05) warnings.push("Rent growth above 5%/yr — may be aggressive");
@@ -2097,8 +2177,21 @@ export interface UnitTimeline {
 
 export interface UnitStateSchedule {
   units: UnitTimeline[];
-  /** Pre-growth GPR per month (caller applies the yearly growth factor). */
+  /**
+   * Pre-growth COLLECTIBLE rent per month — the actual scheduled in-place rent
+   * (below-market until each unit marks to market; $0 while vacant/offline).
+   * The caller applies the yearly growth factor. Named `gprByMonth` for
+   * historical reasons; economically it is the collectible line, and Gross
+   * Potential Rent is `marketGprByMonth`.
+   */
   gprByMonth: number[];
+  /**
+   * Pre-growth Gross Potential Rent per month — every unit at its stabilized
+   * potential (market, or renovated where the reno schedule lifts it, or the
+   * in-place rent where that already exceeds market). Loss to Lease is the gap
+   * `marketGprByMonth − gprByMonth`. Constant across months by construction.
+   */
+  marketGprByMonth: number[];
   /** Units entering "market" each month (non-reno turns completing). */
   marketTurnsByMonth: number[];
   /** Units entering "renovated" each month. */
@@ -2168,14 +2261,20 @@ export function buildUnitStateSchedule(args: {
         });
       }
     } else {
+      // Aggregate row (no per-unit detail): a $0 current rent means the unit
+      // bills nothing today, which is VACANT, not "at market" (ENG-2). Mirror
+      // the per-unit-detail vacancy derivation above so a zero-rent aggregate
+      // row leases up rather than silently booking full market from month 1.
+      const rowVacant = (row.current_rent ?? 0) <= 0;
       for (let i = 0; i < row.count; i++) {
+        if (rowVacant) detailVacantCount++;
         expanded.push({
           unit_id: row.unit_number ? `${row.unit_number}-${i + 1}` : `${rowIdx + 1}-${i + 1}`,
           row_index: rowIdx,
-          current_rent: row.current_rent,
+          current_rent: rowVacant ? 0 : row.current_rent,
           market_rent: row.market_rent,
           premium: row.renovated_rent_premium,
-          status: "mtm",
+          status: rowVacant ? "vacant" : "mtm",
           hasDetail: false,
         });
       }
@@ -2183,8 +2282,9 @@ export function buildUnitStateSchedule(args: {
   });
   const total = expanded.length;
 
-  // Aggregate-row vacancy comes only from the ramp override; with per-unit
-  // details the DERIVED count wins and a disagreeing override warns.
+  // Aggregate-row vacancy is derived from $0 current rents above and may also be
+  // set by the ramp override; with per-unit details the DERIVED count wins and a
+  // disagreeing override warns.
   const overrideVacant = Math.max(0, ramp?.initial_vacant_units ?? 0);
   if (anyDetails) {
     if (rampEnabled && overrideVacant !== detailVacantCount && warnings) {
@@ -2200,17 +2300,23 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
-  // ── Timelines start fully in_place (in_place rent depends on ramp mode) ──
+  // ── Timelines start fully in_place ──
+  // In-place rent is the ACTUAL current/in-place rent — the real collectible
+  // floor the mark-to-market ramp migrates up from. The pro-forma unrenovated
+  // basis no longer GATES the ramp (ENG-2): a below-market unit ramps current →
+  // market under either basis. The basis only decides the OVER-market case —
+  // under Market basis an in-place rent above market is valued DOWN to market
+  // (the conservative "STR underwritten as long-term" markdown, 595 E Broad),
+  // while under Current basis over-market rents are held. With the ramp DISABLED
+  // the legacy stabilized-view path (whole deal at basis rent) still applies.
+  const inPlaceRentFor = (e: Expanded) =>
+    inPlaceBasis === "market" && e.current_rent > e.market_rent ? e.market_rent : e.current_rent;
   const units: UnitTimeline[] = expanded.map((e) => ({
     unit_id: e.unit_id,
     row_index: e.row_index,
-    // In-place rent honors the pro-forma unrenovated basis in BOTH ramp states:
-    //   "current" → the actual in-place rent (with the ramp on, below-market
-    //               units then migrate up to market via the queue below);
-    //   "market"  → value every occupied unit at market rent — a stabilized
-    //               view that works even when market < current (e.g. modeling a
-    //               short-term-rental building underwritten as long-term).
-    in_place_rent: inPlaceBasis === "market" ? e.market_rent : e.current_rent,
+    in_place_rent: rampEnabled
+      ? inPlaceRentFor(e)
+      : (inPlaceBasis === "market" ? e.market_rent : e.current_rent),
     market_rent: e.market_rent,
     // Renovated rent = base + premium. Under the "market_plus_premium" basis the
     // base is always market. Under "current_plus_premium" the base is the in-place
@@ -2224,7 +2330,11 @@ export function buildUnitStateSchedule(args: {
     states: new Array<UnitState>(totalMonths).fill("in_place"),
   }));
 
-  // ── Market-turn queue (ramp ON only) ──
+  // ── Absorption queue (ramp ON only) ──
+  // Vacant lease-ups and below-market mark-up turns share ONE turn-slot budget
+  // (max_turns_per_month): both are make-readies competing for the same crew and
+  // downtime capacity (ENG-2). Runs under every basis — the ramp is driven by
+  // in-place rent being below market, not by the display basis.
   if (rampEnabled && ramp) {
     const turnDowntime = Math.max(0, ramp.turn_downtime_months);
     const vacantLeaseup = Math.max(0, ramp.vacant_leaseup_months ?? 0);
@@ -2238,50 +2348,50 @@ export function buildUnitStateSchedule(args: {
       return (d.getFullYear() - anchor.getFullYear()) * 12 + (d.getMonth() - anchor.getMonth());
     };
 
-    // Vacant units: lease-up path, not paced.
-    expanded.forEach((e, i) => {
-      if (e.status !== "vacant") return;
-      const t = units[i].states;
-      for (let m = 0; m < totalMonths; m++) {
-        t[m] = m < vacantLeaseup ? "vacant_leaseup" : "market";
-      }
-    });
+    // Every unit that must be turned to reach market: vacant units (lease-up,
+    // downtime = vacant_leaseup_months) and below-market occupied/mtm units
+    // (mark-up, downtime = turn_downtime_months). At-/above-market occupied units
+    // need no turn. A vacant unit's gap is the full market rent (it collects $0).
+    type TurnKind = "leaseup" | "turn";
+    interface QueueItem { idx: number; eligible: number; gap: number; kind: TurnKind; downtime: number }
+    const gapOf = (e: Expanded) => e.market_rent - (e.status === "vacant" ? 0 : e.current_rent);
+    const actionable = expanded
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.status === "vacant" || e.current_rent < e.market_rent);
 
-    // Below-market occupied/mtm units → eligibility queue. Mark-up turns only
-    // apply under a CURRENT basis (the ramp migrates current → market). Under a
-    // MARKET basis every occupied unit is already valued at market, so there is
-    // no migration to schedule — the vacant lease-up above still runs.
-    interface QueueItem { idx: number; eligible: number; gap: number }
-    const queue: QueueItem[] = [];
-    if (inPlaceBasis === "current") {
-      const useLinear = ramp.mode !== "schedule" || !anyDetails;
-      const belowMarketIdxs = expanded
-        .map((e, i) => ({ e, i }))
-        .filter(({ e }) => e.status !== "vacant" && e.current_rent < e.market_rent);
+    const useLinear = ramp.mode !== "schedule" || !anyDetails;
+    const queue: QueueItem[] = actionable.map(({ e, i }) => ({
+      idx: i,
+      eligible: 0,
+      gap: gapOf(e),
+      kind: e.status === "vacant" ? "leaseup" : "turn",
+      downtime: e.status === "vacant" ? vacantLeaseup : turnDowntime,
+    }));
 
-      if (useLinear) {
-        // Linear mode GENERATED over the machine: spread eligibility evenly
-        // across the absorption window (deepest gap first), same pacing rules.
-        const span = Math.max(1, ramp.absorption_months);
-        const sorted = [...belowMarketIdxs].sort(
-          (a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent)
-        );
-        sorted.forEach(({ e, i }, k) => {
-          const eligible = Math.floor((k * span) / Math.max(1, sorted.length));
-          queue.push({ idx: i, eligible, gap: e.market_rent - e.current_rent });
-        });
-      } else {
-        for (const { e, i } of belowMarketIdxs) {
-          if (e.status === "occupied" && e.lease_end) {
-            const mi = monthIndexOf(e.lease_end);
-            queue.push({ idx: i, eligible: mi === null ? 0 : Math.max(0, mi + 1), gap: e.market_rent - e.current_rent });
-          } else {
-            queue.push({ idx: i, eligible: 0, gap: e.market_rent - e.current_rent });
-          }
+    if (useLinear) {
+      // Vacant units are pure downside — they lease up AS FAST AS capacity allows
+      // (eligible from month 0). Only the OCCUPIED below-market units mark to
+      // market gradually across the absorption window, since they can only be
+      // re-tenanted at market as leases roll (Bryan's "variability as we get
+      // tenants that match rents"). Vacancies therefore stay eligible at 0; the
+      // mark-up turns get the linear absorption spread, deepest gap first. Both
+      // still draw on the shared max_turns_per_month throughput, so vacancies —
+      // eligible first and deepest-gap — fill ahead of the mark-ups.
+      const span = Math.max(1, ramp.absorption_months);
+      const markups = queue.filter((q) => q.kind === "turn").sort((a, b) => b.gap - a.gap);
+      markups.forEach((q, k) => { q.eligible = Math.floor((k * span) / Math.max(1, markups.length)); });
+    } else {
+      // Schedule mode: occupied units become eligible when their lease ends;
+      // vacant and mtm units are eligible immediately.
+      for (const q of queue) {
+        const e = expanded[q.idx];
+        if (e.status === "occupied" && e.lease_end) {
+          const mi = monthIndexOf(e.lease_end);
+          q.eligible = mi === null ? 0 : Math.max(0, mi + 1);
         }
       }
-      queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
     }
+    queue.sort((a, b) => a.eligible - b.eligible || b.gap - a.gap);
 
     let qi = 0;
     const pending: QueueItem[] = [];
@@ -2292,8 +2402,9 @@ export function buildUnitStateSchedule(args: {
       while (pending.length > 0 && started < maxPerMonth) {
         const item = pending.shift()!;
         const t = units[item.idx].states;
-        for (let k = m; k < Math.min(m + turnDowntime, totalMonths); k++) t[k] = "offline_turn";
-        for (let k = m + turnDowntime; k < totalMonths; k++) t[k] = "market";
+        const offState: UnitState = item.kind === "leaseup" ? "vacant_leaseup" : "offline_turn";
+        for (let k = m; k < Math.min(m + item.downtime, totalMonths); k++) t[k] = offState;
+        for (let k = m + item.downtime; k < totalMonths; k++) t[k] = "market";
         started++;
       }
     }
@@ -2336,8 +2447,21 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
+  // ── Gross Potential Rent ceiling ──
+  // Each unit's potential = the highest rent it reaches across the whole hold
+  // (market, or renovated where the reno schedule lifts it), floored at market
+  // so a unit that never leases inside the horizon still contributes its market
+  // potential. Guarantees Loss to Lease = potential − collectible ≥ 0.
+  let totalPotential = 0;
+  for (const u of units) {
+    let best = u.market_rent;
+    for (const s of u.states) best = Math.max(best, rentForState(u, s));
+    totalPotential += best;
+  }
+
   // ── Derive monthly aggregates ──
   const gprByMonth = new Array<number>(totalMonths).fill(0);
+  const marketGprByMonth = new Array<number>(totalMonths).fill(totalPotential);
   const marketTurnsByMonth = new Array<number>(totalMonths).fill(0);
   const renoTurnsByMonth = new Array<number>(totalMonths).fill(0);
   const stabilizedByMonth = new Array<number>(totalMonths).fill(0);
@@ -2369,7 +2493,7 @@ export function buildUnitStateSchedule(args: {
     }
   }
 
-  return { units, gprByMonth, marketTurnsByMonth, renoTurnsByMonth, stabilizedByMonth, pctMarkedByMonth };
+  return { units, gprByMonth, marketGprByMonth, marketTurnsByMonth, renoTurnsByMonth, stabilizedByMonth, pctMarkedByMonth };
 }
 
 /**

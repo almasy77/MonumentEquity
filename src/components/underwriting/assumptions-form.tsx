@@ -1990,7 +1990,39 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 ) : (
                   <>
                     <NumField label="Count" value={unit.count} onChange={(v) => updateUnitMix(i, "count", v)} />
-                    <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
+                    <div>
+                      <CurrencyField label="Current Rent" value={unit.current_rent} onChange={(v) => updateUnitMix(i, "current_rent", v)} />
+                      {/* VAL-4: a $0 current rent is ambiguous — declare whether it's
+                          vacant or a short-term rental available to convert to market.
+                          Both lease up to market over the absorption window. */}
+                      {(unit.current_rent ?? 0) <= 0 && (
+                        <div className="mt-1 flex items-center gap-1">
+                          {([
+                            ["vacant", "Vacant"],
+                            ["str", "STR / avail."],
+                          ] as const).map(([val, txt]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateUnitMix(i, "zero_rent_treatment", val)}
+                              className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                                (unit as { zero_rent_treatment?: string }).zero_rent_treatment === val
+                                  ? "bg-blue-600/30 border-blue-500 text-blue-200"
+                                  : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500"
+                              }`}
+                              title={val === "str"
+                                ? "Occupied under short-term/other terms; available to convert to market LTR — leases up to market over absorption"
+                                : "Empty; leases up to market over absorption"}
+                            >
+                              {txt}
+                            </button>
+                          ))}
+                          {!(unit as { zero_rent_treatment?: string }).zero_rent_treatment && (
+                            <span className="text-[10px] text-amber-400">classify $0</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
                 {(() => {

@@ -48,6 +48,7 @@ function fmtPct(n: number): string {
 
 // Get value from annual summary, including opex_breakdown fields
 function getAnnualValue(a: AnnualSummary, key: string): number {
+  if (key === "market_gpr") return a.gpr + (a.loss_to_lease ?? 0); // collectible + gap = market ceiling
   if (key in a) return a[key as keyof AnnualSummary] as number;
   // Check opex_breakdown
   if (a.opex_breakdown && key in a.opex_breakdown) {
@@ -58,6 +59,7 @@ function getAnnualValue(a: AnnualSummary, key: string): number {
 
 // Get value from monthly row, including opex_breakdown fields
 function getMonthlyValue(m: MonthlyRow, key: string): number {
+  if (key === "market_gpr") return m.gpr + (m.loss_to_lease ?? 0); // collectible + gap = market ceiling
   if (key in m) return m[key as keyof MonthlyRow] as number;
   if (m.opex_breakdown && key in m.opex_breakdown) {
     return m.opex_breakdown[key as keyof OpexBreakdown];
@@ -97,18 +99,32 @@ export function ProFormaTable({
     });
   }
 
-  const rows: RowDef[] = [
-    {
-      key: "egi",
-      label: "Revenue (EGI)",
-      bold: true,
-      children: [
+  // Show the mark-to-market waterfall (GPR at market → Less: Loss to Lease →
+  // collectible) only when the ramp actually opens a gap; a stabilized deal
+  // keeps the plain collectible GPR line (ENG-2).
+  const hasLossToLease = annual.some((a) => (a.loss_to_lease ?? 0) > 0.005);
+  const revenueChildren: RowDef[] = hasLossToLease
+    ? [
+        { key: "market_gpr", label: "Gross Potential Rent (Market)" },
+        { key: "loss_to_lease", label: "Less: Loss to Lease", negative: true },
+        { key: "vacancy_loss", label: "Less: Vacancy", negative: true },
+        { key: "bad_debt", label: "Less: Bad Debt", negative: true },
+        { key: "concessions", label: "Less: Concessions", negative: true },
+        { key: "other_income", label: "Plus: Other Income" },
+      ]
+    : [
         { key: "gpr", label: "Gross Potential Rent" },
         { key: "vacancy_loss", label: "Less: Vacancy", negative: true },
         { key: "bad_debt", label: "Less: Bad Debt", negative: true },
         { key: "concessions", label: "Less: Concessions", negative: true },
         { key: "other_income", label: "Plus: Other Income" },
-      ],
+      ];
+  const rows: RowDef[] = [
+    {
+      key: "egi",
+      label: "Revenue (EGI)",
+      bold: true,
+      children: revenueChildren,
     },
     {
       key: "total_opex",

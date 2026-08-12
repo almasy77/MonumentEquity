@@ -248,6 +248,53 @@ export function allChecksPass(checks: ReconciliationCheck[]): boolean {
   return checks.every((c) => c.pass);
 }
 
+// ─── Validation banner aggregation (VAL-1) ───────────────────
+// The Summary banner used to read "ALL CHECKS PASS" off the reconciliation
+// tie-outs ALONE, ignoring the range-sanity failures (negative cap, no IRR,
+// equity multiple below 1, negative sale proceeds, negative NOI), the CapEx
+// guardrail, and the engine's own sanity warnings. So a catastrophic deal
+// (−0.23x equity multiple, IRR that never converged) still showed a green
+// "ALL CHECKS PASS". The banner now aggregates EVERY block into three states.
+export interface BannerStatus {
+  state: "pass" | "warn" | "fail";
+  failed: string[]; // hard failures — the deal is broken or loses capital
+  warnings: string[]; // advisories — verify, but not disqualifying
+  text: string; // banner label
+}
+
+export function computeBannerStatus(
+  result: UnderwritingResult,
+  reconChecks: ReconciliationCheck[],
+  deal: Deal,
+  inputs: ScenarioInputs,
+): BannerStatus {
+  const m = result.metrics;
+  const failed: string[] = [];
+
+  // Reconciliation tie-outs that don't foot.
+  for (const c of reconChecks) if (!c.pass) failed.push(c.name);
+
+  // Range-sanity hard failures (the block the old banner ignored).
+  if (m.going_in_cap < 0) failed.push("Going-in cap rate is negative");
+  if (m.irr === null) failed.push("IRR could not be computed (no return)");
+  if (m.equity_multiple < 1) failed.push("Equity multiple below 1.0x (capital loss)");
+  if (m.net_sale_proceeds < 0) failed.push("Net sale proceeds are negative");
+  if ((result.annual[0]?.noi ?? 0) < 0) failed.push("Year-1 NOI is negative");
+
+  // Advisories — engine sanity warnings + the CapEx guardrail.
+  const warnings: string[] = [...result.warnings];
+  const guardrail = capexGuardrailWarning(deal, inputs);
+  if (guardrail) warnings.push(guardrail);
+
+  if (failed.length > 0) {
+    return { state: "fail", failed, warnings, text: `${failed.length} CHECK${failed.length === 1 ? "" : "S"} FAILED — ${failed[0]}` };
+  }
+  if (warnings.length > 0) {
+    return { state: "warn", failed, warnings, text: `PASSES WITH ${warnings.length} WARNING${warnings.length === 1 ? "" : "S"} (see Validation sheet)` };
+  }
+  return { state: "pass", failed, warnings, text: "ALL CHECKS PASS" };
+}
+
 // ─── CapEx guardrail (fix-spec Phase 4.3/4.4) ────────────────
 // An old building with zero named CapEx projects, a zero capital reserve, and
 // no PCA on file means deferred maintenance is unmodeled. Surfaced on the
