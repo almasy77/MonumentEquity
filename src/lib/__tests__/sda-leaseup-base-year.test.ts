@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { calculateUnderwriting, type ScenarioInputs } from "../underwriting";
-import { pickSdaBaseYear } from "../sda-fill-mapping";
+import { pickSdaBaseYear, buildSdaWrites } from "../sda-fill-mapping";
 
 const LIKELY = JSON.parse(
   readFileSync(join(__dirname, "golden", "mobile_drive_likely.input.json"), "utf8"),
@@ -34,5 +34,31 @@ describe("SDA base year — stabilized-basis for a lease-up deal", () => {
     });
     const res = calculateUnderwriting(stable);
     expect(pickSdaBaseYear(res).index).toBe(0);
+  });
+});
+
+describe("SDA-12: Summary labels match the fed year", () => {
+  function summaryCells(inp: ScenarioInputs) {
+    const res = calculateUnderwriting(inp);
+    const writes = buildSdaWrites([{ name: "S", type: "base", inputs: inp, result: res, units: 24 }], 0);
+    return writes.find((w) => w.sheet === "Summary")?.cells ?? {};
+  }
+
+  it("a lease-up deal relabels the (Year 1) cells to (Stabilized ...)", () => {
+    const cells = summaryCells(LIKELY);
+    expect(String(cells["B24"])).toContain("Stabilized");
+    expect(String(cells["B38"])).toContain("Stabilized");
+    expect(String(cells["B47"])).toContain("Stabilized");
+  });
+
+  it("a stabilized deal leaves the template's (Year 1) labels alone", () => {
+    const stable = JSON.parse(JSON.stringify(LIKELY)) as ScenarioInputs;
+    (stable.revenue as unknown as { rent_ramp?: unknown }).rent_ramp = { enabled: false };
+    (stable.revenue as unknown as { unit_mix: Array<Record<string, unknown>> }).unit_mix.forEach((r) => {
+      if ((r.current_rent as number) === 0) r.current_rent = r.market_rent;
+    });
+    const cells = summaryCells(stable);
+    expect(cells["B24"]).toBeUndefined();
+    expect(cells["B47"]).toBeUndefined();
   });
 });
