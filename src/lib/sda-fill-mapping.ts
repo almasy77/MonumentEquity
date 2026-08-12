@@ -147,6 +147,22 @@ export function pickSdaBaseYear(result: SdaScenarioColumnInput["result"]): { yea
   return { year: annual[index], index };
 }
 
+/**
+ * SDA-9: reasons a scenario must not be written into the SDA. A negative (or
+ * zero) going-in NOI or a negative cap rate makes the SDA's FMV = NOI/cap and its
+ * returns nonsensical — a negative-NOI Base Case otherwise reports a positive IRR
+ * and a >1x equity multiple. The exporter flags such a column and skips its
+ * numeric writes rather than presenting fabricated returns.
+ */
+export function sdaExportBlockers(result: SdaScenarioColumnInput["result"]): string[] {
+  const issues: string[] = [];
+  const stab = pickSdaBaseYear(result).year;
+  if ((stab.noi ?? 0) <= 0) issues.push("stabilized NOI is not positive");
+  const cap = (result.metrics as { stabilized_cap?: number }).stabilized_cap ?? result.metrics.going_in_cap;
+  if (cap < 0) issues.push("cap rate is negative");
+  return issues;
+}
+
 /** Build all input-cell writes for the SDA template from the ordered scenario columns. */
 export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: number, deal?: SdaDealInfo): SdaSheetWrite[] {
   const cols = columns.slice(0, 4);
@@ -157,6 +173,13 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   cols.forEach((col, i) => {
     const L = COLS[i];
     const m = col.result.metrics;
+    // SDA-9: never write a broken scenario's numbers (they produce fabricated
+    // returns). Flag the column header and skip its numeric cells.
+    const blockers = sdaExportBlockers(col.result);
+    if (blockers.length > 0) {
+      scenarioCells[`${L}3`] = `${col.name} — NOT SDA-SAFE: ${blockers.join("; ")}`;
+      return;
+    }
     // SDA is stabilized-basis: feed the stabilized year for a lease-up deal (see
     // pickSdaBaseYear), not the Year-1 hole. Stabilized deals feed Year 1 as before.
     const a0 = pickSdaBaseYear(col.result).year;
