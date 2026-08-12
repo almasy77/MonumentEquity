@@ -21,7 +21,7 @@ import type {
   OpexInput,
   OpexInputMode,
 } from "./underwriting";
-import { computeReconciliationChecks, allChecksPass, exitMethodFor, exitEffectiveTaxRate, capexGuardrailWarning } from "./checks";
+import { computeReconciliationChecks, computeBannerStatus, exitMethodFor, exitEffectiveTaxRate, capexGuardrailWarning } from "./checks";
 import type { ReconciliationCheck } from "./checks";
 
 // ─── Styles ──────────────────────────────────────────────────
@@ -181,12 +181,17 @@ function buildSummarySheet(
   titleRow.font = { bold: true, size: 14, color: { argb: "FF1E3A5F" }, name: FONT_SERIF };
   ws.mergeCells("A1:E1");
 
-  // Checks banner (fix-spec Phase 3.2): one cell, watermark on failure.
-  const checksOk = allChecksPass(reconChecks);
-  const banner = ws.addRow([checksOk ? "ALL CHECKS PASS" : "DRAFT — CHECKS FAILED (see Validation sheet)"]);
-  banner.getCell(1).font = { bold: true, size: 12, name: FONT_SERIF, color: { argb: checksOk ? "FF28A745" : "FFFFFFFF" } };
-  if (!checksOk) {
+  // Checks banner (VAL-1): aggregates EVERY check block — reconciliation tie-outs,
+  // range-sanity failures, and advisories — into three states, so a broken deal
+  // can never show a green "ALL CHECKS PASS".
+  const bannerStatus = computeBannerStatus(result, reconChecks, deal, inputs);
+  const banner = ws.addRow([bannerStatus.text]);
+  const bannerColor = bannerStatus.state === "pass" ? "FF28A745" : bannerStatus.state === "warn" ? "FF9A6700" : "FFFFFFFF";
+  banner.getCell(1).font = { bold: true, size: 12, name: FONT_SERIF, color: { argb: bannerColor } };
+  if (bannerStatus.state === "fail") {
     banner.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDC3545" } };
+  } else if (bannerStatus.state === "warn") {
+    banner.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF3CD" } };
   }
   ws.mergeCells(`A${banner.number}:E${banner.number}`);
   ws.addRow([]);
@@ -1124,8 +1129,11 @@ function buildValidationSheet(wb: ExcelJS.Workbook, result: UnderwritingResult, 
       addValidationRow(ws, `(${c.id}) ${c.name}`, c.pass, c.detail);
     }
     ws.addRow([]);
-    const summary = ws.addRow([allChecksPass(reconChecks) ? "ALL CHECKS PASS" : "CHECKS FAILED — export watermarked DRAFT"]);
-    summary.getCell(1).font = { bold: true, size: 11, name: FONT_SANS, color: { argb: allChecksPass(reconChecks) ? "FF28A745" : "FFDC3545" } };
+    // Overall verdict aggregating every block (VAL-1), not just these tie-outs.
+    const bs = computeBannerStatus(result, reconChecks, deal, inputs);
+    const summary = ws.addRow([bs.text]);
+    const c = bs.state === "pass" ? "FF28A745" : bs.state === "warn" ? "FF9A6700" : "FFDC3545";
+    summary.getCell(1).font = { bold: true, size: 11, name: FONT_SANS, color: { argb: c } };
   }
   ws.addRow([]);
 
