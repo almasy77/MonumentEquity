@@ -1943,7 +1943,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
             </div>
             {unitMix.map((unit, i) => (
               <div key={i} className="space-y-1.5">
-              <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 items-end">
+              <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 items-start">
                 <div>
                   <Label className="text-xs text-slate-400 flex items-center justify-between">
                     <span className="flex items-center gap-0.5">
@@ -2068,13 +2068,16 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                     )}
                   </div>
                 </div>
-                <div className="flex items-end pb-0.5">
+                <div>
+                  {/* Invisible spacer label keeps the remove button on the same
+                      baseline as the inputs now that the row is top-aligned. */}
+                  <Label className="text-xs text-slate-400 invisible select-none" aria-hidden="true">·</Label>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => removeUnitType(i)}
                     disabled={unitMix.length <= 1}
-                    className="border-slate-700 text-slate-500 hover:text-red-400 h-8"
+                    className="border-slate-700 text-slate-500 hover:text-red-400 h-8 w-full"
                   >
                     <X className="h-3 w-3" />
                   </Button>
