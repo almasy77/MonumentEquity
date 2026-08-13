@@ -376,6 +376,38 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     C12: am.stabilized_cap ?? am.going_in_cap, // Market Cap Rate (stabilized basis)
   };
 
+  // §3 disclosure — a basis note that travels INSIDE the workbook (the SDA goes to
+  // reviewers as a standalone file, so an external memo isn't reliable). We append
+  // it to the Legal Notices tab, whose only content is B1:B4 (title + three legal
+  // paragraphs) — a clean canvas below B4, versus the dense 194-row Change Log where
+  // an appended note lands at the chronological bottom. Written as discrete short
+  // lines (no wrap) so each renders in full at default row height, overflowing into
+  // the empty columns to the right; no styles.xml or row-height edits required.
+  const disclosureLines: string[] = [
+    "MONUMENT EQUITY — HOW TO READ THESE FIGURES (added on export)",
+    "",
+    "1. NOI, Current Market Cap Rate and Debt Coverage Ratio on this workbook are NET OF RESERVES — the SDA",
+    "   template's convention. Monument Equity's own underwriting engine reports these figures GROSS of",
+    "   reserves, so a side-by-side comparison will show the SDA's numbers reading lower. This is a",
+    "   difference in basis, not an error.",
+  ];
+  // The stabilized-basis caveat only applies when the SDA is fed a stabilized year
+  // (a lease-up deal) rather than Year 1 — mirror the SDA-12 relabel condition.
+  if (activeBase.index > 0) {
+    const yr = activeBase.index + 1;
+    disclosureLines.push(
+      "",
+      `2. Income & Expenses and Key Indicators reflect the deal's STABILIZED (Year ${yr}) economics held flat`,
+      `   across the projection (see the "Stabilized, Yr ${yr}" labels on the Summary tab), not Year 1 actuals.`,
+      "   Actual Year 1 (lease-up) cash flow is lower — including one year of negative cash flow — per",
+      "   Monument Equity's own underwriting.",
+    );
+  }
+  const legalCells: Record<string, SdaCellValue> = {};
+  disclosureLines.forEach((line, i) => {
+    if (line !== "") legalCells[`B${6 + i}`] = line; // B6 downward; blank entries leave the row untouched
+  });
+
   return [
     { sheet: "Scenarios", cells: scenarioCells },
     { sheet: "Summary", cells: summaryCells },
@@ -385,5 +417,6 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
     { sheet: "One Pager", cells: onePagerCells },
     { sheet: "Repairs", cells: repairsCells },
     { sheet: "2-Minute Analysis", cells: twoMinCells },
+    { sheet: "Legal Notices", cells: legalCells },
   ];
 }
