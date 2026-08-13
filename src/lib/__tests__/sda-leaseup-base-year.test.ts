@@ -62,3 +62,35 @@ describe("SDA-12: Summary labels match the fed year", () => {
     expect(cells["B47"]).toBeUndefined();
   });
 });
+
+describe("§3 disclosure: an in-workbook basis note is written to Legal Notices", () => {
+  function legalCells(inp: ScenarioInputs) {
+    const res = calculateUnderwriting(inp);
+    const writes = buildSdaWrites([{ name: "S", type: "base", inputs: inp, result: res, units: 24 }], 0);
+    return writes.find((w) => w.sheet === "Legal Notices")?.cells ?? {};
+  }
+
+  it("always discloses the reserve (net-of-reserves) convention", () => {
+    const cells = legalCells(LIKELY);
+    const joined = Object.values(cells).join("\n");
+    expect(joined).toContain("NET OF RESERVES");
+    // written below the existing legal paragraphs (B1-B4), never overwriting them
+    expect(cells["B1"]).toBeUndefined();
+    expect(cells["B4"]).toBeUndefined();
+    expect(cells["B6"]).toBeDefined();
+  });
+
+  it("adds the stabilized-basis caveat for a lease-up deal, omits it for a stabilized deal", () => {
+    const leaseUp = Object.values(legalCells(LIKELY)).join("\n");
+    expect(leaseUp).toContain("STABILIZED");
+
+    const stable = JSON.parse(JSON.stringify(LIKELY)) as ScenarioInputs;
+    (stable.revenue as unknown as { rent_ramp?: unknown }).rent_ramp = { enabled: false };
+    (stable.revenue as unknown as { unit_mix: Array<Record<string, unknown>> }).unit_mix.forEach((r) => {
+      if ((r.current_rent as number) === 0) r.current_rent = r.market_rent;
+    });
+    const stableNote = Object.values(legalCells(stable)).join("\n");
+    expect(stableNote).toContain("NET OF RESERVES"); // reserve note still present
+    expect(stableNote).not.toContain("STABILIZED"); // but no stabilized-year caveat
+  });
+});
