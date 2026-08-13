@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { calculateUnderwriting, type ScenarioInputs } from "../underwriting";
-import { buildSdaWrites, sdaExportBlockers } from "../sda-fill-mapping";
+import { buildSdaWrites, sdaExportBlockers, pickSdaBaseYear } from "../sda-fill-mapping";
 
 const LIKELY = JSON.parse(
   readFileSync(join(__dirname, "golden", "mobile_drive_likely.input.json"), "utf8"),
@@ -28,15 +28,19 @@ function cellsFor(sheet: string) {
 }
 
 describe("SDA-2: reserves reach the SDA distribution line", () => {
-  it("AE42 carries the engine's UNESCALATED base per-unit reserve (SDA-11), not $0 or the escalated year", () => {
+  it("AE42 carries the FED (stabilized) year's per-unit reserve (SDA-11 corrected), matching every other fed P&L line", () => {
     const { cells, result } = cellsFor("Scenarios");
-    // Year-1 (base) replacement + capital reserve, per unit — the engine's assumption.
-    const y1 = result.annual[0];
-    const expectedPerUnit = ((y1.reserves ?? 0) + (y1.capital_reserve ?? 0)) / 24;
+    // The SDA holds the reserve flat and is fed the stabilized year for a lease-up
+    // deal, so AE42 must be the fed-year reserve — not Year 1. On the golden 4443
+    // the fed year is Year 3 (base index 2), where the escalated reserve is higher.
+    const base = pickSdaBaseYear(result);
+    const expectedPerUnit = ((base.year.reserves ?? 0) + (base.year.capital_reserve ?? 0)) / 24;
     expect(expectedPerUnit).toBeGreaterThan(0);
     expect(cells["AE42"]).toBeCloseTo(expectedPerUnit, 6);
-    // 4443: $500/unit×24 + $7,500 = $19,500 → $812.50/unit.
-    expect(cells["AE42"]).toBeCloseTo(812.5, 2);
+    // 4443 is a lease-up deal → fed Year 3, reserve $19,984.80 → $832.70/unit
+    // (NOT the Year-1 $812.50 the first SDA-11 pass fed, which ran the SDA $484.80 over).
+    expect(base.index).toBeGreaterThan(0);
+    expect(cells["AE42"]).toBeCloseTo(832.7, 2);
   });
 });
 

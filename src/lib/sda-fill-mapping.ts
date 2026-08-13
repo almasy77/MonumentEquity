@@ -257,13 +257,17 @@ export function buildSdaWrites(columns: SdaScenarioColumnInput[], activeIndex: n
   // reserve row); both are below-NOI in our model, so both belong in the SDA's
   // distribution deduction. Driven by the ACTIVE scenario's stabilized year
   // since row 42 is a single global $/unit assumption, not per-column.
-  // SDA-11: use the engine's UNESCALATED base reserve (Year-1 replacement +
-  // capital), not the stabilized/escalated year — otherwise "same inputs" isn't
-  // literally true. 4443: $500/unit×24 + $7,500 = $19,500 = $812.50/unit (was
-  // reading the Year-3 escalated $832.70/unit off the SDA's fed year).
+  // SDA-11 (corrected): feed the reserve from the SAME fed year as every other
+  // P&L line — the stabilized year (pickSdaBaseYear), not Year 1. The SDA holds
+  // its reserve FLAT across the whole hold (P&L!F32=D32=H32=…; no internal
+  // escalation), so the single value we feed is used every year. Since GPR, opex
+  // and NOI are all fed the stabilized-year figures, a Year-1 reserve was the lone
+  // line fed off a different year and left the deduction short by the escalation
+  // to the fed year (4443: Year-1 $19,500 vs the fed Year-3 $19,984.80 → −$484.80,
+  // which is exactly why SDA cash flow ran $484.80 over the engine's Year-3 CF).
   const activeUnits = active.units || 1;
-  const y1Reserve = active.result.annual[0];
-  const activeAnnualReserve = (y1Reserve.reserves ?? 0) + (y1Reserve.capital_reserve ?? 0);
+  const baseReserveYear = pickSdaBaseYear(active.result).year;
+  const activeAnnualReserve = (baseReserveYear.reserves ?? 0) + (baseReserveYear.capital_reserve ?? 0);
   scenarioCells["AE42"] = activeUnits > 0 ? activeAnnualReserve / activeUnits : 0; // $/unit/yr
 
   // Target Rent Analysis (Scenarios AC8:AH14) — a standalone rent-roll reference on
