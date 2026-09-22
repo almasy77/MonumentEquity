@@ -10,6 +10,7 @@ interface SearchResult {
   id: string;
   title: string;
   subtitle: string;
+  archived?: boolean;
 }
 
 export function GlobalSearch() {
@@ -139,12 +140,19 @@ export function GlobalSearch() {
               }`}
             >
               {r.type === "deal" ? (
-                <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+                <Building2 className={`h-4 w-4 shrink-0 ${r.archived ? "text-slate-500" : "text-blue-400"}`} />
               ) : (
                 <Users className="h-4 w-4 text-green-400 shrink-0" />
               )}
               <div className="min-w-0">
-                <p className="text-white truncate">{r.title}</p>
+                <p className="text-white truncate flex items-center gap-1.5">
+                  <span className="truncate">{r.title}</span>
+                  {r.archived && (
+                    <span className="shrink-0 rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-300">
+                      Archived
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-slate-500 truncate">{r.subtitle}</p>
               </div>
             </button>
