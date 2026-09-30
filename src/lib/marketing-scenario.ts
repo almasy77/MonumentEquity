@@ -20,6 +20,7 @@ import {
   type ExpenseAssumptions,
 } from "./underwriting";
 import type { Scenario, Deal } from "./validations";
+import { stampMetrics } from "./engine-version";
 import type { OMExtractedData } from "./om-extract";
 
 export const MARKETING_SCENARIO_TYPE = "marketing";
@@ -268,6 +269,7 @@ export async function createOrUpdateMarketingScenario(
     created_at: existing?.created_at ?? now,
     updated_at: now,
   };
+  stampMetrics(scenario, result); // P3-7: engine_version + metrics_calculated_at
 
   await redis.set(`scenario:${id}`, JSON.stringify(scenario));
   await addToIndex(`scenarios:by_deal:${dealId}`, id, Date.now());

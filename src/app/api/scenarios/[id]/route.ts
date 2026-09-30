@@ -4,6 +4,14 @@ import { getRedis, removeFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
+import {
+  ENGINE_VERSION,
+  ENGINE_CHANGE_REASONS,
+  stampMetrics,
+  metricsFromResult,
+  metricsDiffer,
+  type StoredMetrics,
+} from "@/lib/engine-version";
 import type { Scenario, Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -37,8 +45,38 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
     const result = calculateUnderwriting(inputs);
 
+    // Lazy recompute + version stamp (P3-7). The response is always fresh, but the
+    // STORED calculated_metrics blob (used by lists, cards and exports) can be from
+    // an older engine. When this scenario's engine_version lags, re-stamp it: if the
+    // fresh metrics differ from the stored ones, capture the prior values + reason
+    // into previous_metrics so the UI can surface the change. Persist is best-effort
+    // and never blocks the read.
+    let resultsChanged: { previous: StoredMetrics; current: StoredMetrics; reason: string } | undefined;
+    const sc = scenario as unknown as Record<string, unknown>;
+    if ((sc.engine_version as number | undefined) !== ENGINE_VERSION) {
+      const fresh = metricsFromResult(result);
+      const stored = sc.calculated_metrics as StoredMetrics | undefined;
+      if (metricsDiffer(stored, fresh) && stored) {
+        const reason = ENGINE_CHANGE_REASONS[ENGINE_VERSION] ?? "Engine updated";
+        sc.previous_metrics = {
+          ...stored,
+          engine_version: sc.engine_version as number | undefined,
+          reason,
+          changed_at: new Date().toISOString(),
+        };
+        resultsChanged = { previous: stored, current: fresh, reason };
+      }
+      stampMetrics(scenario, result);
+      try {
+        await redis.set(`scenario:${id}`, JSON.stringify(scenario));
+      } catch (e) {
+        console.error("P3-7 lazy re-stamp persist failed:", e);
+      }
+    }
+
     return NextResponse.json({
       scenario,
+      results_changed: resultsChanged,
       underwriting: {
         monthly: result.monthly,
         annual: result.annual,
@@ -118,14 +156,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const result = calculateUnderwriting(inputs);
 
     updated.monthly_pro_forma = []; // storage: recomputed on read
-    updated.calculated_metrics = {
-      irr: result.metrics.irr ?? undefined,
-      cash_on_cash: result.metrics.average_cash_on_cash,
-      dscr: result.metrics.year1_dscr,
-      equity_multiple: result.metrics.equity_multiple,
-      going_in_cap: result.metrics.going_in_cap,
-      stabilized_cap: result.metrics.stabilized_cap,
-    };
+    stampMetrics(updated, result); // P3-7: calculated_metrics + engine_version + metrics_calculated_at
 
     // Save version snapshot
     await redis.set(

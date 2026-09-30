@@ -11,6 +11,7 @@ import { OperatingView } from "./operating-view";
 import { ProFormaTable } from "./pro-forma-table";
 import { PricingViewsCard } from "./pricing-views-card";
 import { SensitivityGrid } from "./sensitivity-grid";
+import { ResultsChangedBanner } from "./results-changed-banner";
 import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
 import { computeTaxFlags } from "@/lib/tax-flags";
@@ -651,14 +652,17 @@ export function UnderwritingClient({
 
       {/* Active Scenario Content */}
       {activeScenario && activeResult && (
-        <ScenarioAnalysis
-          scenario={activeScenario}
-          result={activeResult}
-          deal={deal}
-          loading={loading}
-          onUpdate={updateScenario}
-          baseScenario={scenarios.find((s) => s.type === "base")}
-        />
+        <>
+          <ResultsChangedBanner scenario={activeScenario} />
+          <ScenarioAnalysis
+            scenario={activeScenario}
+            result={activeResult}
+            deal={deal}
+            loading={loading}
+            onUpdate={updateScenario}
+            baseScenario={scenarios.find((s) => s.type === "base")}
+          />
+        </>
       )}
 
       {/* Loading state */}
