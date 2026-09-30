@@ -304,6 +304,39 @@ export function computeRampTurnoverCost(args: {
   return rampMakeReady + ongoingChurn;
 }
 
+/**
+ * P1-1: resolve the per-unit annual turnover cost from opex_inputs.turnover (the
+ * field the UI edits), falling back to the flat turnover_cost_per_unit. The ramp
+ * turnover calc needs a per-unit figure, so a total/percent-mode input is converted
+ * back to per-unit. Escalation is applied by the caller. This mirrors how every
+ * other OpEx line already prefers opex_inputs; turnover on the ramp path was the
+ * lone line still reading only the flat field.
+ */
+export function turnoverPerUnitAnnual(
+  input: OpexInput | undefined,
+  flatPerUnit: number,
+  totalUnits: number,
+  monthlyEgi: number,
+  monthlyGpr: number,
+): number {
+  if (!input || input.value == null || !Number.isFinite(input.value)) return flatPerUnit;
+  const u = totalUnits > 0 ? totalUnits : 1;
+  switch (input.mode) {
+    case "per_unit_annual":
+      return input.value;
+    case "per_unit_monthly":
+      return input.value * 12;
+    case "total_annual":
+      return input.value / u;
+    case "pct_egi":
+      return (input.value * monthlyEgi * 12) / u;
+    case "pct_gpr":
+      return (input.value * monthlyGpr * 12) / u;
+    default:
+      return flatPerUnit;
+  }
+}
+
 export interface UtilitiesSublines {
   electric?: OpexInput;
   water_sewer?: OpexInput;
@@ -1187,7 +1220,11 @@ export function calculateUnderwriting(
       repairs_maintenance: resolveOpexMonthly(oi?.repairs_maintenance, expenses.repairs_maintenance_per_unit, "per_unit_annual", opexCtx),
       turnover: rampEnabled
         ? computeRampTurnoverCost({
-            perUnitCost: (expenses.turnover_cost_per_unit ?? 0) * annualExpEscalation,
+            // P1-1: per-unit cost from opex_inputs.turnover (UI-edited), falling back
+            // to the flat field — consistent with every other OpEx line.
+            perUnitCost:
+              turnoverPerUnitAnnual(oi?.turnover, expenses.turnover_cost_per_unit ?? 0, totalUnits, egi, gpr) *
+              annualExpEscalation,
             marketTurnsThisMonth: unitSchedule.marketTurnsByMonth[m - 1],
             renoTurnsThisMonth: unitSchedule.renoTurnsByMonth[m - 1],
             occupiedUnits: occupiedUnitsThisMonth,
