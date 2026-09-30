@@ -4,6 +4,7 @@ import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting, buildDefaultInputs, type ScenarioInputs } from "@/lib/underwriting";
+import { stampMetrics } from "@/lib/engine-version";
 import type { Scenario, Deal } from "@/lib/validations";
 
 // Scenario-type growth-rate presets. Applied both when creating a scenario from
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest) {
         created_at: now,
         updated_at: now,
       };
+      stampMetrics(cloned, result); // P3-7: engine_version + metrics_calculated_at
 
       await redis.set(`scenario:${id}`, JSON.stringify(cloned));
       await addToIndex(`scenarios:by_deal:${source.deal_id}`, id, Date.now());
@@ -269,6 +271,7 @@ export async function POST(req: NextRequest) {
       created_at: now,
       updated_at: now,
     };
+    stampMetrics(scenario, result); // P3-7: engine_version + metrics_calculated_at
 
     await redis.set(`scenario:${id}`, JSON.stringify(scenario));
     await addToIndex(`scenarios:by_deal:${body.deal_id}`, id, Date.now());

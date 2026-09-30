@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
+import { stampMetrics } from "@/lib/engine-version";
 import { logActivity } from "@/lib/activity";
 import { applyAssumptionEdits, type EditOp } from "@/lib/assumption-edits";
 import type { Scenario } from "@/lib/validations";
@@ -176,14 +177,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     updatedScenario.monthly_pro_forma = []; // storage: recomputed on read
-    updatedScenario.calculated_metrics = {
-      irr: result.metrics.irr ?? undefined,
-      cash_on_cash: result.metrics.average_cash_on_cash,
-      dscr: result.metrics.year1_dscr,
-      equity_multiple: result.metrics.equity_multiple,
-      going_in_cap: result.metrics.going_in_cap,
-      stabilized_cap: result.metrics.stabilized_cap,
-    };
+    stampMetrics(updatedScenario, result); // P3-7: metrics + engine_version + timestamp
 
     await redis.set(`scenario_version:${id}:${scenario.version}`, JSON.stringify(scenario));
     await redis.set(`scenario:${id}`, JSON.stringify(updatedScenario));

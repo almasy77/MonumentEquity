@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { calculateUnderwriting, buildUnitMixFromRentRoll, type ScenarioInputs } from "@/lib/underwriting";
+import { stampMetrics } from "@/lib/engine-version";
 import type { Scenario, Deal } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -63,14 +64,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     const result = calculateUnderwriting(inputs);
 
     updated.monthly_pro_forma = []; // storage: recomputed on read
-    updated.calculated_metrics = {
-      irr: result.metrics.irr ?? undefined,
-      cash_on_cash: result.metrics.average_cash_on_cash,
-      dscr: result.metrics.year1_dscr,
-      equity_multiple: result.metrics.equity_multiple,
-      going_in_cap: result.metrics.going_in_cap,
-      stabilized_cap: result.metrics.stabilized_cap,
-    };
+    stampMetrics(updated, result); // P3-7: metrics + engine_version + timestamp
 
     await redis.set(
       `scenario_version:${id}:${scenario.version}`,

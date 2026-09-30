@@ -425,6 +425,27 @@ export const scenarioSchema = z.object({
     })
     .optional(),
 
+  // Engine version stamp (P3-7). engine_version is the engine that produced
+  // calculated_metrics; when it lags the current engine the scenario is recomputed
+  // lazily on read. previous_metrics captures the prior values (plus why they
+  // changed) so a "results changed" banner can surface the move instead of it being
+  // silent. All optional — old scenarios simply have no stamp until next read.
+  engine_version: z.number().int().optional(),
+  metrics_calculated_at: z.string().optional(),
+  previous_metrics: z
+    .object({
+      irr: z.number().optional(),
+      cash_on_cash: z.number().optional(),
+      dscr: z.number().optional(),
+      equity_multiple: z.number().optional(),
+      going_in_cap: z.number().optional(),
+      stabilized_cap: z.number().optional(),
+      engine_version: z.number().optional(),
+      reason: z.string().optional(),
+      changed_at: z.string().optional(),
+    })
+    .optional(),
+
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
