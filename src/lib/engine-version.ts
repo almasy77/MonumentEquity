@@ -16,7 +16,7 @@ import { calculateUnderwriting, type ScenarioInputs } from "./underwriting";
 import type { Scenario } from "./validations";
 
 /** Current engine version. Bump when engine math can move returns. */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 2;
 
 /**
  * Why each version differs from the one before it. Shown in the "results changed"
@@ -25,6 +25,7 @@ export const ENGINE_VERSION = 1;
  */
 export const ENGINE_CHANGE_REASONS: Record<number, string> = {
   1: "Recomputed on the current engine (baseline version stamp)",
+  2: "Turnover cost now reads from the OpEx inputs you edit (P1-1); lease-up deals that showed a turnover cost different from the legacy field are corrected",
 };
 
 export interface StoredMetrics {
