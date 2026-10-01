@@ -38,7 +38,12 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const unitMix = buildUnitMixFromRentRoll(deal.rent_roll, deal.units);
+    // P2-5: derive per-unit lease status against the ramp's analysis start (falls
+    // back to today inside the helper when the ramp has no anchor set).
+    const analysisStart = (scenario.revenue_assumptions as {
+      rent_ramp?: { analysis_start_date?: string };
+    })?.rent_ramp?.analysis_start_date;
+    const unitMix = buildUnitMixFromRentRoll(deal.rent_roll, deal.units, analysisStart);
 
     const now = new Date().toISOString();
     const updated: Scenario = {
