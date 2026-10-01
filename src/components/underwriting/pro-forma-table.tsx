@@ -76,6 +76,7 @@ export function ProFormaTable({
   taxView = "household",
   onUnrenovatedBasisChange,
   onRenovatedBasisChange,
+  leaseUpActive = false,
 }: {
   monthly: MonthlyRow[];
   annual: AnnualSummary[];
@@ -85,6 +86,7 @@ export function ProFormaTable({
   taxView?: "propco" | "household"; // which after-tax CF is the headline
   onUnrenovatedBasisChange?: (basis: UnrenovatedBasis) => void;
   onRenovatedBasisChange?: (basis: RenovatedBasis) => void;
+  leaseUpActive?: boolean; // ramp enabled — the basis toggle is inert for below-market rents
 }) {
   const [view, setView] = useState<ViewMode>("annual");
   const [selectedYear, setSelectedYear] = useState(1);
@@ -259,6 +261,21 @@ export function ProFormaTable({
             </div>
           </div>
         </div>
+
+        {/* Lease-up explainer (ENG-2): when a rent ramp is modeled, below-market
+            in-place rents migrate current -> market over the absorption window on
+            their own, so the Unrenovated basis toggle only changes rents already
+            ABOVE market. Point the user to where the current->market story is told. */}
+        {leaseUpActive && (onUnrenovatedBasisChange || onRenovatedBasisChange) && (
+          <p className="mt-2 rounded border border-slate-700/60 bg-slate-800/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-400">
+            Lease-up modeled: below-market in-place rents ramp to market over the absorption window, so
+            Year 1 shows collectible rent <span className="text-slate-300">below</span> the market ceiling.
+            See <span className="text-slate-300">Less: Loss to Lease</span> for the gap,
+            <span className="text-slate-300"> % Marked-to-Market</span> for the time to get there, and
+            <span className="text-slate-300"> Turnover</span> (plus any renovation CapEx) for the cost.
+            The Unrenovated basis above only changes rents already above market.
+          </p>
+        )}
 
         {/* Year selector for monthly view */}
         {view === "monthly" && annual.length > 0 && (
