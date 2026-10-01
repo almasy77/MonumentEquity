@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, removeFromIndex } from "@/lib/db";
+import { compMarketKey } from "@/lib/api-helpers";
 import type { MarketComp } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -32,7 +33,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
   await redis.del(`comp:${id}`);
   await removeFromIndex("comps:all", id);
-  await removeFromIndex(`comps:by_market:${comp.city.toLowerCase()}`, id);
+  await removeFromIndex(compMarketKey(comp.city), id);
 
   return NextResponse.json({ success: true });
 }

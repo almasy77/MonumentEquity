@@ -34,3 +34,15 @@ export function isErrorResponse(
 export function sanitizeKeySegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "");
 }
+
+/**
+ * Redis index key for a comp's market (city). Read and write MUST use this one
+ * helper. Previously the write path used the raw lowercased city while the read
+ * path ran it through sanitizeKeySegment, which strips spaces — so a multi-word
+ * city ("West View") was WRITTEN under "west view" but READ under "westview" and
+ * returned nothing. Single-word cities happened to match. Normalize to trimmed,
+ * lowercased, single-spaced so both paths agree and existing data is found.
+ */
+export function compMarketKey(city: string): string {
+  return `comps:by_market:${city.trim().toLowerCase().replace(/\s+/g, " ")}`;
+}
