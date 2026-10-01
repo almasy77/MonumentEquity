@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
-import { safeJson, isErrorResponse, sanitizeKeySegment } from "@/lib/api-helpers";
+import { safeJson, isErrorResponse, compMarketKey } from "@/lib/api-helpers";
 import type { MarketComp } from "@/lib/validations";
 
 // GET /api/comps — list market comps, optional filters: city, min_units, max_units
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
     let ids: string[];
     if (city) {
-      ids = await redis.zrange(`comps:by_market:${sanitizeKeySegment(city.toLowerCase())}`, 0, -1, { rev: true });
+      ids = await redis.zrange(compMarketKey(city), 0, -1, { rev: true });
     } else {
       ids = await redis.zrange("comps:all", 0, -1, { rev: true });
     }
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     await redis.set(`comp:${id}`, JSON.stringify(comp));
     await addToIndex("comps:all", id, saleTimestamp);
-    await addToIndex(`comps:by_market:${body.city.toLowerCase()}`, id, saleTimestamp);
+    await addToIndex(compMarketKey(body.city), id, saleTimestamp);
 
     return NextResponse.json(comp, { status: 201 });
   } catch (err) {
