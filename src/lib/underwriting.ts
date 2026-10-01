@@ -851,6 +851,11 @@ export interface ExitAssumptions {
   exit_cap_rate: number;
   selling_cost_rate: number;
   sale_price?: number; // if provided, overrides exit_cap_rate-derived value
+  // P2-4: exit valuation method. UNSET = automatic (tax-loaded for sale-price
+  // reassessment jurisdictions, plain NOI/cap otherwise) — the long-standing
+  // behavior, so existing scenarios are unchanged. "noi_over_cap" forces the plain
+  // exit NOI / cap; "tax_loaded" forces (exit NOI + exit tax) / (cap + tax rate).
+  exit_method?: "noi_over_cap" | "tax_loaded";
   sensitivity_rent_basis?: RentBasis; // which rents to use in sensitivity grid
   /** @deprecated Use proforma_unrenovated_basis + proforma_renovated_basis. Kept for backwards compat. */
   proforma_rent_basis?: RentBasis;
@@ -1504,10 +1509,20 @@ export function calculateUnderwriting(
   if (exit.sale_price && exit.sale_price > 0) {
     exitValue = exit.sale_price; // explicit price — buyer's tax is their problem
   } else if (exit.exit_cap_rate > 0) {
-    if (exitReassess && annual.length > 0) {
+    // P2-4: explicit exit_method overrides the automatic choice. Unset keeps the
+    // prior behavior (tax-load only for sale-price reassessment jurisdictions).
+    // tax_loaded needs a tax rate to load; without one it falls back to NOI/cap.
+    const taxRate = reassess?.effective_tax_rate ?? 0;
+    const useTaxLoaded =
+      exit.exit_method === "tax_loaded"
+        ? taxRate > 0 && annual.length > 0
+        : exit.exit_method === "noi_over_cap"
+          ? false
+          : exitReassess && annual.length > 0;
+    if (useTaxLoaded) {
       const lastYearTax = annual[annual.length - 1].opex_breakdown.property_tax;
       const noiExTax = lastYearNOI + lastYearTax;
-      exitValue = noiExTax / (exit.exit_cap_rate + reassess!.effective_tax_rate);
+      exitValue = noiExTax / (exit.exit_cap_rate + taxRate);
     } else {
       exitValue = lastYearNOI / exit.exit_cap_rate;
     }

@@ -19,10 +19,19 @@ export type ExitMethod = "explicit_price" | "tax_loaded" | "naive";
 
 export function exitMethodFor(inputs: ScenarioInputs): ExitMethod {
   if (inputs.exit.sale_price && inputs.exit.sale_price > 0) return "explicit_price";
-  const pt = inputs.expenses.property_tax_v2?.enabled
-    ? inputs.expenses.property_tax_v2
-    : inputs.expenses.tax_reassessment;
-  return pt?.enabled && (pt.apply_at_exit ?? true) && pt.effective_tax_rate > 0 ? "tax_loaded" : "naive";
+  const rate = exitEffectiveTaxRate(inputs);
+  // P2-4: an explicit exit_method wins; mirror the engine's fallback (tax_loaded
+  // needs a rate, else it degrades to naive).
+  if (inputs.exit.exit_method === "noi_over_cap") return "naive";
+  if (inputs.exit.exit_method === "tax_loaded") return rate > 0 ? "tax_loaded" : "naive";
+  // Unset: automatic — tax-load only for sale-price reassessment jurisdictions. A
+  // periodic-hold v2 deal inherits the held bill (already in NOI) and is NOT loaded.
+  const v2 = inputs.expenses.property_tax_v2;
+  const pt = v2?.enabled ? v2 : inputs.expenses.tax_reassessment;
+  const periodicHold = v2?.enabled ? propertyTaxScenarioInForce(v2) === "periodic_hold" : false;
+  return pt?.enabled && (pt.apply_at_exit ?? true) && (pt.effective_tax_rate ?? 0) > 0 && !periodicHold
+    ? "tax_loaded"
+    : "naive";
 }
 
 export function exitEffectiveTaxRate(inputs: ScenarioInputs): number {
