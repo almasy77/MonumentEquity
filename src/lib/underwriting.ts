@@ -3113,26 +3113,76 @@ export interface DealData {
   };
 }
 
+/**
+ * P2-5: derive a unit's lease status from its lease end date relative to the ramp's
+ * analysis start. A current rent of $0 is vacant; a lease_end in the future is
+ * occupied (leased) until that date; an expired or blank lease_end is month-to-month.
+ */
+export function deriveUnitStatusFromLease(
+  leaseEnd: string | undefined,
+  analysisStart: string | undefined,
+  currentRent: number,
+): { status: "occupied" | "mtm" | "vacant"; lease_end?: string } {
+  if (!(currentRent > 0)) return { status: "vacant" };
+  if (leaseEnd) {
+    const end = new Date(leaseEnd.length <= 10 ? leaseEnd + "T00:00:00" : leaseEnd);
+    const anchor = analysisStart
+      ? new Date(analysisStart.length <= 10 ? analysisStart + "T00:00:00" : analysisStart)
+      : new Date();
+    if (!isNaN(end.getTime()) && end.getTime() > anchor.getTime()) {
+      return { status: "occupied", lease_end: leaseEnd };
+    }
+  }
+  return { status: "mtm" };
+}
+
 export function buildUnitMixFromRentRoll(
-  rentRoll: { unit_type?: string; current_rent?: number; market_rent?: number }[],
+  rentRoll: {
+    unit_number?: string;
+    unit_type?: string;
+    current_rent?: number;
+    market_rent?: number;
+    lease_end?: string;
+  }[],
   totalUnits: number,
+  analysisStart?: string,
 ): UnitMix[] {
   if (rentRoll.length > 0) {
-    const typeMap = new Map<string, { count: number; totalRent: number; totalMarket: number }>();
+    type Agg = { count: number; occCount: number; totalRent: number; totalMarket: number; units: UnitDetail[] };
+    const typeMap = new Map<string, Agg>();
+    let autoId = 0;
     for (const unit of rentRoll) {
       const type = unit.unit_type || "Average";
-      const existing = typeMap.get(type) || { count: 0, totalRent: 0, totalMarket: 0 };
+      const existing = typeMap.get(type) || { count: 0, occCount: 0, totalRent: 0, totalMarket: 0, units: [] };
+      const cur = unit.current_rent || 0;
+      const mkt = unit.market_rent || unit.current_rent || 0;
+      // P2-5: per-unit status from the lease. A future lease_end (vs the ramp's
+      // analysis start) is "occupied" until that date; expired/blank is "mtm"; a $0
+      // current rent is "vacant".
+      const { status, lease_end } = deriveUnitStatusFromLease(unit.lease_end, analysisStart, cur);
       existing.count += 1;
-      existing.totalRent += unit.current_rent || 0;
-      existing.totalMarket += unit.market_rent || unit.current_rent || 0;
+      if (status !== "vacant") {
+        existing.occCount += 1;
+        existing.totalRent += cur;
+      }
+      existing.totalMarket += mkt;
+      existing.units.push({
+        unit_id: unit.unit_number || `${type}-${++autoId}`,
+        status,
+        current_rent: cur,
+        market_rent: mkt,
+        ...(lease_end ? { lease_end } : {}),
+      });
       typeMap.set(type, existing);
     }
     return Array.from(typeMap.entries()).map(([type, data]) => ({
       type,
       count: data.count,
-      current_rent: data.count > 0 ? Math.round(data.totalRent / data.count) : 1000,
+      // Row current_rent is the average over OCCUPIED units (vacant billed $0).
+      current_rent: data.occCount > 0 ? Math.round(data.totalRent / data.occCount) : 0,
       market_rent: data.count > 0 ? Math.round(data.totalMarket / data.count) : 1100,
       renovated_rent_premium: 200,
+      units: data.units,
     }));
   }
   return [{
