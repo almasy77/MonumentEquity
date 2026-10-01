@@ -139,6 +139,26 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       updated_at: now,
     };
 
+    // P3-9: stamp notes vs inputs change times so the UI can flag notes that predate
+    // an input change. The form sends everything on each save, so compare the merged
+    // values to the stored ones to tell a notes edit from an input edit.
+    const sc = updated as unknown as Record<string, unknown>;
+    const exSc = existing as unknown as Record<string, unknown>;
+    if (sc.notes !== exSc.notes) sc.notes_updated_at = now;
+    const INPUT_KEYS = [
+      "purchase_assumptions",
+      "financing_assumptions",
+      "revenue_assumptions",
+      "expense_assumptions",
+      "capex_assumptions",
+      "exit_assumptions",
+      "tax_assumptions",
+      "depreciation_assumptions",
+    ];
+    if (INPUT_KEYS.some((k) => JSON.stringify(sc[k]) !== JSON.stringify(exSc[k]))) {
+      sc.inputs_updated_at = now;
+    }
+
     // Recalculate
     const inputs = {
       purchase: updated.purchase_assumptions,

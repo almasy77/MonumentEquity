@@ -1672,6 +1672,20 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
         {/* Scenario notes & rationale — why this scenario differs (assumptions,
             strategy, risks). Autosaves with the rest; does not affect KPIs. */}
         <Section title="Scenario Notes & Rationale" defaultOpen={!!notes}>
+          {(() => {
+            // P3-9: flag notes that predate the latest input change.
+            const sc = scenario as unknown as { notes_updated_at?: string; inputs_updated_at?: string };
+            const stale =
+              !!notes &&
+              !!sc.notes_updated_at &&
+              !!sc.inputs_updated_at &&
+              new Date(sc.inputs_updated_at).getTime() > new Date(sc.notes_updated_at).getTime();
+            return stale ? (
+              <p className="mb-1.5 text-[11px] text-amber-400">
+                Inputs changed since these notes were written. Review and update them.
+              </p>
+            ) : null;
+          })()}
           <textarea
             value={notes}
             onChange={(e) => { setNotes(e.target.value); markDirty(); }}
