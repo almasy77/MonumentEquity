@@ -40,7 +40,14 @@ export async function GET(req: NextRequest) {
       pipeline.get(`scenario:${id}`);
     }
     const results = await pipeline.exec<(Scenario | null)[]>();
-    return NextResponse.json(results.filter((r): r is Scenario => r !== null));
+    // P3-16: the list response does not need the per-scenario monthly pro forma
+    // (nothing in the list view reads it, and a populated one is large). Strip it by
+    // default; callers that need it pass ?include=monthly.
+    const includeMonthly = req.nextUrl.searchParams.get("include") === "monthly";
+    const scenarios = results
+      .filter((r): r is Scenario => r !== null)
+      .map((s) => (includeMonthly ? s : { ...s, monthly_pro_forma: [] }));
+    return NextResponse.json(scenarios);
   } catch (err) {
     console.error("GET /api/scenarios error:", err);
     return NextResponse.json({ error: "Failed to fetch scenarios" }, { status: 500 });
