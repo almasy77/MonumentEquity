@@ -8,7 +8,7 @@
 import { calculateAnnualXIRR } from "./irr";
 import { computeTaxLayer, TAX_DEFAULTS } from "./tax";
 import type { TaxAssumptions, TaxResult } from "./tax";
-import { jurisdictionRulesFor } from "./property-tax-jurisdictions";
+import { jurisdictionRulesFor, defaultAssessmentRatioFor } from "./property-tax-jurisdictions";
 
 // ─── Input Types ─────────────────────────────────────────────
 
@@ -428,6 +428,21 @@ export type PropertyTaxScenarioName =
   | "reassessed_to_price"
   | "periodic_hold"; // non-sale-price jurisdictions: hold the entered bill, escalated only — NO reassessment toward price
 
+/**
+ * P2-2: one step in an explicit property-tax reassessment schedule. Models a
+ * mid-hold re-mark at a chosen pro-forma month — a scheduled county revaluation, a
+ * post-sale appeal, an abatement expiration. The bill grows by escalation until the
+ * step's month, then re-marks to this step's amount and grows from there.
+ */
+export interface ReassessmentStep {
+  effective_month: number; // 0-indexed pro forma month this step takes effect
+  basis: "purchase_price" | "market_value" | "manual";
+  market_value?: number; // basis "market_value": the re-assessed market value
+  assessment_ratio?: number; // assessed value ÷ market value; defaults to the state's ratio
+  mill_rate?: number; // mills (e.g. 90); annual tax = assessed × mill_rate/1000
+  manual_amount?: number; // basis "manual": the annual bill directly
+}
+
 export interface PropertyTaxAssumptions {
   enabled: boolean;
   closing_date?: string; // ISO — anchors tax years to pro forma months
@@ -445,6 +460,9 @@ export interface PropertyTaxAssumptions {
   // tax_escalation_rate). At the next revaluation the assessed value re-marks.
   next_reappraisal_year?: number; // TAX YEAR the county's next revaluation lands
   reappraisal_target_value?: number; // assessed value in force FROM that revaluation
+  // P2-2: explicit multi-step reassessment schedule. When present (and v2 enabled)
+  // it OVERRIDES the scenario bill — see steppedTaxForMonth.
+  reassessment_schedule?: ReassessmentStep[];
 }
 
 /**
@@ -610,6 +628,53 @@ export function propertyTaxForMonthV2(
   const scenario = propertyTaxScenarioInForce(pt);
   const ty = taxYearOfMonth(pt, monthIdx);
   return propertyTaxBillForTaxYear(pt, purchasePrice, scenario, ty, escalationRate) / 12;
+}
+
+/** P2-2: the annual bill a single reassessment step re-marks to. */
+export function resolveStepAnnual(
+  step: ReassessmentStep,
+  purchasePrice: number,
+  state: string | undefined,
+): number {
+  if (step.basis === "manual") return Math.max(0, step.manual_amount ?? 0);
+  const value = step.basis === "market_value" ? step.market_value ?? purchasePrice : purchasePrice;
+  const ratio = step.assessment_ratio ?? defaultAssessmentRatioFor(state) ?? 1;
+  const mill = step.mill_rate ?? 0;
+  return Math.max(0, value * ratio * (mill / 1000));
+}
+
+/**
+ * P2-2: monthly property-tax bill under an explicit reassessment schedule. The
+ * entered base bill escalates from month 0 until the first step's effective month;
+ * at each step the bill re-marks to that step's amount and escalation resumes from
+ * the step month. Returns the MONTHLY figure (annual ÷ 12).
+ */
+export function steppedTaxForMonth(
+  schedule: ReassessmentStep[],
+  purchasePrice: number,
+  monthIdx: number,
+  baseAnnual: number,
+  escalationRate: number,
+  state: string | undefined,
+): number {
+  const esc = escalationRate || 0;
+  const steps = [...schedule]
+    .filter((s) => Number.isFinite(s.effective_month))
+    .sort((a, b) => a.effective_month - b.effective_month);
+  // Segment in force at monthIdx: the base bill from month 0, superseded by the
+  // latest step whose effective month has arrived.
+  let segStart = 0;
+  let segAnnual = Math.max(0, baseAnnual);
+  for (const s of steps) {
+    if (s.effective_month <= monthIdx) {
+      segStart = s.effective_month;
+      segAnnual = resolveStepAnnual(s, purchasePrice, state);
+    } else {
+      break;
+    }
+  }
+  const yearsSince = Math.max(0, Math.floor((monthIdx - segStart) / 12));
+  return (segAnnual * Math.pow(1 + esc, yearsSince)) / 12;
 }
 
 export interface PropertyTaxVectorRow {
@@ -1240,6 +1305,24 @@ export function calculateUnderwriting(
       // HB 920 shaped) → v1 reassessment phase-in → the entered bill.
       property_tax: (() => {
         const v2 = expenses.property_tax_v2;
+        // P2-2: an explicit reassessment schedule overrides the scenario bill.
+        if (v2?.enabled && v2.reassessment_schedule && v2.reassessment_schedule.length > 0) {
+          const baseAnnual =
+            (typeof expenses.property_tax_total === "number" && expenses.property_tax_total > 0
+              ? expenses.property_tax_total
+              : undefined) ??
+            (typeof oi?.property_tax?.value === "number" && oi.property_tax.mode === "total_annual"
+              ? oi.property_tax.value
+              : 0);
+          return steppedTaxForMonth(
+            v2.reassessment_schedule,
+            purchase.purchase_price,
+            m - 1,
+            baseAnnual,
+            expenses.tax_escalation_rate,
+            v2.parcel?.state,
+          );
+        }
         if (v2?.enabled) return propertyTaxForMonthV2(v2, purchase.purchase_price, m - 1, expenses.tax_escalation_rate);
         const reassessedMo = reassessedTaxForMonth(expenses, purchase.purchase_price, m - 1);
         return reassessedMo !== null
