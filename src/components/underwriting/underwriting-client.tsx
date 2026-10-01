@@ -796,6 +796,7 @@ function ScenarioAnalysis({
             annual={result.annual}
             unrenovatedBasis={bases.unrenovated}
             renovatedBasis={bases.renovated}
+            leaseUpActive={!!(scenario.revenue_assumptions as { rent_ramp?: { enabled?: boolean } } | undefined)?.rent_ramp?.enabled}
             taxYears={result.tax?.years}
             taxView={((scenario.tax_assumptions as Record<string, unknown> | null | undefined)?.opco_view as "propco" | "household" | undefined) ?? "household"}
             onUnrenovatedBasisChange={(basis: UnrenovatedBasis) => {
