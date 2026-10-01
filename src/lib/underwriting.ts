@@ -1787,6 +1787,13 @@ export function calculateUnderwriting(
   if (goingInCap < 0.03) warnings.push("Going-in cap rate below 3% — verify pricing");
   if (goingInCap > 0.12) warnings.push("Going-in cap rate above 12% — verify pricing");
   if (year1DSCR > 0 && year1DSCR < 1.0) warnings.push("DSCR below 1.0 — negative cash flow");
+  // P2-6: loan matures at or before the modeled sale. loan_term_years = 0 means no
+  // maturity (fully amortizing / no balloon), so it does not trigger this.
+  if (financing.loan_term_years > 0 && financing.loan_term_years <= exit.hold_period_years) {
+    warnings.push(
+      "Loan matures at or before the modeled sale. A soft market at maturity forces a refinance or sale.",
+    );
+  }
   // Lease-up carry (spec OUT-3 / financing reality): a sub-1.0x coverage year can't
   // be funded by a permanent amortizing loan. Surface the cash burn and whether the
   // funded operating reserve covers it, and flag the bridge-financing implication.
@@ -3279,7 +3286,7 @@ export function buildDefaultInputs(
     exit: {
       hold_period_years: d.hold_period_years ?? 5,
       exit_cap_rate: 0.07,
-      selling_cost_rate: d.selling_cost_rate ?? 0.02,
+      selling_cost_rate: d.selling_cost_rate ?? 0.04, // P3-10: 4% default for new scenarios
     },
   };
 }
