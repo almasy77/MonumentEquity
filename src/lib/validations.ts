@@ -432,6 +432,11 @@ export const scenarioSchema = z.object({
   // silent. All optional — old scenarios simply have no stamp until next read.
   engine_version: z.number().int().optional(),
   metrics_calculated_at: z.string().optional(),
+  // P3-9: notes-drift tracking. notes_updated_at is stamped when the notes text
+  // changes; inputs_updated_at when any *_assumptions change. When inputs change
+  // after the notes were last written the UI flags the notes as possibly stale.
+  notes_updated_at: z.string().optional(),
+  inputs_updated_at: z.string().optional(),
   previous_metrics: z
     .object({
       irr: z.number().optional(),
