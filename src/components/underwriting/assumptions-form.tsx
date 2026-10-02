@@ -3092,6 +3092,52 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
           </div>
         </Section>
 
+        {/* CapEx: Funding — equity vs. a loan holdback for renovation + projects */}
+        <Section title="CapEx: Funding">
+          {(() => {
+            const cf = c.capex_funding ?? {};
+            const mode = cf.mode === "loan_holdback" ? "loan_holdback" : "all_equity";
+            const updateCf = (patch: Partial<NonNullable<typeof c.capex_funding>>) => {
+              setC({ ...c, capex_funding: { ...cf, ...patch } });
+              markDirty();
+            };
+            return (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-56">
+                    <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="How renovation and named-project capex is funded. All equity: the full capex is a cash outflow you fund from equity/operations (prior behavior). Loan holdback: the lender advances a share as an interest-only tranche that draws as work is done, accrues interest (raising debt service, lowering DSCR), and is paid off at sale or rolled into a refi.">
+                      Capex funding
+                    </label>
+                    <select
+                      value={mode}
+                      onChange={(ev) => updateCf({ mode: ev.target.value as "all_equity" | "loan_holdback" })}
+                      className="w-full bg-slate-800 border border-slate-700 text-white text-xs h-9 rounded px-2"
+                    >
+                      <option value="all_equity">All equity (cash outflow)</option>
+                      <option value="loan_holdback">Loan holdback (interest-only)</option>
+                    </select>
+                  </div>
+                  {mode === "loan_holdback" && (
+                    <>
+                      <div className="w-32">
+                        <PctField label="Holdback %" value={cf.holdback_pct ?? 0} onChange={(v) => updateCf({ holdback_pct: Math.min(1, Math.max(0, v)) })} />
+                      </div>
+                      <div className="w-36">
+                        <PctField label="Holdback Rate" value={cf.holdback_interest_rate ?? f.interest_rate} onChange={(v) => updateCf({ holdback_interest_rate: v })} />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {mode === "loan_holdback"
+                    ? `The holdback funds ${Math.round((cf.holdback_pct ?? 0) * 100)}% of renovation + project capex as a draw-as-you-spend interest-only tranche at ${(((cf.holdback_interest_rate ?? f.interest_rate)) * 100).toFixed(2)}%. It leaves the equity outlay, adds interest to debt service, and is paid off at exit (or rolled into a refi). The capital reserve bucket is never part of a holdback.`
+                    : "All renovation and project capex is funded from equity/operations as a cash outflow. Switch to a loan holdback to fund part of it with lender proceeds."}
+                </p>
+              </div>
+            );
+          })()}
+        </Section>
+
         {/* CapEx: Capital Reserve — the capital-events bucket (Phase 4.3) */}
         <Section title="CapEx: Capital Reserve">
           {(() => {
