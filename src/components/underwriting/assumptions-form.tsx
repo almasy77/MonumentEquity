@@ -1787,8 +1787,29 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                       <NumField label="DSCR Floor" value={f.dscr_floor ?? 1.25} suffix="x" onChange={(v) => { setF({ ...f, dscr_floor: v }); markDirty(); }} />
                     </div>
                   )}
+                  {f.size_to_dscr !== false && (
+                    <div className="w-40">
+                      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="Which NOI the lender sizes the DSCR loan on. In-place = today's rents (strictest, what a lender funds at close). Year-1 projected = the first operating year. Manual = a number you enter.">
+                        Sizing NOI basis
+                      </label>
+                      <select
+                        value={f.dscr_sizing_basis ?? "year1_projected"}
+                        onChange={(e) => { setF({ ...f, dscr_sizing_basis: e.target.value as NonNullable<typeof f.dscr_sizing_basis> }); markDirty(); }}
+                        className="w-full bg-slate-800 border border-slate-700 text-white text-xs h-9 rounded px-2"
+                      >
+                        <option value="in_place">In-place NOI</option>
+                        <option value="year1_projected">Year-1 projected</option>
+                        <option value="manual">Manual NOI</option>
+                      </select>
+                    </div>
+                  )}
+                  {f.size_to_dscr !== false && f.dscr_sizing_basis === "manual" && (
+                    <div className="w-32">
+                      <CurrencyField label="Manual NOI" value={f.manual_sizing_noi ?? 0} onChange={(v) => { setF({ ...f, manual_sizing_noi: v }); markDirty(); }} />
+                    </div>
+                  )}
                   <p className="text-[11px] text-slate-500 flex-1 min-w-[220px]">
-                    Lender convention: proceeds = min(LTV loan, loan whose amortizing payment year-1 NOI covers at the floor).
+                    Lender convention: proceeds = min(LTV loan, loan whose amortizing payment the sizing-basis NOI covers at the floor).
                     When DSCR binds, the engine resizes the loan and notes the extra equity required.
                   </p>
                 </div>
