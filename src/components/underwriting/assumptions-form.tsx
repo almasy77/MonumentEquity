@@ -2102,16 +2102,18 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   status + lease end drive its own time-to-market in the engine. */}
               {expandedUnitRows.has(i) && (unit.units?.length ?? 0) > 0 && (
                 <div className="ml-4 border border-slate-800 rounded p-2 space-y-1">
-                  <div className="grid grid-cols-6 gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-1">
+                  <div className="grid grid-cols-8 gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-1">
                     <span>Unit ID</span>
                     <span>Status</span>
                     <span>Current Rent</span>
                     <span>Lease End</span>
                     <span>Market Rent</span>
+                    <span title="Renovate this specific unit. When any unit is flagged, the flags (not the auto deepest-below-market pick) decide which and how many units renovate, and total reno cost = cost per unit x flagged count.">Reno</span>
+                    <span title="Optional post-renovation target rent for this unit. Blank uses the renovated basis (current or market) plus the row's reno premium.">Reno Rent</span>
                     <span />
                   </div>
                   {unit.units!.map((ud, n) => (
-                    <div key={n} className="grid grid-cols-6 gap-2 items-center">
+                    <div key={n} className="grid grid-cols-8 gap-2 items-center">
                       <Input
                         value={ud.unit_id}
                         onChange={(e) => updateUnitDetail(i, n, { unit_id: e.target.value })}
@@ -2150,6 +2152,27 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         value={ud.market_rent ?? unit.market_rent}
                         onChange={(v) => updateUnitDetail(i, n, { market_rent: v })}
                       />
+                      <input
+                        type="checkbox"
+                        checked={ud.renovate === true}
+                        onChange={(e) =>
+                          updateUnitDetail(i, n, {
+                            renovate: e.target.checked,
+                            // Clear a stale target when un-flagging.
+                            renovated_rent: e.target.checked ? ud.renovated_rent : undefined,
+                          })
+                        }
+                        title="Renovate this unit"
+                        className="h-4 w-4 justify-self-center accent-blue-500"
+                      />
+                      {ud.renovate ? (
+                        <BareCurrencyInput
+                          value={ud.renovated_rent ?? 0}
+                          onChange={(v) => updateUnitDetail(i, n, { renovated_rent: v || undefined })}
+                        />
+                      ) : (
+                        <span className="text-[10px] text-slate-600 self-center">—</span>
+                      )}
                       <button
                         type="button"
                         onClick={() => removeUnitDetail(i, n)}
@@ -2170,7 +2193,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                       + add unit
                     </button>
                     <span className="text-[10px] text-slate-500">
-                      Vacant: lease-up then market · MTM: paced turns · Occupied: turns after lease end
+                      Vacant: lease-up then market · MTM: paced turns · Occupied: turns after lease end · Reno: flag units to renovate (cost per unit x flagged count)
                     </span>
                   </div>
                 </div>
