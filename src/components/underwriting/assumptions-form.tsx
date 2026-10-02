@@ -3155,10 +3155,32 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
               />
             )}
           </div>
+          {!(ex.sale_price && ex.sale_price > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="How the exit value is derived from the exit NOI and cap rate. Auto tax-loads the exit only in jurisdictions that reassess to the sale price (the prior default). NOI / cap is the plain band-of-investment value. Tax-loaded grosses the exit NOI back up for property tax and divides by (cap + tax rate) so the buyer's reassessed bill is priced in.">
+                  Exit value method
+                </label>
+                <select
+                  value={ex.exit_method ?? "auto"}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEx({ ...ex, exit_method: v === "auto" ? undefined : (v as NonNullable<typeof ex.exit_method>) });
+                    markDirty();
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-xs h-9 rounded px-2"
+                >
+                  <option value="auto">Auto (tax-load in reassessment states)</option>
+                  <option value="noi_over_cap">NOI / cap</option>
+                  <option value="tax_loaded">Tax-loaded</option>
+                </select>
+              </div>
+            </div>
+          )}
           <p className="text-xs text-slate-500 pt-1">
             {ex.sale_price && ex.sale_price > 0
               ? "Exit cap rate is calculated from Sale Price and projected NOI."
-              : "Enter a sale price to auto-calculate exit cap rate, or set the cap rate directly."}
+              : "Enter a sale price to auto-calculate exit cap rate, or set the cap rate directly. Tax-loaded needs an exit tax rate; without one it falls back to NOI / cap."}
           </p>
         </Section>
 
