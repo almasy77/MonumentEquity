@@ -397,6 +397,14 @@ export const scenarioSchema = z.object({
       capital_reserve_per_unit: z.number().optional(),
       capital_reserve_start_month: z.number().optional(), // P2-13
       capital_reserve_duration_months: z.number().optional(), // P2-13
+      // Capex funding: optional loan holdback for renovation + project capex.
+      capex_funding: z
+        .object({
+          mode: z.enum(["all_equity", "loan_holdback"]).optional(),
+          holdback_pct: z.number().optional(),
+          holdback_interest_rate: z.number().optional(),
+        })
+        .optional(),
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),

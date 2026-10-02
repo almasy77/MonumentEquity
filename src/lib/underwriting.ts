@@ -853,6 +853,20 @@ export interface CapexAssumptions {
   // prior behavior). The full total is spent within the window, clamped to the hold.
   capital_reserve_start_month?: number;
   capital_reserve_duration_months?: number;
+  // Capex funding. Default (unset / "all_equity") funds the full modeled capex
+  // (renovation + named projects) from equity/operations as a monthly cash outflow
+  // (prior behavior). "loan_holdback" funds a share from a lender holdback modeled as
+  // an interest-only tranche: it DRAWS as the capex is spent, accrues interest on the
+  // drawn balance (added to debt service, so DSCR reflects it), leaves the equity
+  // outlay, and is paid off at exit (or rolled into a refi). The capital reserve bucket
+  // is never part of a holdback. Opt-in: unset = byte-identical to the all-equity model.
+  capex_funding?: CapexFunding;
+}
+
+export interface CapexFunding {
+  mode?: "all_equity" | "loan_holdback";
+  holdback_pct?: number; // 0..1 share of renovation + project capex funded by the holdback
+  holdback_interest_rate?: number; // annual; defaults to the base loan's interest rate (IO)
 }
 
 export interface DepreciationAssumptions {
@@ -988,6 +1002,10 @@ export interface MonthlyRow {
   capex: number; // TOTAL modeled CapEx = per-unit renovations + named (dated) projects
   capex_renovation?: number; // per-unit interior renovation spend (units_to_renovate × per_unit_cost, paced)
   capex_projects?: number; // named/dated capital projects only
+  capex_equity_funded?: number; // the capex the investor funds (total capex − holdback draw this month)
+  capex_holdback_draw?: number; // loan-holdback draw funding capex this month (0 unless mode = loan_holdback)
+  capex_holdback_interest?: number; // interest-only accrual on the drawn holdback this month (folded into debt_service)
+  capex_holdback_balance?: number; // outstanding holdback balance at month end
   // Cash Flow = NOI - debt service - reserves - capex
   cash_flow: number;
   cumulative_cash_flow: number;
@@ -1058,6 +1076,9 @@ export interface DealMetrics {
   total_equity_invested: number;
   // P2-15: the most equity you are ever net out of pocket at any point in the hold.
   peak_equity: number;
+  // Total capex funded by the loan holdback over the hold (0 unless capex_funding
+  // mode = loan_holdback). Outstanding at exit unless rolled into a refi.
+  capex_holdback_drawn: number;
   monthly_debt_service: number;
   // Depreciation
   depreciation?: DepreciationResult;
@@ -1231,6 +1252,17 @@ export function calculateUnderwriting(
   // OVERSTATES late-turn rents; intentional simplification — do NOT switch to
   // months-since-turn compounding without revisiting the spec.
 
+  // ── Capex loan holdback (opt-in) ──
+  // A share of the modeled capex is funded by a lender holdback instead of equity:
+  // an interest-only tranche that draws as the capex is spent. holdbackBalance grows
+  // with each month's draw, accrues IO interest on the running balance (folded into
+  // debt service), and is paid off at exit or rolled into a refi. Unset = 0 share.
+  const holdbackActive = capex.capex_funding?.mode === "loan_holdback" && (capex.capex_funding.holdback_pct ?? 0) > 0;
+  const holdbackPct = holdbackActive ? Math.min(1, Math.max(0, capex.capex_funding!.holdback_pct ?? 0)) : 0;
+  const holdbackMonthlyRate = (capex.capex_funding?.holdback_interest_rate ?? financing.interest_rate) / 12;
+  let holdbackBalance = 0; // outstanding IO holdback (running)
+  let holdbackDrawn = 0; // cumulative drawn over the hold (for the exit payoff / metrics)
+
   // ── Monthly Pro Forma ──
   const monthly: MonthlyRow[] = [];
   let cumulativeCF = 0;
@@ -1390,7 +1422,10 @@ export function calculateUnderwriting(
       const oldBalance = calculateLoanBalance(loanAmount, monthlyRate, amortMonths, refi.refiMonth, financing.io_period_months);
       refiPrepayPenalty = oldBalance * refi.prepayRate;
       refiCost = refiNewLoanAmount * refi.costRate;
-      refiNetProceeds = refiNewLoanAmount - oldBalance - refiPrepayPenalty - refiCost;
+      // Any capex holdback drawn to date is rolled into the new perm loan and paid
+      // off here; it stops accruing as a separate IO tranche (balance reset to 0).
+      refiNetProceeds = refiNewLoanAmount - oldBalance - holdbackBalance - refiPrepayPenalty - refiCost;
+      holdbackBalance = 0;
       amortBalance = refiNewLoanAmount;
       curRate = refi.monthlyRate;
       curDS = calculateMonthlyPayment(refiNewLoanAmount, curRate, refi.amortMonths);
@@ -1398,16 +1433,30 @@ export function calculateUnderwriting(
       ioEndMonth = refi.refiMonth + refi.ioMonths;
     }
 
-    // Debt service (IO period vs amortizing), split into interest and principal.
-    // Only INTEREST is tax-deductible — the tax layer consumes this split.
-    const ds = m <= ioEndMonth ? curIO : curDS;
-    const interestPaid = amortBalance * curRate;
-    const principalPaid = m <= ioEndMonth ? 0 : Math.max(0, ds - interestPaid);
+    // Base-loan debt service (IO period vs amortizing), split into interest and
+    // principal. Only INTEREST is tax-deductible — the tax layer consumes this split.
+    const baseDS = m <= ioEndMonth ? curIO : curDS;
+    const baseInterest = amortBalance * curRate;
+    const principalPaid = m <= ioEndMonth ? 0 : Math.max(0, baseDS - baseInterest);
     amortBalance = Math.max(0, amortBalance - principalPaid);
 
     // CapEx for this month = per-unit renovations + named (dated) projects
     const monthCapexBd = calculateMonthCapexBreakdown(capex, m);
     const monthCapex = monthCapexBd.total;
+
+    // Capex holdback: interest accrues on the balance drawn through LAST month (the
+    // draw funding this month's work is advanced during the month), then this month's
+    // draw is added. The holdback is interest-only — no principal paydown over the hold.
+    const holdbackInterest = holdbackBalance * holdbackMonthlyRate;
+    const holdbackDraw = holdbackPct * monthCapex;
+    holdbackBalance += holdbackDraw;
+    holdbackDrawn += holdbackDraw;
+    const equityCapex = monthCapex - holdbackDraw; // the share the investor funds
+
+    // Debt service and tax-deductible interest include the holdback's IO interest.
+    const ds = baseDS + holdbackInterest;
+    const interestPaid = baseInterest + holdbackInterest;
+
     // Capital reserve (Phase 4.3): the capital-events bucket spread EVENLY over
     // the full hold, so the whole amount lands inside the hold (flat — not
     // escalated; it's a fixed pool, not a per-period operating cost).
@@ -1415,7 +1464,7 @@ export function calculateUnderwriting(
 
     const cashFlowBeforeCapexAndReserves = noi - ds;
     const cashFlowBeforeCapex = cashFlowBeforeCapexAndReserves - monthlyReserves - monthlyCapitalReserve;
-    const cashFlow = cashFlowBeforeCapex - monthCapex;
+    const cashFlow = cashFlowBeforeCapex - equityCapex; // only equity-funded capex hits cash flow
     cumulativeCF += cashFlow;
 
     // Per-period metrics (annualized for readability)
@@ -1450,6 +1499,10 @@ export function calculateUnderwriting(
       capex: monthCapex,
       capex_renovation: monthCapexBd.renovation,
       capex_projects: monthCapexBd.projects,
+      capex_equity_funded: equityCapex,
+      capex_holdback_draw: holdbackDraw,
+      capex_holdback_interest: holdbackInterest,
+      capex_holdback_balance: holdbackBalance,
       cash_flow: cashFlow,
       cumulative_cash_flow: cumulativeCF,
       cap_rate: periodCapRate,
@@ -1567,7 +1620,7 @@ export function calculateUnderwriting(
 
   // Outstanding loan balance at exit — the NEW loan when refinanced, over the
   // months elapsed since the refi; otherwise the original loan (unchanged path).
-  const loanBalance = refi
+  const baseLoanBalance = refi
     ? calculateLoanBalance(refiNewLoanAmount, refi.monthlyRate, refi.amortMonths, totalMonths - refi.refiMonth, refi.ioMonths)
     : calculateLoanBalance(
         loanAmount,
@@ -1576,6 +1629,9 @@ export function calculateUnderwriting(
         totalMonths,
         financing.io_period_months
       );
+  // Any capex holdback still outstanding at exit (not rolled into a refi) is paid off
+  // alongside the senior loan. holdbackBalance is 0 when a refi absorbed it.
+  const loanBalance = baseLoanBalance + holdbackBalance;
 
   const netSaleProceeds = exitValue - sellingCosts - loanBalance;
   // Return of the operating reserve at exit (operating-reserve-return spec):
@@ -1718,6 +1774,7 @@ export function calculateUnderwriting(
     total_equity: totalEquity,
     total_equity_invested: totalEquityInvested,
     peak_equity: peakEquity,
+    capex_holdback_drawn: holdbackDrawn,
     monthly_debt_service: monthlyDS,
     depreciation,
     going_in_cap: goingInCap,
@@ -3047,6 +3104,14 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const ltvLoan = purchase.purchase_price * financing.ltv;
   const monthlyRate = financing.interest_rate / 12;
   const amortMonths = financing.amortization_years * 12;
+  // Capex holdback (opt-in), mirrored from the main engine so the grid's center cell
+  // ties to the headline: a share of capex is funded by an IO holdback tranche that
+  // draws annually, accrues interest on the running balance, and is paid off at exit.
+  const holdbackActive = capex.capex_funding?.mode === "loan_holdback" && (capex.capex_funding.holdback_pct ?? 0) > 0;
+  const holdbackPct = holdbackActive ? Math.min(1, Math.max(0, capex.capex_funding!.holdback_pct ?? 0)) : 0;
+  const holdbackAnnualRate = capex.capex_funding?.holdback_interest_rate ?? financing.interest_rate;
+  let simHoldbackBalance = 0;
+  const holdbackInterestByYear: number[] = [];
   // ── Unit-state schedule (fix-spec Phase 1) — same machine as the monthly
   // pro forma, so the sensitivity path can no longer diverge from it.
   // Rent basis resolution: an EXPLICIT sensitivity_rent_basis overrides; when it
@@ -3150,10 +3215,18 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     // Capital reserve (Phase 4.3) — flat monthly × 12, same as the main loop.
     const annualCapitalReserve = capitalReserveMonthly(capex, totalUnits, totalMonths) * 12;
 
+    // Holdback: fund a share of this year's capex from the IO tranche. Interest on the
+    // opening balance plus half the year's draw (mid-year draw approximation); only the
+    // equity-funded remainder is a below-NOI cash outflow.
+    const holdbackDrawYear = holdbackPct * annualCapex;
+    holdbackInterestByYear.push((simHoldbackBalance + holdbackDrawYear / 2) * holdbackAnnualRate);
+    simHoldbackBalance += holdbackDrawYear;
+    const equityCapexYear = annualCapex - holdbackDrawYear;
+
     // Debt service is applied AFTER the loop — the loan can't be sized until
     // year-1 NOI is known (Phase 4.1 DSCR sizing), and NOI is loan-independent.
     annualNOIs.push(annualNOI);
-    annualBelowNOI.push(annualReserves + annualCapitalReserve + annualCapex);
+    annualBelowNOI.push(annualReserves + annualCapitalReserve + equityCapexYear);
   }
 
   // DSCR-aware sizing, mirroring the main engine so sensitivity cells use the
@@ -3174,7 +3247,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
       annualDS += m <= financing.io_period_months ? monthlyIO : monthlyDS;
     }
-    annualCashFlows.push(annualNOIs[y] - annualDS - annualBelowNOI[y]);
+    // Holdback IO interest adds to debt service (so DSCR/cash flow reflect it).
+    annualCashFlows.push(annualNOIs[y] - annualDS - holdbackInterestByYear[y] - annualBelowNOI[y]);
   }
 
   // Exit NOI GPR: exact last-12-months sum from the SAME unit-state schedule
@@ -3229,7 +3303,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
 
   const loanBalance = calculateLoanBalance(
     loanAmount, monthlyRate, amortMonths, totalMonths, financing.io_period_months
-  );
+  ) + simHoldbackBalance; // outstanding IO holdback paid off at exit
 
   return { annualCashFlows, exitNOI, loanBalance, loanAmount };
 }
