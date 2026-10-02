@@ -395,6 +395,8 @@ export const scenarioSchema = z.object({
       pca_complete: z.boolean().optional(),
       capital_reserve_total: z.number().optional(),
       capital_reserve_per_unit: z.number().optional(),
+      capital_reserve_start_month: z.number().optional(), // P2-13
+      capital_reserve_duration_months: z.number().optional(), // P2-13
     })
     .default({ projects: [] }),
   exit_assumptions: z.record(z.string(), z.unknown()).default({}),

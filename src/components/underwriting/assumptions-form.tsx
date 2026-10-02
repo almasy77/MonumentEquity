@@ -3064,8 +3064,13 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <CurrencyField label="Total Over Hold" value={c.capital_reserve_total ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_total: v }); markDirty(); }} />
                   <CurrencyField label="Per Unit / Yr" value={c.capital_reserve_per_unit ?? 0} onChange={(v) => { setC({ ...c, capital_reserve_per_unit: v }); markDirty(); }} />
-                  <ReadOnlyField label="Modeled / Mo" value={`${fmtCurrency(Math.round(monthly))}/mo`} />
+                  <ReadOnlyField label="Avg / Mo" value={`${fmtCurrency(Math.round(monthly))}/mo`} />
+                  <NumField label="Start Month" value={c.capital_reserve_start_month ?? 0} suffix="mo" onChange={(v) => { setC({ ...c, capital_reserve_start_month: v || undefined }); markDirty(); }} />
+                  <NumField label="Duration" value={c.capital_reserve_duration_months ?? 0} suffix="mo" onChange={(v) => { setC({ ...c, capital_reserve_duration_months: v || undefined }); markDirty(); }} />
                 </div>
+                <p className="text-[10px] text-slate-500">
+                  P2-13: leave Start Month / Duration at 0 to spread the Total evenly over the hold. Set them to time deferred maintenance (e.g. Start 1, Duration 9 spends it all in months 1-9). The full Total is always spent, clamped to the hold.
+                </p>
                 {monthly > 0 && (
                   <p className="text-[10px] text-slate-500 tabular-nums">
                     ≈ {fmtCurrency(Math.round(monthly * 12))}/yr · {fmtCurrency(Math.round(monthly * holdMonths))} over the {holdMonths / 12}-yr hold
