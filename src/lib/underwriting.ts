@@ -837,6 +837,12 @@ export interface CapexAssumptions {
   // below NOI, distinct from the replacement reserve and from named projects.
   capital_reserve_total?: number; // total $ over the hold
   capital_reserve_per_unit?: number; // $/unit/yr (additive to total when both set)
+  // P2-13: timing for the capital_reserve_total bucket. Deferred maintenance (roofs,
+  // sewer, fire escapes) is spent early, not spread evenly over the whole hold.
+  // start_month is 1-indexed; duration defaults to the full hold (even spread, the
+  // prior behavior). The full total is spent within the window, clamped to the hold.
+  capital_reserve_start_month?: number;
+  capital_reserve_duration_months?: number;
 }
 
 export interface DepreciationAssumptions {
@@ -1393,7 +1399,7 @@ export function calculateUnderwriting(
     // Capital reserve (Phase 4.3): the capital-events bucket spread EVENLY over
     // the full hold, so the whole amount lands inside the hold (flat — not
     // escalated; it's a fixed pool, not a per-period operating cost).
-    const monthlyCapitalReserve = capitalReserveMonthly(capex, totalUnits, totalMonths);
+    const monthlyCapitalReserve = capitalReserveForMonth(capex, totalUnits, totalMonths, m);
 
     const cashFlowBeforeCapexAndReserves = noi - ds;
     const cashFlowBeforeCapex = cashFlowBeforeCapexAndReserves - monthlyReserves - monthlyCapitalReserve;
@@ -2722,6 +2728,28 @@ export function buildUnitStateSchedule(args: {
  */
 function capitalReserveMonthly(capex: CapexAssumptions, totalUnits: number, totalMonths: number): number {
   const fromTotal = totalMonths > 0 ? (capex.capital_reserve_total ?? 0) / totalMonths : 0;
+  const fromPerUnit = ((capex.capital_reserve_per_unit ?? 0) * totalUnits) / 12;
+  return fromTotal + fromPerUnit;
+}
+
+/**
+ * P2-13: month-aware capital reserve. The capital_reserve_total bucket is spent over
+ * [start_month, start_month+duration), defaulting to the whole hold (even spread, the
+ * prior behavior). The window is clamped so the full total lands inside the hold. The
+ * per-unit ongoing reserve accrues every month regardless.
+ */
+function capitalReserveForMonth(
+  capex: CapexAssumptions,
+  totalUnits: number,
+  totalMonths: number,
+  monthIdx1: number,
+): number {
+  const total = capex.capital_reserve_total ?? 0;
+  const start = Math.min(Math.max(1, Math.round(capex.capital_reserve_start_month ?? 1)), Math.max(1, totalMonths));
+  const requested = Math.round(capex.capital_reserve_duration_months ?? totalMonths);
+  const duration = Math.max(1, Math.min(requested > 0 ? requested : totalMonths, totalMonths - start + 1));
+  const inWindow = monthIdx1 >= start && monthIdx1 < start + duration;
+  const fromTotal = inWindow && duration > 0 ? total / duration : 0;
   const fromPerUnit = ((capex.capital_reserve_per_unit ?? 0) * totalUnits) / 12;
   return fromTotal + fromPerUnit;
 }
