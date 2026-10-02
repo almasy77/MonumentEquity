@@ -282,6 +282,12 @@ describe("returns chain — renovation (rent basis, capex conservation, cash-flo
     for (let y = 1; y <= 5; y++) flows.push(noi(y) - ds - (y === 1 ? 96_000 : 0) + (y === 5 ? netSale : 0));
     expect(m.exit_value).toBeCloseTo(exitValue, -1);
     expect(m.irr ?? NaN).toBeCloseTo(irrBisect(flows), 3);
-    expect(m.equity_multiple).toBeCloseTo(flows.slice(1).reduce((s, v) => s + v, 0) / equity, 2);
+    // P2-15: the year-1 rehab outflow drives a capital call, so EM is on total equity
+    // invested (close + calls). Reconstruct from the same flow stream.
+    const calls = flows.slice(1).reduce((s, v) => s + Math.max(0, -v), 0);
+    const posReturns = flows.slice(1).reduce((s, v) => s + Math.max(0, v), 0);
+    const invested = equity + calls;
+    expect(m.total_equity_invested).toBeCloseTo(invested, 0);
+    expect(m.equity_multiple).toBeCloseTo(posReturns / invested, 2);
   });
 });

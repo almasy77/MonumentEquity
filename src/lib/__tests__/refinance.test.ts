@@ -73,8 +73,9 @@ describe("refinance — item 2", () => {
     const proceeds = newLoan - oldBalance - oldBalance * REFI.refi_prepayment_penalty_rate - newLoan * REFI.refi_cost_rate;
     expect(proceeds).toBeGreaterThan(0); // cash-out
 
-    // totalDistributions = Σ annual CF + refi proceeds + net sale proceeds + reserve return.
-    const totalDistributions = r.metrics.equity_multiple * r.metrics.total_equity;
+    // Net distributions = equity at close + total profit (profit is unchanged by the
+    // P2-15 CoC/EM redefinition). Confirm the refi proceeds flow into them.
+    const totalDistributions = r.metrics.total_equity + r.metrics.total_profit;
     const cumCF = r.annual.reduce((s, a) => s + a.cash_flow, 0);
     expect(totalDistributions).toBeCloseTo(
       cumCF + proceeds + r.metrics.net_sale_proceeds + r.metrics.return_of_operating_reserve,

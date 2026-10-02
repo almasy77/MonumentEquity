@@ -58,7 +58,8 @@ describe("Excel export — live formulas reproduce the engine", () => {
     const price = numAt(A, 22, 2);
     const equity = numAt(A, 23, 2);
     expect(price).toBeCloseTo(inputs.purchase.purchase_price, 2);
-    expect(equity).toBeCloseTo(result.metrics.total_equity, 2);
+    // P2-15: the pro-forma CoC denominator is total equity invested.
+    expect(equity).toBeCloseTo(result.metrics.total_equity_invested, 2);
 
     let cumPrev = 0;
     for (let y = 0; y < n; y++) {
@@ -95,13 +96,15 @@ describe("Excel export — live formulas reproduce the engine", () => {
       R.eachRow((row) => { if (row.getCell(1).value === label) out = Number(row.getCell(2).value) || 0; });
       return out;
     };
-    const equity = findVal("Total Equity Invested");
+    const equityAtClose = findVal("Equity at Close");
+    const equityInvested = findVal("Total Equity Invested");
     const proceeds = findVal("Net Sale Proceeds");
     const reserve = findVal("Return of Operating Reserve");
 
-    // Rebuild the IRR vector exactly as the sheet does: −equity, then annual CF,
-    // with proceeds + reserve on the final year.
-    const vec = [-equity];
+    // Rebuild the IRR vector exactly as the sheet does: −equity AT CLOSE (t0), then
+    // annual CF (capital calls are the negative years), with proceeds + reserve on
+    // the final year.
+    const vec = [-equityAtClose];
     for (let y = 0; y < n; y++) {
       vec.push(result.annual[y].cash_flow + (y === n - 1 ? proceeds + reserve : 0));
     }
@@ -109,10 +112,13 @@ describe("Excel export — live formulas reproduce the engine", () => {
     expect(irr).not.toBeNull();
     expect(irr as number).toBeCloseTo(result.metrics.irr as number, 8);
 
-    const totalCF = result.annual.reduce((s, a) => s + a.cash_flow, 0);
-    const dist = totalCF + proceeds + reserve;
-    expect(dist / equity).toBeCloseTo(result.metrics.equity_multiple, 6);
-    // Distributions tie to equity + profit (the Validation-sheet identity).
+    // P2-15: EM = cash returned (positive distributions + proceeds) / total invested.
+    const posDist = result.annual.reduce((s, a) => s + Math.max(0, a.cash_flow), 0);
+    const cashReturned = posDist + proceeds + reserve;
+    expect(equityInvested).toBeCloseTo(result.metrics.total_equity_invested, 2);
+    expect(cashReturned / equityInvested).toBeCloseTo(result.metrics.equity_multiple, 6);
+    // Net distributions still tie to equity at close + total profit (unchanged identity).
+    const dist = result.annual.reduce((s, a) => s + a.cash_flow, 0) + proceeds + reserve;
     expect(dist).toBeCloseTo(result.metrics.total_equity + result.metrics.total_profit, 2);
   });
 
@@ -139,8 +145,11 @@ describe("Excel export — live formulas reproduce the engine", () => {
     }
     const irr = calculateIRR(vec);
     expect(irr as number).toBeCloseTo(m.irr as number, 8);
-    const distWithRefi = result.annual.reduce((s, a) => s + a.cash_flow, 0) + m.refi_net_proceeds + m.net_sale_proceeds + m.return_of_operating_reserve;
-    expect(distWithRefi / m.total_equity).toBeCloseTo(m.equity_multiple, 6);
+    // P2-15: EM = cash returned (positive distributions + refi + sale + reserve) /
+    // total equity invested.
+    const posDist = result.annual.reduce((s, a) => s + Math.max(0, a.cash_flow), 0);
+    const cashReturned = posDist + m.refi_net_proceeds + m.net_sale_proceeds + m.return_of_operating_reserve;
+    expect(cashReturned / m.total_equity_invested).toBeCloseTo(m.equity_multiple, 6);
 
     // The Returns sheet exposes the cash-out as its own line at the refi value.
     const wb = await exportedWorkbook(inputs, result);

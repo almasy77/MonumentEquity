@@ -38,7 +38,7 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
     },
     {
       label: "Cash-on-Cash",
-      title: "Average Annual Cash-on-Cash Return",
+      title: "Average annual cash distribution ÷ total equity invested (a capital-call year is $0 yield, not a negative)",
       value: fmt(metrics.average_cash_on_cash, "pct"),
       color: metricColor(metrics.average_cash_on_cash, { good: 0.08, warn: 0.05, reverse: true }),
     },
@@ -73,9 +73,9 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
       color: "text-white",
     },
     {
-      label: "Total Equity",
-      title: "Total equity required at closing",
-      value: fmt(metrics.total_equity, "money"),
+      label: "Equity Invested",
+      title: `Total equity invested = equity at close ${fmt(metrics.total_equity, "money")} + capital calls (cash injected in negative-cash-flow years). Peak out-of-pocket ${fmt(metrics.peak_equity, "money")}. Cash-on-cash and equity multiple are computed on this.`,
+      value: fmt(metrics.total_equity_invested, "money"),
       color: "text-white",
     },
     {
