@@ -124,15 +124,20 @@ export function computeReconciliationChecks(
       ? (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
       : 1 / Math.max(1, n);
     const noi1 = result.annual[0]?.noi ?? 0;
-    const dscrLoan = noi1 > 0 ? noi1 / floor / 12 / pmtFactor : 0;
+    // P2-3: reconcile against the NOI the engine actually sized on (in-place /
+    // year-1 / manual), not a re-derived year-1 figure, and name the basis.
+    const sizingBasis = m.dscr_sizing_basis ?? "year1_projected";
+    const sizingNOI = m.dscr_sizing_noi ?? noi1;
+    const dscrLoan = sizingNOI > 0 ? sizingNOI / floor / 12 / pmtFactor : 0;
     const maxLoan = dscrSizing ? Math.min(ltvLoan, dscrLoan) : ltvLoan;
     const pass = m.loan_amount <= maxLoan + 1;
     const extraEquity = pass ? 0 : m.loan_amount - maxLoan;
-    const label = dscrSizing ? `Loan within min(LTV, DSCR ${floor}x)` : "Loan within LTV (DSCR sizing off)";
+    const basisLabel = sizingBasis === "in_place" ? "in-place" : sizingBasis === "manual" ? "manual" : "year-1";
+    const label = dscrSizing ? `Loan within min(LTV, DSCR ${floor}x on ${basisLabel} NOI)` : "Loan within LTV (DSCR sizing off)";
     checks.push({
       id: "e", name: label, pass,
       detail: pass
-        ? (dscrSizing ? `loan ${fmt$(m.loan_amount)} ≤ min(LTV ${fmt$(ltvLoan)}, DSCR ${fmt$(dscrLoan)})` : `loan ${fmt$(m.loan_amount)} ≤ LTV ${fmt$(ltvLoan)}`)
+        ? (dscrSizing ? `loan ${fmt$(m.loan_amount)} ≤ min(LTV ${fmt$(ltvLoan)}, DSCR ${fmt$(dscrLoan)} on ${basisLabel} NOI ${fmt$(sizingNOI)})` : `loan ${fmt$(m.loan_amount)} ≤ LTV ${fmt$(ltvLoan)}`)
         : `loan ${fmt$(m.loan_amount)} exceeds sized ${fmt$(maxLoan)} — requires ${fmt$(extraEquity)} extra equity`,
     });
   }
