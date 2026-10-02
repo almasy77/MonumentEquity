@@ -76,6 +76,14 @@ export interface FinancingAssumptions {
   // during an IO period). Set size_to_dscr=false to model LTV-only proceeds.
   size_to_dscr?: boolean; // default true
   dscr_floor?: number; // default 1.25
+  // P2-3: which NOI the DSCR loan is sized on. UNSET = "year1_projected" (the prior
+  // behavior) so existing scenarios don't change; new scenarios default "in_place".
+  //  - "in_place": current rents at stated vacancy with current expenses (lender-style
+  //    trailing/in-place NOI; not depressed by planned turns/lease-up/renovation).
+  //  - "year1_projected": the modeled year-1 NOI.
+  //  - "manual": a user-entered NOI (manual_sizing_noi).
+  dscr_sizing_basis?: "in_place" | "year1_projected" | "manual";
+  manual_sizing_noi?: number; // annual NOI used when dscr_sizing_basis = "manual"
   loan_type?: "agency" | "bank" | "portfolio" | "bridge" | "cash"; // drives the LOI financing-contingency window
   financing_contingency_days?: number; // explicit override; else defaulted by loan_type
 }
@@ -1025,6 +1033,8 @@ export interface DealMetrics {
   loan_sizing_constraint: "ltv" | "dscr"; // which limb of min(LTV, DSCR) bound
   ltv_loan_amount: number; // LTV-sized proceeds (= loan_amount when constraint is ltv)
   dscr_loan_amount: number | null; // DSCR-sized proceeds (null when sizing disabled)
+  dscr_sizing_noi?: number; // P2-3: the annual NOI the DSCR loan was sized on
+  dscr_sizing_basis?: "in_place" | "year1_projected" | "manual"; // which basis produced it
   total_equity: number;
   monthly_debt_service: number;
   // Depreciation
@@ -1688,17 +1698,46 @@ export function calculateUnderwriting(
   // not depend on the loan, so one re-pass with the resized loan is exact.
   if (!_resize && financing.size_to_dscr !== false) {
     const floor = financing.dscr_floor ?? 1.25;
-    const noi1 = annual[0]?.noi ?? 0;
+    // P2-3: size on the chosen NOI basis. In-place = current rents at stated vacancy
+    // with current expenses, which we read by re-running the engine with the ramp off
+    // on the current basis (the loan override skips the sizing recursion; NOI does not
+    // depend on the loan). Unset = year-1 projected (back-compat).
+    const sizingBasis = financing.dscr_sizing_basis ?? "year1_projected";
+    let sizingNOI: number;
+    if (sizingBasis === "manual") {
+      sizingNOI = financing.manual_sizing_noi ?? (annual[0]?.noi ?? 0);
+    } else if (sizingBasis === "in_place") {
+      // In-place = the stabilized NOI with the lease-up RAMP off, valued at the
+      // scenario's OWN pro-forma basis (P2-3 + Bryan): the Unrenovated/Renovated
+      // drop-downs already encode intent — "current" = strict in-place current rents,
+      // "market" = as-is stabilized at market. We only strip the lease-up timing.
+      const inPlaceInputs: ScenarioInputs = {
+        ...inputs,
+        revenue: {
+          ...inputs.revenue,
+          rent_ramp: inputs.revenue.rent_ramp
+            ? { ...inputs.revenue.rent_ramp, enabled: false }
+            : inputs.revenue.rent_ramp,
+        },
+      };
+      sizingNOI = calculateUnderwriting(inPlaceInputs, { loanOverride: ltvLoanAmount }).annual[0]?.noi ?? 0;
+    } else {
+      sizingNOI = annual[0]?.noi ?? 0;
+    }
     const pmtFactor = monthlyRate > 0
       ? (monthlyRate * Math.pow(1 + monthlyRate, amortMonths)) / (Math.pow(1 + monthlyRate, amortMonths) - 1)
       : 1 / Math.max(1, amortMonths);
-    const dscrLoan = noi1 > 0 ? noi1 / floor / 12 / pmtFactor : 0;
+    const dscrLoan = sizingNOI > 0 ? sizingNOI / floor / 12 / pmtFactor : 0;
+    metrics.dscr_sizing_noi = sizingNOI;
+    metrics.dscr_sizing_basis = sizingBasis;
     if (dscrLoan < ltvLoanAmount - 1) {
       const resized = calculateUnderwriting(inputs, { loanOverride: dscrLoan });
       resized.metrics.ltv_loan_amount = ltvLoanAmount;
       resized.metrics.dscr_loan_amount = dscrLoan;
+      resized.metrics.dscr_sizing_noi = sizingNOI;
+      resized.metrics.dscr_sizing_basis = sizingBasis;
       resized.warnings.unshift(
-        `Loan sized by DSCR ${floor.toFixed(2)}x: $${Math.round(dscrLoan).toLocaleString()} vs LTV proceeds $${Math.round(ltvLoanAmount).toLocaleString()} — requires $${Math.round(ltvLoanAmount - dscrLoan).toLocaleString()} additional equity`,
+        `Loan sized by DSCR ${floor.toFixed(2)}x on ${sizingBasis === "in_place" ? "in-place" : sizingBasis === "manual" ? "manual" : "year-1 projected"} NOI $${Math.round(sizingNOI).toLocaleString()}: $${Math.round(dscrLoan).toLocaleString()} vs LTV proceeds $${Math.round(ltvLoanAmount).toLocaleString()} — requires $${Math.round(ltvLoanAmount - dscrLoan).toLocaleString()} additional equity`,
       );
       return resized;
     }
@@ -3302,6 +3341,7 @@ export function buildDefaultInputs(
       loan_term_years: loanTermYears,
       io_period_months: ioMonths,
       origination_fee_rate: origFeeRate,
+      dscr_sizing_basis: "in_place", // P2-3: new scenarios size on in-place NOI
     },
     revenue: {
       unit_mix: unitMix,
