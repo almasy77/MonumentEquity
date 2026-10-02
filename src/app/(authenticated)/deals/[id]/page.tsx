@@ -246,6 +246,7 @@ export default async function DealDetailPage({
         askingPrice={deal.asking_price}
         units={deal.units}
         dealAddress={deal.address}
+        dealZip={deal.zip}
       />
 
       {/* Contacts & Neighborhood */}

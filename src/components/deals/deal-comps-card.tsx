@@ -7,6 +7,20 @@ import { BarChart3, Building2, Home, ExternalLink } from "lucide-react";
 import { AddMarketCompDialog } from "@/components/comps/add-market-comp-dialog";
 import { AddRentCompDialog } from "@/components/comps/add-rent-comp-dialog";
 import type { MarketComp, RentComp } from "@/lib/validations";
+import type { CompMatchReason } from "@/lib/api-helpers";
+
+type WidenedComp = MarketComp & { match_reason?: CompMatchReason };
+
+const MATCH_LABEL: Record<CompMatchReason, string> = {
+  city: "Same city",
+  zip3: "Same ZIP area",
+  state: "Same state",
+};
+const MATCH_STYLE: Record<CompMatchReason, string> = {
+  city: "border-blue-600 text-blue-300",
+  zip3: "border-teal-600 text-teal-300",
+  state: "border-slate-600 text-slate-400",
+};
 
 function fmtPrice(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -24,11 +38,12 @@ interface DealCompsCardProps {
   askingPrice: number;
   units: number;
   dealAddress?: string;
+  dealZip?: string;
 }
 
-export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAddress }: DealCompsCardProps) {
+export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAddress, dealZip }: DealCompsCardProps) {
   const [tab, setTab] = useState<"market" | "rent" | "crexi">("market");
-  const [marketComps, setMarketComps] = useState<MarketComp[]>([]);
+  const [marketComps, setMarketComps] = useState<WidenedComp[]>([]);
   const [rentComps, setRentComps] = useState<RentComp[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,8 +51,12 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
     async function load() {
       setLoading(true);
       try {
+        // P3-11: widen beyond the exact city (city, then same ZIP area, then state).
+        const q = new URLSearchParams({ city: dealCity, widen: "1" });
+        if (dealState) q.set("state", dealState);
+        if (dealZip) q.set("zip", dealZip);
         const [mRes, rRes] = await Promise.all([
-          fetch(`/api/comps?city=${encodeURIComponent(dealCity)}`),
+          fetch(`/api/comps?${q.toString()}`),
           fetch(`/api/rent-comps`),
         ]);
         if (mRes.ok) setMarketComps(await mRes.json());
@@ -52,7 +71,13 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
       }
     }
     load();
-  }, [dealCity]);
+  }, [dealCity, dealState, dealZip]);
+
+  // How many comps came from each widening tier (for the legend).
+  const tierCounts = marketComps.reduce(
+    (acc, c) => { if (c.match_reason) acc[c.match_reason] = (acc[c.match_reason] ?? 0) + 1; return acc; },
+    {} as Record<CompMatchReason, number>,
+  );
 
   const pricePerUnit = units > 0 ? askingPrice / units : 0;
   const avgCompPPU = marketComps.length > 0
@@ -146,18 +171,36 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
         <>
           {marketComps.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-4">
-              No market comps in {dealCity} yet.
+              No market comps in {dealCity}{dealState ? `, ${dealState}` : ""} or nearby yet.
             </p>
           ) : (
-            <div className="space-y-2">
+            <>
+              {/* Widening legend — how far out the comp set reaches. */}
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mb-2">
+                <span>Comps near {dealCity}:</span>
+                {(["city", "zip3", "state"] as CompMatchReason[])
+                  .filter((r) => tierCounts[r])
+                  .map((r) => (
+                    <span key={r} className={`px-1.5 py-0.5 rounded border ${MATCH_STYLE[r]}`}>
+                      {MATCH_LABEL[r]} {tierCounts[r]}
+                    </span>
+                  ))}
+              </div>
+              <div className="space-y-2">
               {marketComps.map((comp) => (
                 <div key={comp.id} className="flex items-start justify-between gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-colors">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 text-sm">
                       <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                       <span className="text-white font-medium truncate">{comp.address}</span>
+                      {comp.match_reason && comp.match_reason !== "city" && (
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${MATCH_STYLE[comp.match_reason]}`}>
+                          {MATCH_LABEL[comp.match_reason]}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                      <span>{comp.city}, {comp.state}</span>
                       <span>{comp.units} units</span>
                       {comp.year_built && <span>Built {comp.year_built}</span>}
                       <span>{fmtDate(comp.sale_date)}</span>
@@ -172,7 +215,8 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </>
       )}

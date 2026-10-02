@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
-import { safeJson, isErrorResponse, compMarketKey } from "@/lib/api-helpers";
+import { safeJson, isErrorResponse, compMarketKey, compMatchReason, compMatchRank } from "@/lib/api-helpers";
 import type { MarketComp } from "@/lib/validations";
 
-// GET /api/comps — list market comps, optional filters: city, min_units, max_units
+// GET /api/comps — list market comps.
+//   Filters: city, min_units, max_units.
+//   Widening (P3-11): widen=1 with a city (and optional state/zip) returns comps beyond
+//   the exact city — exact city, then a shared 3-digit ZIP prefix, then the same state —
+//   each tagged with `match_reason` so a far comp can be weighted accordingly.
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
@@ -12,36 +16,52 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const city = req.nextUrl.searchParams.get("city");
+    const params = req.nextUrl.searchParams;
+    const city = params.get("city");
+    const widen = params.get("widen") === "1" || params.get("widen") === "true";
+    const state = params.get("state") || undefined;
+    const zip = params.get("zip") || undefined;
     const redis = getRedis();
 
-    let ids: string[];
-    if (city) {
-      ids = await redis.zrange(compMarketKey(city), 0, -1, { rev: true });
-    } else {
-      ids = await redis.zrange("comps:all", 0, -1, { rev: true });
+    // Unit-range filter, applied in both paths.
+    const minUnitsRaw = params.get("min_units");
+    const maxUnitsRaw = params.get("max_units");
+    const min = minUnitsRaw ? parseInt(minUnitsRaw, 10) : NaN;
+    const max = maxUnitsRaw ? parseInt(maxUnitsRaw, 10) : NaN;
+    const inUnitRange = (c: MarketComp) =>
+      (isNaN(min) || c.units >= min) && (isNaN(max) || c.units <= max);
+
+    // ── Widened search: scan all comps, classify against the subject location ──
+    if (city && widen) {
+      const allIds = await redis.zrange<string[]>("comps:all", 0, -1, { rev: true });
+      if (allIds.length === 0) return NextResponse.json([]);
+      const pipeline = redis.pipeline();
+      for (const id of allIds) pipeline.get(`comp:${id}`);
+      const results = await pipeline.exec<(MarketComp | null)[]>();
+      const subject = { city, state, zip };
+      const matched = results
+        .filter((c): c is MarketComp => c !== null && inUnitRange(c))
+        .map((c) => ({ c, reason: compMatchReason(c, subject) }))
+        .filter((x): x is { c: MarketComp; reason: NonNullable<typeof x.reason> } => x.reason !== null)
+        // Closest tier first (city, then zip3, then state); within a tier, newest sale first.
+        .sort((a, b) =>
+          compMatchRank(a.reason) - compMatchRank(b.reason) ||
+          new Date(b.c.sale_date).getTime() - new Date(a.c.sale_date).getTime(),
+        )
+        .map((x) => ({ ...x.c, match_reason: x.reason }));
+      return NextResponse.json(matched);
     }
 
+    // ── Exact-city (or all) search — prior behavior, flat array, no match_reason ──
+    const ids = city
+      ? await redis.zrange<string[]>(compMarketKey(city), 0, -1, { rev: true })
+      : await redis.zrange<string[]>("comps:all", 0, -1, { rev: true });
     if (ids.length === 0) return NextResponse.json([]);
 
     const pipeline = redis.pipeline();
-    for (const id of ids) {
-      pipeline.get(`comp:${id}`);
-    }
+    for (const id of ids) pipeline.get(`comp:${id}`);
     const results = await pipeline.exec<(MarketComp | null)[]>();
-    let comps = results.filter((r): r is MarketComp => r !== null);
-
-    // Client-side filtering for units range
-    const minUnits = req.nextUrl.searchParams.get("min_units");
-    const maxUnits = req.nextUrl.searchParams.get("max_units");
-    if (minUnits) {
-      const min = parseInt(minUnits, 10);
-      if (!isNaN(min)) comps = comps.filter((c) => c.units >= min);
-    }
-    if (maxUnits) {
-      const max = parseInt(maxUnits, 10);
-      if (!isNaN(max)) comps = comps.filter((c) => c.units <= max);
-    }
+    const comps = results.filter((r): r is MarketComp => r !== null).filter(inUnitRange);
 
     return NextResponse.json(comps);
   } catch (err) {
