@@ -113,6 +113,16 @@ export interface UnitDetail {
   market_rent?: number; // per-unit override; defaults to the row's market_rent
   lease_end?: string; // ISO date — required for "occupied" to schedule its turn
   zero_rent_treatment?: ZeroRentTreatment; // only meaningful when current_rent === 0
+  // P2-14: explicit per-unit renovation. When ANY unit in the mix sets
+  // `renovate: true`, the flags (not the auto deepest-below-market ranking, nor the
+  // renovation line's `units_to_renovate` count) decide which and how many units
+  // renovate. Total renovation cost = the primary line's per-unit cost × flagged
+  // count, paced on that line's schedule. Absent on every unit = legacy auto-select.
+  renovate?: boolean;
+  // Optional post-reno TARGET rent for this unit. When set (> 0) it overrides the
+  // base+premium formula (see renovated_rent in UnitTimeline). Premium basis
+  // (current vs market) is governed globally by the pro-forma renovated basis.
+  renovated_rent?: number;
 }
 
 export interface UnitMix {
@@ -1149,8 +1159,10 @@ export function calculateUnderwriting(
   _resize?: { loanOverride: number },
 ): UnderwritingResult {
   const { purchase, financing, revenue, expenses, capex: rawCapex, exit } = inputs;
-  // Honor the per-unit / named-project enable toggles before anything reads capex.
-  const capex = applyCapexToggles(rawCapex);
+  // Honor the per-unit / named-project enable toggles before anything reads capex,
+  // then (P2-14) let any explicit per-unit `renovate` flags drive which/how many
+  // units renovate and the total renovation cost. Both are no-ops for legacy inputs.
+  const capex = applyRenovateFlags(applyCapexToggles(rawCapex), revenue.unit_mix);
   const totalMonths = exit.hold_period_years * 12;
   const warnings: string[] = [];
 
@@ -2455,6 +2467,8 @@ export function buildUnitStateSchedule(args: {
     status: "occupied" | "mtm" | "vacant";
     lease_end?: string;
     hasDetail: boolean;
+    renovate?: boolean; // P2-14: explicit per-unit renovation flag
+    renovated_rent_override?: number; // P2-14: explicit post-reno target rent
   }
   const expanded: Expanded[] = [];
   let detailVacantCount = 0;
@@ -2477,6 +2491,8 @@ export function buildUnitStateSchedule(args: {
           status: vacant ? "vacant" : d.status,
           lease_end: d.status === "occupied" ? d.lease_end : undefined,
           hasDetail: true,
+          renovate: d.renovate === true,
+          renovated_rent_override: d.renovated_rent,
         });
       }
     } else {
@@ -2542,10 +2558,14 @@ export function buildUnitStateSchedule(args: {
     // rent — EXCEPT for vacant units, which bill $0 today: using current there
     // would collapse renovated rent to the premium alone and understate stabilized
     // GPR, so vacant units fall back to market rent as the base.
+    // P2-14: an explicit per-unit renovated_rent target (> 0) is the post-reno rent
+    // outright; otherwise fall back to the base+premium formula below.
     renovated_rent:
-      (renoBasis === "market_plus_premium" || e.status === "vacant" || (e.current_rent ?? 0) <= 0
-        ? e.market_rent
-        : e.current_rent) + e.premium,
+      e.renovated_rent_override != null && e.renovated_rent_override > 0
+        ? e.renovated_rent_override
+        : (renoBasis === "market_plus_premium" || e.status === "vacant" || (e.current_rent ?? 0) <= 0
+            ? e.market_rent
+            : e.current_rent) + e.premium,
     states: new Array<UnitState>(totalMonths).fill("in_place"),
   }));
 
@@ -2641,8 +2661,16 @@ export function buildUnitStateSchedule(args: {
     total,
   );
   if (totalRenoUnits > 0) {
-    const ranked = expanded
-      .map((e, i) => ({ e, i }))
+    // P2-14: with explicit per-unit flags, renovate exactly the flagged units (by
+    // identity), ordered deepest-gap first for a stable pace. Without flags, keep the
+    // legacy auto-selection: deepest-below-market units, top `totalRenoUnits`. The
+    // flagged count already equals totalRenoUnits (applyRenovateFlags collapsed the
+    // line to it), so the slice is a no-op in flag mode but kept as a guard.
+    const anyFlagged = expanded.some((e) => e.renovate === true);
+    const ranked = (anyFlagged
+      ? expanded.map((e, i) => ({ e, i })).filter(({ e }) => e.renovate === true)
+      : expanded.map((e, i) => ({ e, i }))
+    )
       .sort((a, b) => (b.e.market_rent - b.e.current_rent) - (a.e.market_rent - a.e.current_rent))
       .slice(0, totalRenoUnits);
 
@@ -2770,6 +2798,47 @@ export function applyCapexToggles(capex: CapexAssumptions): CapexAssumptions {
     units_to_renovate: perUnitOn ? capex.units_to_renovate : 0,
     per_unit_cost: perUnitOn ? capex.per_unit_cost : 0,
     projects: (capex.projects ?? []).filter((p) => p.enabled !== false),
+  };
+}
+
+/** P2-14: count rent-roll units explicitly flagged `renovate: true`. */
+export function countRenovateFlags(unitMix: UnitMix[]): number {
+  let n = 0;
+  for (const row of unitMix) for (const u of row.units ?? []) if (u.renovate === true) n++;
+  return n;
+}
+
+/**
+ * P2-14: when the rent roll carries explicit per-unit `renovate` flags, collapse the
+ * renovation program to a SINGLE line of `flaggedCount` units at the primary line's
+ * cost and schedule. Both the cost pacing (calculateMonthCapexBreakdown) and the
+ * unit-state overlay then bill and renovate exactly the flagged units — total cost =
+ * per-unit cost x flagged count. The overlay separately selects the flagged units by
+ * identity (see buildUnitStateSchedule). When no unit is flagged, or the per-unit
+ * program is toggled off, the capex is returned unchanged so existing scenarios stay
+ * byte-identical.
+ */
+export function applyRenovateFlags(capex: CapexAssumptions, unitMix: UnitMix[]): CapexAssumptions {
+  if (capex.per_unit_enabled === false) return capex; // A/B toggle off wins over flags
+  const flaggedCount = countRenovateFlags(unitMix);
+  if (flaggedCount <= 0) return capex;
+  const primary = getRenovationLines(capex)[0]; // may be undefined if no program configured
+  return {
+    ...capex,
+    renovation_lines: [
+      {
+        id: "flagged",
+        per_unit_cost: primary?.per_unit_cost ?? capex.per_unit_cost ?? 0,
+        units_to_renovate: flaggedCount,
+        renovation_start_month: primary?.renovation_start_month ?? capex.renovation_start_month ?? 1,
+        renovation_end_month: primary?.renovation_end_month ?? capex.renovation_end_month,
+        units_per_month: primary?.units_per_month ?? capex.units_per_month,
+        renovation_downtime_enabled: primary?.renovation_downtime_enabled ?? capex.renovation_downtime_enabled,
+        renovation_downtime_months: primary?.renovation_downtime_months ?? capex.renovation_downtime_months,
+      },
+    ],
+    units_to_renovate: 0,
+    per_unit_cost: 0,
   };
 }
 
@@ -2968,8 +3037,11 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   loanAmount: number;
 } {
   const { purchase, financing, revenue, expenses, capex: rawCapex, exit } = inputs;
-  // Honor the per-unit / named-project enable toggles (matches the main path).
-  const capex = applyCapexToggles(rawCapex);
+  // Honor the per-unit / named-project enable toggles (matches the main path), then
+  // apply any per-unit renovate flags (P2-14). capexToggled (pre-flag) is kept for
+  // the "_plus_reno" sensitivity basis, which means "all units renovated" regardless.
+  const capexToggled = applyCapexToggles(rawCapex);
+  const capex = applyRenovateFlags(capexToggled, revenue.unit_mix);
   const totalMonths = exit.hold_period_years * 12;
   const totalUnits = revenue.unit_mix.reduce((s, u) => s + u.count, 0);
   const ltvLoan = purchase.purchase_price * financing.ltv;
@@ -2998,7 +3070,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     sensRenoBasis = pf.renovated;
   }
   const sensCapex = hasRenoPremiumBasis
-    ? { ...capex, units_to_renovate: totalUnits, renovation_start_month: 1, renovation_end_month: 1, renovation_downtime_enabled: false }
+    ? { ...capexToggled, units_to_renovate: totalUnits, renovation_start_month: 1, renovation_end_month: 1, renovation_downtime_enabled: false }
     : capex;
   const unitSchedule = buildUnitStateSchedule({
     unitMix: revenue.unit_mix,
