@@ -50,14 +50,22 @@ describe.each(GOLDEN)("engine consistency — %s", (name) => {
 
   it("DSCR and average cash-on-cash match their components", () => {
     expect(m.year1_dscr).toBeCloseTo(A[0].noi / A[0].debt_service, 4);
-    const avgCoC = A.reduce((s, a) => s + a.cash_on_cash, 0) / A.length;
+    // P2-15: avg CoC = average annual DISTRIBUTION (positive operating CF; a
+    // capital-call year is $0 yield) / total equity invested.
+    const posDist = A.reduce((s, a) => s + Math.max(0, a.cash_flow), 0);
+    const avgCoC = posDist / A.length / m.total_equity_invested;
     expect(m.average_cash_on_cash).toBeCloseTo(avgCoC, 6);
   });
 
-  it("equity multiple = total distributions / equity", () => {
-    const cumCF = A.reduce((s, a) => s + a.cash_flow, 0);
-    const totalDist = cumCF + (m.refi_net_proceeds || 0) + m.net_sale_proceeds + (m.return_of_operating_reserve || 0);
-    expect(m.equity_multiple).toBeCloseTo(totalDist / m.total_equity, 4);
+  it("equity multiple = cash returned / total equity invested", () => {
+    // P2-15: total equity invested = equity at close + capital calls (negative
+    // operating years); cash returned = positive operating distributions + refi +
+    // sale + returned reserve.
+    const calls = A.reduce((s, a) => s + Math.max(0, -a.cash_flow), 0);
+    expect(m.total_equity_invested).toBeCloseTo(m.total_equity + calls, 4);
+    const posDist = A.reduce((s, a) => s + Math.max(0, a.cash_flow), 0);
+    const cashReturned = posDist + (m.refi_net_proceeds || 0) + m.net_sale_proceeds + (m.return_of_operating_reserve || 0);
+    expect(m.equity_multiple).toBeCloseTo(cashReturned / m.total_equity_invested, 4);
   });
 
   it("IRR matches an independent solver on the engine's own cash flows", () => {

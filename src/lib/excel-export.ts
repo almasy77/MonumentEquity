@@ -110,7 +110,7 @@ export async function generateExcelWorkbook(
   buildSummarySheet(wb, deal, scenarioName, result, inputs, reconChecks, scenarioNotes);
   buildAssumptionsSheet(wb, inputs, result);
   buildMonthlySheet(wb, result.monthly, inputs.exit.hold_period_years);
-  buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years, inputs.purchase.purchase_price, result.metrics.total_equity);
+  buildAnnualSheet(wb, result.annual, inputs.exit.hold_period_years, inputs.purchase.purchase_price, result.metrics.total_equity_invested);
   buildRentMatrixSheet(wb, result, inputs);
   buildReturnsSheet(wb, result, inputs.purchase.purchase_price);
   buildSensitivitySheet(wb, result.sensitivity, inputs.purchase.purchase_price);
@@ -773,7 +773,11 @@ function buildReturnsSheet(
   ws.addRow([]);
 
   addSectionHeader(ws, "Cash Flow Summary", 2);
-  const equityRow = val("Total Equity Invested", m.total_equity, CURRENCY_FMT);
+  // Equity at close drives the IRR t0 outflow and total profit. Total equity invested
+  // (close + capital calls) drives the equity multiple and cash-on-cash (P2-15).
+  const equityRow = val("Equity at Close", m.total_equity, CURRENCY_FMT);
+  const investedRow = val("Total Equity Invested", m.total_equity_invested, CURRENCY_FMT);
+  val("Peak Equity", m.peak_equity, CURRENCY_FMT);
   const totalCFCell = formulaCell("Total Cash Flow", CURRENCY_FMT);
   const proceedsRow = val("Net Sale Proceeds", m.net_sale_proceeds, CURRENCY_FMT);
   const reserveRow = val("Return of Operating Reserve", m.return_of_operating_reserve, CURRENCY_FMT);
@@ -816,7 +820,10 @@ function buildReturnsSheet(
   irr.cell.value = { formula: `IFERROR(IRR(${vecRange}),"n/a")` } as ExcelJS.CellFormulaValue;
   // Guard denominators the engine also guards (all-cash → DS 0; zero equity /
   // price) so degenerate deals show 0 like the app, not a #DIV/0! in the cell.
-  em.cell.value = { formula: `IFERROR(B${distCell.row}/B${equityRow},0)` } as ExcelJS.CellFormulaValue;
+  // P2-15: equity multiple = cash returned / total equity invested. Algebraically
+  // equal to 1 + total_profit / total_equity_invested, and total_profit (net
+  // distributions − equity at close) is unchanged, so this reuses the profit cell.
+  em.cell.value = { formula: `IFERROR((B${investedRow}+B${profitCell.row})/B${investedRow},0)` } as ExcelJS.CellFormulaValue;
   dscr.cell.value = { formula: `IFERROR(${noiY1}/-${dsY1},0)` } as ExcelJS.CellFormulaValue;
   goingCap.cell.value = { formula: `IFERROR(${noiY1}/B${priceRow},0)` } as ExcelJS.CellFormulaValue;
   totalCFCell.cell.value = { formula: `SUM(${cfRange})` } as ExcelJS.CellFormulaValue;

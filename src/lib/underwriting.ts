@@ -1035,7 +1035,13 @@ export interface DealMetrics {
   dscr_loan_amount: number | null; // DSCR-sized proceeds (null when sizing disabled)
   dscr_sizing_noi?: number; // P2-3: the annual NOI the DSCR loan was sized on
   dscr_sizing_basis?: "in_place" | "year1_projected" | "manual"; // which basis produced it
-  total_equity: number;
+  total_equity: number; // equity funded at close (purchase + costs + reserves − loan)
+  // P2-15: total equity actually invested over the hold = equity at close + every
+  // capital call (cash injected in a year whose operating cash flow is negative).
+  // CoC and equity multiple are computed on THIS, per industry best practice.
+  total_equity_invested: number;
+  // P2-15: the most equity you are ever net out of pocket at any point in the hold.
+  peak_equity: number;
   monthly_debt_service: number;
   // Depreciation
   depreciation?: DepreciationResult;
@@ -1561,10 +1567,32 @@ export function calculateUnderwriting(
   // sale proceeds, so the waterfall stays auditable.
   const operatingReserveYield = purchase.operating_reserve_yield_rate ?? 0;
   const returnOfOperatingReserve = capexReserve * Math.pow(1 + operatingReserveYield, exit.hold_period_years);
-  // Refi cash-out is a distribution too (0 when no refi) — keep equity multiple
-  // and total profit consistent with the IRR, which already counts it.
-  const totalDistributions = cumulativeCF + refiNetProceeds + netSaleProceeds + returnOfOperatingReserve;
-  const totalProfit = totalDistributions - totalEquity;
+
+  // ── P2-15: equity actually invested (best-practice CoC / EM / peak equity) ──
+  // Each operating year's cash flow (annual[y].cash_flow, excludes sale/refi/reserve)
+  // that is NEGATIVE is a capital CALL the investor funds; positive is a
+  // DISTRIBUTION. Total equity invested = equity at close + every call. Peak equity =
+  // the most you are ever net out of pocket (refi cash-out returns capital in its
+  // year). CoC and equity multiple are computed on total invested, and a capital-call
+  // year contributes $0 to the distribution yield (money in, not a negative return).
+  let capitalCalls = 0;
+  let operatingDistributions = 0;
+  let runningOutlay = totalEquity;
+  let peakEquity = totalEquity;
+  for (let y = 0; y < annual.length; y++) {
+    const opcf = annual[y].cash_flow;
+    if (opcf < 0) capitalCalls += -opcf;
+    else operatingDistributions += opcf;
+    let yearReturn = opcf;
+    if (refi && y === refi.year - 1) yearReturn += refiNetProceeds;
+    runningOutlay -= yearReturn;
+    if (runningOutlay > peakEquity) peakEquity = runningOutlay;
+  }
+  const totalEquityInvested = totalEquity + capitalCalls;
+  // Cash returned to equity: positive operating distributions + capital-event
+  // proceeds (refi cash-out, net sale, returned operating reserve).
+  const cashReturned = operatingDistributions + refiNetProceeds + netSaleProceeds + returnOfOperatingReserve;
+  const totalProfit = cashReturned - totalEquityInvested;
 
   // ── Metrics ──
   const year1NOI = annual.length > 0 ? annual[0].noi : 0;
@@ -1572,8 +1600,8 @@ export function calculateUnderwriting(
   const goingInCap = purchase.purchase_price > 0 ? year1NOI / purchase.purchase_price : 0;
   const stabilizedCap = purchase.purchase_price > 0 ? stabilizedNOI / purchase.purchase_price : 0;
 
-  // IRR: cash flows = [-equity, annual CF year 1..N-1, annual CF year N + net
-  // sale proceeds + return of operating reserve]
+  // IRR: XIRR over the dated equity stream — −equity at close, each year's net CF
+  // (negative = capital call), +sale/refi/reserve at exit. Already call-aware.
   const irrFlows: number[] = [-totalEquity];
   for (let y = 0; y < annual.length; y++) {
     if (y === annual.length - 1) {
@@ -1582,16 +1610,18 @@ export function calculateUnderwriting(
       irrFlows.push(annual[y].cash_flow);
     }
   }
-  // Refi cash-out proceeds land in the refi year — a dated distribution (like the
-  // sale proceeds), not folded into operating cash flow.
   if (refi) irrFlows[refi.year] += refiNetProceeds;
   const irr = calculateAnnualXIRR(irrFlows);
 
-  const equityMultiple = totalEquity > 0 ? totalDistributions / totalEquity : 0;
+  // P2-15: equity multiple and average cash-on-cash on TOTAL EQUITY INVESTED.
+  const equityMultiple = totalEquityInvested > 0 ? cashReturned / totalEquityInvested : 0;
   const avgCoC =
-    annual.length > 0
-      ? annual.reduce((s, a) => s + a.cash_on_cash, 0) / annual.length
+    annual.length > 0 && totalEquityInvested > 0
+      ? operatingDistributions / annual.length / totalEquityInvested
       : 0;
+  // Restate each year's pro-forma CoC on total invested too, so the row and the
+  // headline agree (a capital-call year reads negative — money in that year).
+  for (const a of annual) a.cash_on_cash = totalEquityInvested > 0 ? a.cash_flow / totalEquityInvested : 0;
 
   // DSCR
   const year1DS = annual.length > 0 ? annual[0].debt_service : 0;
@@ -1668,6 +1698,8 @@ export function calculateUnderwriting(
     ltv_loan_amount: ltvLoanAmount,
     dscr_loan_amount: null,
     total_equity: totalEquity,
+    total_equity_invested: totalEquityInvested,
+    peak_equity: peakEquity,
     monthly_debt_service: monthlyDS,
     depreciation,
     going_in_cap: goingInCap,
