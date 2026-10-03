@@ -241,6 +241,7 @@ export default async function DealDetailPage({
 
       {/* Comps — market sales + rent comps for this city */}
       <DealCompsCard
+        dealId={deal.id}
         dealCity={deal.city}
         dealState={deal.state}
         askingPrice={deal.asking_price}

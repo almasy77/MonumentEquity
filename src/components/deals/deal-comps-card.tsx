@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, Building2, Home, ExternalLink } from "lucide-react";
+import { BarChart3, Building2, Home, ExternalLink, Pin, PinOff } from "lucide-react";
 import { AddMarketCompDialog } from "@/components/comps/add-market-comp-dialog";
 import { AddRentCompDialog } from "@/components/comps/add-rent-comp-dialog";
 import type { MarketComp, RentComp } from "@/lib/validations";
@@ -33,6 +33,7 @@ function fmtDate(dateStr: string): string {
 }
 
 interface DealCompsCardProps {
+  dealId: string;
   dealCity: string;
   dealState: string;
   askingPrice: number;
@@ -41,9 +42,10 @@ interface DealCompsCardProps {
   dealZip?: string;
 }
 
-export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAddress, dealZip }: DealCompsCardProps) {
+export function DealCompsCard({ dealId, dealCity, dealState, askingPrice, units, dealAddress, dealZip }: DealCompsCardProps) {
   const [tab, setTab] = useState<"market" | "rent" | "crexi">("market");
   const [marketComps, setMarketComps] = useState<WidenedComp[]>([]);
+  const [pinnedComps, setPinnedComps] = useState<MarketComp[]>([]);
   const [rentComps, setRentComps] = useState<RentComp[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,11 +57,13 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
         const q = new URLSearchParams({ city: dealCity, widen: "1" });
         if (dealState) q.set("state", dealState);
         if (dealZip) q.set("zip", dealZip);
-        const [mRes, rRes] = await Promise.all([
+        const [mRes, pRes, rRes] = await Promise.all([
           fetch(`/api/comps?${q.toString()}`),
+          fetch(`/api/deals/${dealId}/comps`),
           fetch(`/api/rent-comps`),
         ]);
         if (mRes.ok) setMarketComps(await mRes.json());
+        if (pRes.ok) setPinnedComps(await pRes.json());
         if (rRes.ok) {
           const all: RentComp[] = await rRes.json();
           setRentComps(all.filter((c) => c.city.toLowerCase() === dealCity.toLowerCase()));
@@ -71,7 +75,41 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
       }
     }
     load();
-  }, [dealCity, dealState, dealZip]);
+  }, [dealId, dealCity, dealState, dealZip]);
+
+  const pinnedIds = new Set(pinnedComps.map((c) => c.id));
+
+  async function pinComp(comp: MarketComp) {
+    setPinnedComps((prev) => (prev.some((c) => c.id === comp.id) ? prev : [...prev, comp]));
+    try {
+      const res = await fetch(`/api/deals/${dealId}/comps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comp_id: comp.id }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setPinnedComps((prev) => prev.filter((c) => c.id !== comp.id)); // revert on failure
+    }
+  }
+
+  async function unpinComp(compId: string) {
+    const prevList = pinnedComps;
+    setPinnedComps((prev) => prev.filter((c) => c.id !== compId));
+    try {
+      const res = await fetch(`/api/deals/${dealId}/comps?comp_id=${encodeURIComponent(compId)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+    } catch {
+      setPinnedComps(prevList); // revert on failure
+    }
+  }
+
+  // Display list: pinned comps first (always shown, even if they wouldn't match the
+  // widening), then the widened comps that aren't already pinned.
+  const displayComps: WidenedComp[] = [
+    ...pinnedComps,
+    ...marketComps.filter((c) => !pinnedIds.has(c.id)),
+  ];
 
   // How many comps came from each widening tier (for the legend).
   const tierCounts = marketComps.reduce(
@@ -79,12 +117,13 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
     {} as Record<CompMatchReason, number>,
   );
 
+  // Averages span the displayed set (pinned + widened), i.e. the comps actually in view.
   const pricePerUnit = units > 0 ? askingPrice / units : 0;
-  const avgCompPPU = marketComps.length > 0
-    ? marketComps.reduce((s, c) => s + c.price_per_unit, 0) / marketComps.length
+  const avgCompPPU = displayComps.length > 0
+    ? displayComps.reduce((s, c) => s + c.price_per_unit, 0) / displayComps.length
     : 0;
-  const avgCapRate = marketComps.filter((c) => c.cap_rate).length > 0
-    ? marketComps.reduce((s, c) => s + (c.cap_rate || 0), 0) / marketComps.filter((c) => c.cap_rate).length
+  const avgCapRate = displayComps.filter((c) => c.cap_rate).length > 0
+    ? displayComps.reduce((s, c) => s + (c.cap_rate || 0), 0) / displayComps.filter((c) => c.cap_rate).length
     : 0;
   const avgRent = rentComps.length > 0
     ? rentComps.reduce((s, c) => s + c.rent, 0) / rentComps.length
@@ -109,7 +148,7 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
             tab === "market" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-300"
           }`}
         >
-          Market Sales ({marketComps.length})
+          Market Sales ({displayComps.length})
         </button>
         <button
           onClick={() => setTab("rent")}
@@ -132,7 +171,7 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
       {loading && <p className="text-sm text-slate-500 text-center py-4">Loading comps...</p>}
 
       {/* Summary bar */}
-      {!loading && tab === "market" && marketComps.length > 0 && (
+      {!loading && tab === "market" && displayComps.length > 0 && (
         <div className="grid grid-cols-3 gap-3 text-xs mb-4">
           <div className="bg-slate-800 rounded p-2">
             <span className="text-slate-500">This Deal $/Unit</span>
@@ -169,7 +208,7 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
       {/* Market comps list */}
       {!loading && tab === "market" && (
         <>
-          {marketComps.length === 0 ? (
+          {displayComps.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-4">
               No market comps in {dealCity}{dealState ? `, ${dealState}` : ""} or nearby yet.
             </p>
@@ -178,6 +217,11 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
               {/* Widening legend — how far out the comp set reaches. */}
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mb-2">
                 <span>Comps near {dealCity}:</span>
+                {pinnedComps.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded border border-amber-600 text-amber-300">
+                    Pinned {pinnedComps.length}
+                  </span>
+                )}
                 {(["city", "zip3", "state"] as CompMatchReason[])
                   .filter((r) => tierCounts[r])
                   .map((r) => (
@@ -187,17 +231,23 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
                   ))}
               </div>
               <div className="space-y-2">
-              {marketComps.map((comp) => (
+              {displayComps.map((comp) => {
+                const isPinned = pinnedIds.has(comp.id);
+                return (
                 <div key={comp.id} className="flex items-start justify-between gap-3 p-2 rounded bg-slate-800/50 hover:bg-slate-800 transition-colors">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 text-sm">
                       <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                       <span className="text-white font-medium truncate">{comp.address}</span>
-                      {comp.match_reason && comp.match_reason !== "city" && (
+                      {isPinned ? (
+                        <Badge variant="outline" className="text-[10px] shrink-0 border-amber-600 text-amber-300">
+                          Pinned
+                        </Badge>
+                      ) : comp.match_reason && comp.match_reason !== "city" ? (
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${MATCH_STYLE[comp.match_reason]}`}>
                           {MATCH_LABEL[comp.match_reason]}
                         </Badge>
-                      )}
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                       <span>{comp.city}, {comp.state}</span>
@@ -206,15 +256,26 @@ export function DealCompsCard({ dealCity, dealState, askingPrice, units, dealAdd
                       <span>{fmtDate(comp.sale_date)}</span>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-blue-400">{fmtPrice(comp.sale_price)}</p>
-                    <p className="text-xs text-slate-400">{fmtPrice(comp.price_per_unit)}/unit</p>
-                    {comp.cap_rate && (
-                      <span className="text-xs text-slate-500">{(comp.cap_rate * 100).toFixed(1)}% cap</span>
-                    )}
+                  <div className="flex items-start gap-2 shrink-0">
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-blue-400">{fmtPrice(comp.sale_price)}</p>
+                      <p className="text-xs text-slate-400">{fmtPrice(comp.price_per_unit)}/unit</p>
+                      {comp.cap_rate && (
+                        <span className="text-xs text-slate-500">{(comp.cap_rate * 100).toFixed(1)}% cap</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => (isPinned ? unpinComp(comp.id) : pinComp(comp))}
+                      title={isPinned ? "Unpin from this deal" : "Pin to this deal"}
+                      className={`mt-0.5 ${isPinned ? "text-amber-400 hover:text-amber-300" : "text-slate-600 hover:text-slate-300"}`}
+                    >
+                      {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                    </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               </div>
             </>
           )}
