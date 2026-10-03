@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Trash2, RefreshCw, Check, Loader2, Plus, X, Download } from "lucide-react";
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
-import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions, RenovationLine } from "@/lib/underwriting";
+import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions, RenovationLine, ReassessmentStep } from "@/lib/underwriting";
+import { defaultAssessmentRatioFor } from "@/lib/property-tax-jurisdictions";
 import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
 import { jurisdictionRulesFor } from "@/lib/property-tax-jurisdictions";
 import { TAX_DEFAULTS } from "@/lib/tax";
@@ -2862,6 +2863,106 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                                       </div>
                                     </div>
                                   )}
+                                  {/* P2-2: explicit multi-step reassessment schedule — an advanced
+                                      OVERRIDE of the scenario bill above. Each step re-marks the bill
+                                      at its effective month; the base bill escalates until the first
+                                      step, and each segment escalates by the tax escalation rate. */}
+                                  {(() => {
+                                    const steps = v2.reassessment_schedule ?? [];
+                                    const state = v2.parcel?.state;
+                                    const setSteps = (next: ReassessmentStep[]) =>
+                                      updateV2({ reassessment_schedule: next.length ? next : undefined });
+                                    const updateStep = (i: number, patch: Partial<ReassessmentStep>) =>
+                                      setSteps(steps.map((s, n) => (n === i ? { ...s, ...patch } : s)));
+                                    const addStep = () =>
+                                      setSteps([
+                                        ...steps,
+                                        { effective_month: steps.length ? (steps[steps.length - 1].effective_month + 12) : 12, basis: "purchase_price" },
+                                      ]);
+                                    const removeStep = (i: number) => setSteps(steps.filter((_, n) => n !== i));
+                                    // Live annual preview mirroring resolveStepAnnual (engine).
+                                    const previewAnnual = (s: ReassessmentStep): number => {
+                                      if (s.basis === "manual") return Math.max(0, s.manual_amount ?? 0);
+                                      const value = s.basis === "market_value" ? (s.market_value ?? p.purchase_price) : p.purchase_price;
+                                      const ratio = s.assessment_ratio ?? defaultAssessmentRatioFor(state) ?? 1;
+                                      return Math.max(0, value * ratio * ((s.mill_rate ?? 0) / 1000));
+                                    };
+                                    return (
+                                      <div className="space-y-2 rounded-md border border-amber-900/50 bg-amber-950/10 p-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[11px] font-medium text-amber-300/90">Explicit reassessment schedule (advanced)</span>
+                                          <button type="button" onClick={addStep} className="text-[11px] text-blue-400 hover:text-blue-300">+ add step</button>
+                                        </div>
+                                        {steps.length === 0 ? (
+                                          <p className="text-[10px] text-slate-500">
+                                            Optional. Add dated steps to OVERRIDE the scenario bill above with an explicit path (e.g. reassessed at year 2, again at a later appeal). Leave empty to use the scenario logic.
+                                          </p>
+                                        ) : (
+                                          <div className="space-y-2">
+                                            {steps.map((s, i) => (
+                                              <div key={i} className="rounded border border-slate-800 bg-slate-900/40 p-2 space-y-2">
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-400">Effective Month</Label>
+                                                    <Input
+                                                      type="number" inputMode="numeric" min={1}
+                                                      value={s.effective_month + 1}
+                                                      onChange={(ev) => { const n = parseInt(ev.target.value, 10); updateStep(i, { effective_month: isNaN(n) ? 0 : Math.max(0, n - 1) }); }}
+                                                      className="bg-slate-800 border-slate-700 text-white text-xs h-8"
+                                                    />
+                                                  </div>
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-400">Basis</Label>
+                                                    <select
+                                                      value={s.basis}
+                                                      onChange={(ev) => updateStep(i, { basis: ev.target.value as ReassessmentStep["basis"] })}
+                                                      className="bg-slate-800 border border-slate-700 text-white text-xs h-8 rounded px-1 w-full"
+                                                    >
+                                                      <option value="purchase_price">Purchase price</option>
+                                                      <option value="market_value">Market value</option>
+                                                      <option value="manual">Manual $</option>
+                                                    </select>
+                                                  </div>
+                                                  {s.basis === "manual" ? (
+                                                    <div>
+                                                      <Label className="text-[10px] text-slate-400">Annual Bill</Label>
+                                                      <BareCurrencyInput value={s.manual_amount ?? 0} onChange={(v) => updateStep(i, { manual_amount: v || undefined })} />
+                                                    </div>
+                                                  ) : (
+                                                    <>
+                                                      {s.basis === "market_value" && (
+                                                        <div>
+                                                          <Label className="text-[10px] text-slate-400">Market Value</Label>
+                                                          <BareCurrencyInput value={s.market_value ?? 0} onChange={(v) => updateStep(i, { market_value: v || undefined })} />
+                                                        </div>
+                                                      )}
+                                                      <PctField label="Assess. Ratio" value={s.assessment_ratio ?? (defaultAssessmentRatioFor(state) ?? 1)} onChange={(v) => updateStep(i, { assessment_ratio: v })} />
+                                                      <div>
+                                                        <Label className="text-[10px] text-slate-400">Mill Rate</Label>
+                                                        <Input
+                                                          type="number" inputMode="decimal"
+                                                          value={s.mill_rate ?? ""}
+                                                          onChange={(ev) => { const n = parseFloat(ev.target.value); updateStep(i, { mill_rate: isNaN(n) ? undefined : n }); }}
+                                                          placeholder="e.g. 90"
+                                                          className="bg-slate-800 border-slate-700 text-white text-xs h-8"
+                                                        />
+                                                      </div>
+                                                    </>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                  <span className="text-[10px] text-slate-500">
+                                                    From month {s.effective_month + 1}: {fmtCurrency(previewAnnual(s))}/yr, then +{Number(((e.tax_escalation_rate ?? 0) * 100).toFixed(2))}%/yr
+                                                  </span>
+                                                  <button type="button" onClick={() => removeStep(i)} className="text-slate-600 hover:text-red-400"><X className="h-3 w-3" /></button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                   <p className="text-[10px] text-slate-500">
                                     Bills are calendar-anchored to the closing date. In sale-price (Ohio-style) jurisdictions the bill reassesses toward the purchase price and is shaped per HB 920 — only ~12.5% floats with valuation, the voted remainder is dollar-flat plus levy drift. In periodic-revaluation states the assessed value is held between revaluations and the bill grows only by your tax escalation rate ({`${Number(((e.tax_escalation_rate ?? 0) * 100).toFixed(2))}%`}), stepping to the estimated value at the next reappraisal. All scenario vectors export to the workbook.
                                   </p>
