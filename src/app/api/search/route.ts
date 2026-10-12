@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, scanKeys } from "@/lib/db";
+import { getRedis, scanDealKeys } from "@/lib/db";
 import type { Deal, Contact } from "@/lib/validations";
 import { STAGE_LABELS, CONTACT_TYPE_LABELS } from "@/lib/constants";
 
@@ -28,10 +28,10 @@ export async function GET(req: NextRequest) {
   // Search deals. SCAN the full deal:* keyspace rather than reading deals:active,
   // so ARCHIVED (dead/passed) deals are searchable too — they're removed from
   // deals:active (and every stage index) when killed, so an index read can never
-  // reach them. deal:<id> keys are always full deal records (no sub-keys); the
-  // /api/deals/inactive route relies on this same scan. Active hits rank above
+  // reach them. scanDealKeys() drops sub-keys such as deal:<id>:comps (a SET), which
+  // a pipelined GET would reject with WRONGTYPE; /api/deals/inactive uses the same scan. Active hits rank above
   // archived ones, which are tagged so they're visually distinct in the results.
-  const dealKeys = await scanKeys("deal:*");
+  const dealKeys = await scanDealKeys();
   if (dealKeys.length > 0) {
     const pipeline = redis.pipeline();
     for (const key of dealKeys) pipeline.get(key);

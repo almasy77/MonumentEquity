@@ -100,3 +100,23 @@ export async function scanKeys(pattern: string, count: number = 250): Promise<st
   } while (cursor !== "0");
   return keys;
 }
+
+/**
+ * True for a top-level entity key (`deal:<id>`), false for a sub-key hanging off
+ * one (`deal:<id>:comps`, a Redis SET of pinned comp ids). A `deal:*` SCAN matches
+ * both, and a pipelined GET against the SET fails the whole batch with WRONGTYPE,
+ * so every scan-then-GET over an entity keyspace must filter with this first.
+ * Entity ids are UUIDs and never contain a colon.
+ */
+export function isEntityKey(key: string, prefix: string): boolean {
+  const head = `${prefix}:`;
+  if (!key.startsWith(head)) return false;
+  const id = key.slice(head.length);
+  return id.length > 0 && !id.includes(":");
+}
+
+/** SCAN every `deal:<id>` record key (active and archived), excluding sub-keys. */
+export async function scanDealKeys(): Promise<string[]> {
+  const keys = await scanKeys("deal:*");
+  return keys.filter((k) => isEntityKey(k, "deal"));
+}
