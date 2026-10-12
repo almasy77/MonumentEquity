@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, scanKeys } from "@/lib/db";
+import { getRedis, scanDealKeys } from "@/lib/db";
 import type { Deal } from "@/lib/validations";
 
 // GET /api/deals/inactive — list dead/passed (archived) deals.
@@ -17,7 +17,7 @@ export async function GET() {
 
   try {
     const redis = getRedis();
-    const keys = await scanKeys("deal:*");
+    const keys = await scanDealKeys();
     if (keys.length === 0) return NextResponse.json([]);
 
     const pipeline = redis.pipeline();

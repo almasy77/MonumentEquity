@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis } from "@/lib/db";
+import { getRedis, isEntityKey } from "@/lib/db";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import { calculateUnderwriting } from "@/lib/underwriting";
 import {
@@ -69,14 +69,19 @@ function atStageOrAbove(stage: string | undefined, minStageIndex: number): boole
   return idx >= 0 && idx >= minStageIndex;
 }
 
-/** Scan every key matching a pattern and GET it, in batches. */
-async function scanAll<T>(match: string): Promise<T[]> {
+/**
+ * Scan every `<prefix>:<id>` record and GET it, in batches. Sub-keys such as
+ * `deal:<id>:comps` (a SET) are skipped: a pipelined GET against one fails the
+ * whole batch with WRONGTYPE.
+ */
+async function scanAll<T>(prefix: string): Promise<T[]> {
   const redis = getRedis();
   const out: T[] = [];
   let cursor = "0";
   do {
-    const [next, keys] = await redis.scan(cursor, { match, count: 200 });
+    const [next, scanned] = await redis.scan(cursor, { match: `${prefix}:*`, count: 200 });
     cursor = String(next);
+    const keys = scanned.filter((k) => isEntityKey(k, prefix));
     if (keys.length === 0) continue;
     const pipe = redis.pipeline();
     for (const k of keys) pipe.get(k);
@@ -91,7 +96,7 @@ async function scanAll<T>(match: string): Promise<T[]> {
  * candidates (scenarios whose stored engine_version lags the current engine).
  */
 async function buildCandidates(opts: { minStageIndex: number; includeDead: boolean }) {
-  const deals = await scanAll<Deal>("deal:*");
+  const deals = await scanAll<Deal>("deal");
   const eligibleDeals = new Map<string, Deal>();
   for (const d of deals) {
     const dd = d as unknown as { id?: string; stage?: string; status?: string };
@@ -101,7 +106,7 @@ async function buildCandidates(opts: { minStageIndex: number; includeDead: boole
     eligibleDeals.set(dd.id, d);
   }
 
-  const scenarios = await scanAll<Scenario>("scenario:*");
+  const scenarios = await scanAll<Scenario>("scenario");
   const candidates: { scenario: Scenario; deal: Deal; row: RestampRow }[] = [];
   let scenariosUnderEligibleDeals = 0;
 

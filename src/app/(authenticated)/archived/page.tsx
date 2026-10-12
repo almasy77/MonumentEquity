@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { getRedis, scanKeys } from "@/lib/db";
+import { getRedis, scanDealKeys } from "@/lib/db";
 import { Archive } from "lucide-react";
 import { ArchivedDealsList } from "@/components/deals/archived-deals-list";
 import type { Deal } from "@/lib/validations";
@@ -7,7 +7,7 @@ import type { Deal } from "@/lib/validations";
 async function getInactiveDeals(): Promise<Deal[]> {
   try {
     const redis = getRedis();
-    const keys = await scanKeys("deal:*");
+    const keys = await scanDealKeys();
     if (keys.length === 0) return [];
 
     const pipeline = redis.pipeline();
