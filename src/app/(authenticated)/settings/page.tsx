@@ -14,6 +14,7 @@ import { ChecklistTemplateViewer } from "@/components/settings/checklist-templat
 import { TeamManagement } from "@/components/settings/team-management";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { StorageCleanupButton } from "@/components/settings/storage-cleanup-button";
+import { ApiTokens } from "@/components/settings/api-tokens";
 import { getEntity } from "@/lib/db";
 import type { User } from "@/lib/validations";
 
@@ -134,6 +135,20 @@ export default async function SettingsPage() {
     </Card>
   );
 
+  const tokensCard = (
+    <Card className="bg-slate-900 border-slate-800">
+      <CardHeader>
+        <CardTitle className="text-white">API Tokens</CardTitle>
+        <CardDescription className="text-slate-400">
+          Machine access for agents and scripts, with VA permissions
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ApiTokens />
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
@@ -146,7 +161,7 @@ export default async function SettingsPage() {
       <SettingsTabs
         generalContent={generalContent}
         assumptionsContent={assumptionsContent}
-        teamContent={teamContent}
+        teamContent={<div className="space-y-6">{teamContent}{tokensCard}</div>}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor, actorDetails } from "@/lib/auth-actor";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
@@ -7,7 +7,7 @@ import type { Deal } from "@/lib/validations";
 
 // GET /api/deals — list all active deals (with optional pagination)
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/deals — create a new deal
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
     const deal: Deal = {
       id,
       user_id: session.user.id,
-      stage: body.stage || "lead",
+      // VAs (and API tokens, which are always VA) cannot pick a stage: the VA rule
+      // against stage changes would otherwise be bypassable at creation time.
+      stage: session.user.role === "va" ? "lead" : body.stage || "lead",
       status: "active",
       address: body.address,
       city: body.city,
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest) {
       action: "deal_created",
       entity_type: "deal",
       entity_id: id,
-      details: { address: deal.address, units: deal.units, asking_price: deal.asking_price },
+      details: { ...actorDetails(session), address: deal.address, units: deal.units, asking_price: deal.asking_price },
       user_id: session.user.id,
     });
 

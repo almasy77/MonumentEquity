@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis, addToIndex } from "@/lib/db";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Task } from "@/lib/validations";
 
 // GET /api/tasks?deal_id=xxx — list tasks (optionally filtered by deal)
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/tasks — create a task
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

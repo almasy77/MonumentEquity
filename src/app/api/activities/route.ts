@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getActivitiesForDeal } from "@/lib/activity";
 
 // GET /api/activities?deal_id=xxx
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
