@@ -20,12 +20,20 @@ export interface Actor {
 }
 
 export async function getActor(): Promise<Actor | null> {
-  const raw = bearerToken((await headers()).get("authorization"));
-  if (raw) {
-    // A bearer token was presented: it must be valid. Never fall back to the
-    // session cookie, so a bad token cannot ride on a browser login.
-    const rec = await resolveApiToken(getRedis() as unknown as TokenStore, raw);
+  const authorization = (await headers()).get("authorization");
+  if (authorization) {
+    // Any Authorization header means "authenticate me with this", so it must be a
+    // valid token. Never fall back to the session cookie: a malformed, truncated
+    // or revoked token must not ride on a browser login.
+    const raw = bearerToken(authorization);
+    if (!raw) return null;
+    const redis = getRedis();
+    const rec = await resolveApiToken(redis as unknown as TokenStore, raw);
     if (!rec) return null;
+    // The token acts on behalf of the admin who created it; if that user was
+    // removed or demoted, the token dies with them.
+    const owner = await redis.get<{ role?: string }>(`user:${rec.user_id}`);
+    if (owner?.role !== "admin") return null;
     return {
       user: { id: rec.user_id, role: TOKEN_ROLE, email: "", name: `token:${rec.name}` },
       via: "token",

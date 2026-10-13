@@ -47,7 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const deal: Deal = {
     id: dealId,
     user_id: session.user.id,
-    stage: overrides.stage || "lead",
+    // VAs cannot pick a stage (same rule as POST /api/deals).
+    stage: session.user.role === "va" ? "lead" : overrides.stage || "lead",
     status: "active",
     address,
     city,

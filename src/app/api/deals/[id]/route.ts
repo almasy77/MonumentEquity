@@ -189,6 +189,18 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
     await redis.set(`deal:${id}`, JSON.stringify(updated));
 
+    // Agent writes are otherwise indistinguishable from the owning admin's edits.
+    if (session.via === "token") {
+      await logActivity({
+        deal_id: id,
+        action: "deal_updated",
+        entity_type: "deal",
+        entity_id: id,
+        details: { ...actorDetails(session), fields: Object.keys(body).slice(0, 25) },
+        user_id: session.user.id,
+      });
+    }
+
     return NextResponse.json(updated);
   } catch (err) {
     console.error("PUT /api/deals/[id] error:", err);

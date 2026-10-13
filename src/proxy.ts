@@ -2,22 +2,27 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { getRedis } from "@/lib/db";
-import { bearerToken } from "@/lib/api-tokens";
+import { bearerToken, isTokenActive, tokenRouteAllowed, type TokenStore } from "@/lib/api-tokens";
 
-// API tokens: 120 requests per minute per token (sliding window).
+// API tokens: 120 requests/min per token, plus 300/min per IP for any request that
+// presents an Authorization header (so random fake tokens cannot run up Redis).
 let tokenLimiter: Ratelimit | null = null;
-function getTokenLimiter(): Ratelimit | null {
-  if (tokenLimiter) return tokenLimiter;
+let ipLimiter: Ratelimit | null = null;
+function getLimiters(): { token: Ratelimit; ip: Ratelimit } | null {
+  if (tokenLimiter && ipLimiter) return { token: tokenLimiter, ip: ipLimiter };
   try {
-    tokenLimiter = new Ratelimit({
-      redis: getRedis(),
-      limiter: Ratelimit.slidingWindow(120, "1 m"),
-      prefix: "ratelimit:api_token",
-    });
+    const redis = getRedis();
+    tokenLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(120, "1 m"), prefix: "ratelimit:api_token" });
+    ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(300, "1 m"), prefix: "ratelimit:api_token_ip" });
+    return { token: tokenLimiter, ip: ipLimiter };
   } catch {
-    tokenLimiter = null; // Redis not configured (local dev without env): skip limiting
+    return null; // Redis not configured (local dev without env): skip limiting
   }
-  return tokenLimiter;
+}
+
+function tooMany(reset: number) {
+  const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+  return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": String(retryAfter) } });
 }
 
 async function tokenFingerprint(raw: string): Promise<string> {
@@ -46,24 +51,43 @@ export default auth(async (req) => {
     return NextResponse.next();
   }
 
-  // API token requests: rate-limit here, then let the route authenticate the
-  // token (routes that do not call getActor() still return 401). Never redirect
-  // a machine caller to the login page.
-  const rawToken = pathname.startsWith("/api/") ? bearerToken(req.headers.get("authorization")) : null;
-  if (rawToken) {
-    const limiter = getTokenLimiter();
-    if (limiter) {
+  // Machine callers: any /api request carrying an Authorization header is judged
+  // here as a token request. It never falls through to the session check, and it
+  // only reaches the allowlisted handlers (which re-verify the token themselves).
+  const authorization = pathname.startsWith("/api/") ? req.headers.get("authorization") : null;
+  if (authorization) {
+    const rawToken = bearerToken(authorization);
+    if (!rawToken) return NextResponse.json({ error: "Invalid authorization header" }, { status: 401 });
+
+    const limiters = getLimiters();
+    if (limiters) {
       try {
-        const { success, reset } = await limiter.limit(await tokenFingerprint(rawToken));
-        if (!success) {
-          const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
-          return NextResponse.json(
-            { error: "Rate limit exceeded" },
-            { status: 429, headers: { "Retry-After": String(retryAfter) } }
-          );
-        }
+        const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        const byIp = await limiters.ip.limit(ip);
+        if (!byIp.success) return tooMany(byIp.reset);
       } catch {
         // Limiter unavailable: fail open rather than block the API.
+      }
+    }
+
+    if (!tokenRouteAllowed(pathname, req.method)) {
+      return NextResponse.json({ error: "This endpoint does not accept API tokens" }, { status: 403 });
+    }
+
+    let active = false;
+    try {
+      active = await isTokenActive(getRedis() as unknown as TokenStore, rawToken);
+    } catch {
+      active = false; // cannot verify: reject
+    }
+    if (!active) return NextResponse.json({ error: "Invalid or revoked token" }, { status: 401 });
+
+    if (limiters) {
+      try {
+        const byToken = await limiters.token.limit(await tokenFingerprint(rawToken));
+        if (!byToken.success) return tooMany(byToken.reset);
+      } catch {
+        // fail open
       }
     }
     return NextResponse.next();

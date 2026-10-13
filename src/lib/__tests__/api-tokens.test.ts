@@ -3,10 +3,12 @@ import {
   bearerToken,
   createApiToken,
   hashToken,
+  isTokenActive,
   listApiTokens,
   resolveApiToken,
   revokeApiToken,
   tokenKey,
+  tokenRouteAllowed,
   TOKEN_PREFIX,
   type TokenStore,
 } from "../api-tokens";
@@ -98,5 +100,46 @@ describe("api tokens", () => {
 
   it("requires a token name", async () => {
     await expect(createApiToken(memStore(), { name: "  ", userId: "u1" })).rejects.toThrow();
+  });
+
+  it("a request in flight cannot undo a revoke (review finding #1)", async () => {
+    const store = memStore();
+    const { raw, record } = await createApiToken(store, { name: "t", userId: "u1" });
+    const recordKey = tokenKey(hashToken(raw));
+    const before = store.kv.get(recordKey);
+    // Resolving never rewrites the record, so there is no stale copy to write back.
+    await resolveApiToken(store, raw, new Date("2026-10-13T12:00:00Z"));
+    expect(store.kv.get(recordKey)).toBe(before);
+    await revokeApiToken(store, record.id);
+    await resolveApiToken(store, raw, new Date("2026-10-13T12:05:00Z"));
+    expect(await resolveApiToken(store, raw)).toBeNull();
+    expect(await isTokenActive(store, raw)).toBe(false);
+  });
+
+  it("isTokenActive accepts live tokens only", async () => {
+    const store = memStore();
+    const { raw } = await createApiToken(store, { name: "t", userId: "u1" });
+    expect(await isTokenActive(store, raw)).toBe(true);
+    expect(await isTokenActive(store, "me_unknown")).toBe(false);
+    expect(await isTokenActive(store, "nope")).toBe(false);
+  });
+
+  it("allowlists only the handlers that accept tokens", () => {
+    const id = "0a7fee8a-f879-419a-b94c-b6c0702efaa8";
+    expect(tokenRouteAllowed("/api/deals", "GET")).toBe(true);
+    expect(tokenRouteAllowed("/api/deals", "POST")).toBe(true);
+    expect(tokenRouteAllowed(`/api/deals/${id}`, "PUT")).toBe(true);
+    expect(tokenRouteAllowed(`/api/deals/${id}/`, "GET")).toBe(true);
+    expect(tokenRouteAllowed(`/api/deals/${id}`, "DELETE")).toBe(false);
+    expect(tokenRouteAllowed(`/api/scenarios/${id}`, "DELETE")).toBe(false);
+    expect(tokenRouteAllowed(`/api/contacts/${id}`, "DELETE")).toBe(false);
+    expect(tokenRouteAllowed("/api/deals/bulk-import", "POST")).toBe(false);
+    expect(tokenRouteAllowed(`/api/export/${id}`, "GET")).toBe(false);
+    expect(tokenRouteAllowed("/api/tokens", "POST")).toBe(false);
+    expect(tokenRouteAllowed("/api/settings", "GET")).toBe(false);
+    expect(tokenRouteAllowed("/api/team", "GET")).toBe(false);
+    expect(tokenRouteAllowed("/api/share", "POST")).toBe(false);
+    expect(tokenRouteAllowed(`/api/leads/${id}/approve`, "POST")).toBe(false);
+    expect(tokenRouteAllowed("/api/search", "GET")).toBe(true);
   });
 });
