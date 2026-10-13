@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis, scanDealKeys } from "@/lib/db";
 import type { Deal } from "@/lib/validations";
 
@@ -10,7 +10,7 @@ import type { Deal } from "@/lib/validations";
 // deal:* keyspace and filter by status — this reaches every archived deal,
 // including ones killed before any inactive index existed.
 export async function GET() {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

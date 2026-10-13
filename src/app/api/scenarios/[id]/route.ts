@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { getActor, actorDetails } from "@/lib/auth-actor";
 import { getRedis, removeFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
@@ -18,7 +19,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/scenarios/[id] — get scenario with full underwriting result
 export async function GET(_req: NextRequest, ctx: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -93,7 +94,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 // PUT /api/scenarios/[id] — update scenario assumptions and recalculate
 export async function PUT(req: NextRequest, ctx: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -207,7 +208,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       action: "scenario_updated",
       entity_type: "scenario",
       entity_id: id,
-      details: { name: updated.name, version: updated.version },
+      details: { ...actorDetails(session), name: updated.name, version: updated.version },
       user_id: session.user.id,
     });
 

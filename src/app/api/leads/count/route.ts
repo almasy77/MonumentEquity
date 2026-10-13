@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis } from "@/lib/db";
 
 // GET /api/leads/count — number of pending listings awaiting review.
 export async function GET() {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

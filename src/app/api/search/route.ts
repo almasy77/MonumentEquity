@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis, scanDealKeys } from "@/lib/db";
 import type { Deal, Contact } from "@/lib/validations";
 import { STAGE_LABELS, CONTACT_TYPE_LABELS } from "@/lib/constants";
@@ -14,7 +14,7 @@ function getContactDisplayName(contact: Contact): string {
 type SearchResult = { type: string; id: string; title: string; subtitle: string; archived?: boolean };
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

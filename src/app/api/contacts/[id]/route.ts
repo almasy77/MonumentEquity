@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis, removeFromIndex, addToIndex } from "@/lib/db";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
 import type { Contact } from "@/lib/validations";
@@ -8,7 +9,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/contacts/[id]
 export async function GET(_req: NextRequest, context: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -30,7 +31,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
 // PUT /api/contacts/[id]
 export async function PUT(req: NextRequest, context: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

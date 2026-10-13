@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { getActor, actorDetails } from "@/lib/auth-actor";
 import { getRedis, addToIndex, removeFromIndex, getFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
@@ -12,7 +13,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/deals/[id]
 export async function GET(_req: NextRequest, context: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -34,7 +35,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
 // PUT /api/deals/[id]
 export async function PUT(req: NextRequest, context: RouteContext) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -127,7 +128,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         action: "stage_changed",
         entity_type: "deal",
         entity_id: id,
-        details: {
+        details: { ...actorDetails(session),
           old_stage: oldStage,
           new_stage: newStage,
           old_stage_label: STAGE_LABELS[oldStage],
@@ -153,7 +154,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         action: "status_changed",
         entity_type: "deal",
         entity_id: id,
-        details: {
+        details: { ...actorDetails(session),
           old_status: existing.status,
           new_status: body.status,
           reason: body.kill_reason || body.pass_reason,

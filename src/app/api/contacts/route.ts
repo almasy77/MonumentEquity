@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor } from "@/lib/auth-actor";
 import { getRedis, addToIndex } from "@/lib/db";
 import { safeJson, isErrorResponse, sanitizeKeySegment } from "@/lib/api-helpers";
 import type { Contact } from "@/lib/validations";
@@ -13,7 +13,7 @@ function buildDisplayName(body: Record<string, unknown>): string {
 
 // GET /api/contacts
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/contacts
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getActor, actorDetails } from "@/lib/auth-actor";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
@@ -20,7 +20,7 @@ const SCENARIO_TYPE_PRESETS: Record<string, { rent_growth_rate?: number; tax_esc
 
 // GET /api/scenarios?deal_id=xxx — list scenarios for a deal
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/scenarios — create a new scenario
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getActor();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
         action: "scenario_created",
         entity_type: "scenario",
         entity_id: id,
-        details: { name: cloned.name, type: cloned.type, cloned_from: source.name },
+        details: { ...actorDetails(session), name: cloned.name, type: cloned.type, cloned_from: source.name },
         user_id: session.user.id,
       });
 
@@ -288,7 +288,7 @@ export async function POST(req: NextRequest) {
       action: "scenario_created",
       entity_type: "scenario",
       entity_id: id,
-      details: { name: scenario.name, type: scenario.type },
+      details: { ...actorDetails(session), name: scenario.name, type: scenario.type },
       user_id: session.user.id,
     });
 
