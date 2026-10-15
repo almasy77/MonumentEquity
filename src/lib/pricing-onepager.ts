@@ -1,5 +1,5 @@
 import type { Deal, Scenario } from "./validations";
-import { calculateUnderwriting } from "./underwriting";
+import { calculateUnderwriting, currentGrossScheduledRentAnnual } from "./underwriting";
 import { scenarioToInputs } from "./scenario-inputs";
 import { computePricingViews, type PricingViewInputs } from "./pricing-views";
 
@@ -25,7 +25,8 @@ function yearsSince(iso?: string): number | undefined {
 
 export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
   const d = deal as unknown as Record<string, number | string | undefined>;
-  const result = calculateUnderwriting(scenarioToInputs(scenario));
+  const inputs = scenarioToInputs(scenario);
+  const result = calculateUnderwriting(inputs);
   const a0 = result.annual[0];
   const aN = result.annual[result.annual.length - 1];
   const purchase = (scenario.purchase_assumptions ?? {}) as Record<string, number | undefined>;
@@ -40,7 +41,8 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
       assessedValue: d.assessed_value as number | undefined,
       year1NOI: a0?.noi,
       stabilizedNOI: aN?.noi,
-      grossRentAnnual: a0?.gpr,
+      // GRM uses CURRENT in-place gross rent, not the pro-forma (market/renovated) gpr.
+      grossRentAnnual: currentGrossScheduledRentAnnual(inputs.revenue.unit_mix),
       askingPrice: deal.asking_price,
       offerPrice: offer,
     },

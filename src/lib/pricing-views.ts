@@ -29,7 +29,7 @@ export interface PricingViewContext {
   // Model outputs
   year1NOI?: number;
   stabilizedNOI?: number;
-  grossRentAnnual?: number;
+  grossRentAnnual?: number; // CURRENT in-place gross scheduled rent (annual) — GRM denominator (not market/renovated)
   // Reference prices
   askingPrice?: number;
   offerPrice?: number; // the scenario's current purchase/bid price
@@ -131,7 +131,7 @@ export function computePricingViews(
   // ── Gross rent multiplier ──
   rows.push(
     positive(inputs.grm) && positive(ctx.grossRentAnnual)
-      ? row("grm", "Gross rent multiplier", inputs.grm! * ctx.grossRentAnnual!, `${inputs.grm!.toFixed(2)}× × ${usd(ctx.grossRentAnnual!)} gross rent`)
+      ? row("grm", "Gross rent multiplier", inputs.grm! * ctx.grossRentAnnual!, `${inputs.grm!.toFixed(2)}× × ${usd(ctx.grossRentAnnual!)} current gross rent`)
       : row("grm", "Gross rent multiplier", null, "GRM × gross rent", "enter a market GRM"),
   );
 

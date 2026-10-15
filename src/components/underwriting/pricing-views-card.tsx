@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { Deal, Scenario } from "@/lib/validations";
-import type { UnderwritingResult } from "@/lib/underwriting";
+import { currentGrossScheduledRentAnnual, type UnderwritingResult } from "@/lib/underwriting";
 import { computePricingViews, type PricingViewInputs } from "@/lib/pricing-views";
 import { solvePriceForIRR } from "@/lib/price-solve";
 import { scenarioToInputs } from "@/lib/scenario-inputs";
@@ -100,7 +100,8 @@ export function PricingViewsCard({
         assessedValue: dealRec.assessed_value as number | undefined,
         year1NOI: a0?.noi,
         stabilizedNOI: aN?.noi,
-        grossRentAnnual: a0?.gpr,
+        // GRM uses CURRENT in-place gross rent, not the pro-forma (market/renovated) gpr.
+        grossRentAnnual: currentGrossScheduledRentAnnual(scenarioToInputs(scenario).revenue.unit_mix),
         askingPrice: deal.asking_price,
         offerPrice: purchase.bid_price || purchase.loi_amount || purchase.purchase_price,
       },
