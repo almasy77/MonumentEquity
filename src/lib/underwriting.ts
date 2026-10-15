@@ -2866,6 +2866,27 @@ export function countRenovateFlags(unitMix: UnitMix[]): number {
 }
 
 /**
+ * Current in-place gross scheduled rent (annual) from the rent roll — the CURRENT
+ * contract/going rents, NOT the market or renovated pro-forma rents and independent of
+ * the pro-forma rent-basis dropdown. This is the correct denominator for a Gross Rent
+ * Multiplier valuation (GRM comps are struck on actual in-place rents). Gross SCHEDULED:
+ * a vacant unit is valued at its row's current going rate rather than $0, so momentary
+ * vacancy does not understate the figure.
+ */
+export function currentGrossScheduledRentAnnual(unitMix: UnitMix[]): number {
+  let monthly = 0;
+  for (const row of unitMix) {
+    const details = row.units ?? [];
+    if (details.length > 0) {
+      for (const u of details) monthly += (u.current_rent ?? 0) > 0 ? (u.current_rent as number) : row.current_rent;
+    } else {
+      monthly += row.count * row.current_rent;
+    }
+  }
+  return monthly * 12;
+}
+
+/**
  * P2-14: when the rent roll carries explicit per-unit `renovate` flags, collapse the
  * renovation program to a SINGLE line of `flaggedCount` units at the primary line's
  * cost and schedule. Both the cost pacing (calculateMonthCapexBreakdown) and the
