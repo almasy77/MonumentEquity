@@ -1235,6 +1235,9 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
     ? (year1DebtService + year1Opex) / 12
     : 0;
   const orAuto = Math.round(orMonths * orMonthlyCarry);
+  // The reserve the engine actually uses: in auto mode it derives orAuto from year-1
+  // carry (not the stored capex_reserve), so the uses-of-funds display must match.
+  const effectiveReserve = orMode === "auto" ? orAuto : (p.capex_reserve || 0);
   useEffect(() => {
     if (orMode === "auto" && orMonthlyCarry > 0 && Math.abs((p.capex_reserve || 0) - orAuto) >= 1) {
       setP((prev) => ({ ...prev, capex_reserve: orAuto }));
@@ -1928,8 +1931,8 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                 {/* Totals row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-slate-700 pt-3">
                   <ReadOnlyField label="Total Closing Costs" value={fmtCurrency(closingCosts)} />
-                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) + (p.cost_seg_study_cost || 0))} />
-                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + (p.capex_reserve || 0) + (p.cost_seg_study_cost || 0) - loanAmount)} />
+                  <ReadOnlyField label="Total Cost" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + effectiveReserve + (p.cost_seg_study_cost || 0))} />
+                  <ReadOnlyField label="Total Equity Required" value={fmtCurrency(p.purchase_price + closingCosts + originationFee + effectiveReserve + (p.cost_seg_study_cost || 0) - loanAmount)} />
                 </div>
               </div>
             );
