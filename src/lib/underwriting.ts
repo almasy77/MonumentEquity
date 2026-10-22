@@ -1189,7 +1189,10 @@ export function calculateUnderwriting(
 
   // ── Purchase & Financing ──
   const closingCosts = computeClosingCosts(purchase);
-  const capexReserve = purchase.capex_reserve || 0;
+  // Operating reserve funded at closing. In "auto" mode this is re-derived after the
+  // annual summary from year-1 carry (see resolveOperatingReserve), so the value here
+  // is provisional and only seeds the per-period display metrics inside the loop.
+  let capexReserve = purchase.capex_reserve || 0;
   // Cost-seg study fee (spec Part 1): a one-time cash outflow at closing —
   // uses-of-funds only. Deliberately NOT in opex/NOI/cap/DSCR. Defaults to 0
   // when unset so deals without a cost-seg study are unaffected.
@@ -1197,8 +1200,8 @@ export function calculateUnderwriting(
   const ltvLoanAmount = purchase.purchase_price * financing.ltv;
   const loanAmount = _resize?.loanOverride ?? ltvLoanAmount;
   const originationFee = loanAmount * financing.origination_fee_rate;
-  const totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve + costSegStudyCost;
-  const totalEquity = totalCost - loanAmount;
+  let totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve + costSegStudyCost;
+  let totalEquity = totalCost - loanAmount;
 
   // Monthly debt service calculation
   const monthlyRate = financing.interest_rate / 12;
@@ -1634,6 +1637,24 @@ export function calculateUnderwriting(
   const loanBalance = baseLoanBalance + holdbackBalance;
 
   const netSaleProceeds = exitValue - sellingCosts - loanBalance;
+
+  // Auto-size the operating reserve now that year-1 carry is known (debt service +
+  // operating expenses from annual[0]). Derived here so equity and IRR are a pure
+  // function of the inputs, not of whether the UI had synced a value into capex_reserve.
+  // Manual mode is unchanged (byte-identical: capexReserve stays the entered value).
+  if (purchase.operating_reserve_mode === "auto") {
+    capexReserve = resolveOperatingReserve(
+      purchase,
+      annual[0]?.debt_service ?? 0,
+      annual[0]?.total_opex ?? 0,
+    );
+    totalCost = purchase.purchase_price + closingCosts + originationFee + capexReserve + costSegStudyCost;
+    totalEquity = totalCost - loanAmount;
+    // Keep the per-month cash-on-cash display consistent with the resolved equity
+    // (annual cash-on-cash is rewritten below on total equity invested, P2-15).
+    for (const r of monthly) r.cash_on_cash = totalEquity > 0 ? (r.cash_flow * 12) / totalEquity : 0;
+  }
+
   // Return of the operating reserve at exit (operating-reserve-return spec):
   // the reserve funded at closing is recoverable cash, so the unspent balance
   // (full amount in the base case, optionally grown by a yield) comes back to
@@ -2887,6 +2908,25 @@ export function currentGrossScheduledRentAnnual(unitMix: UnitMix[]): number {
 }
 
 /**
+ * The operating reserve funded at closing. In "auto" mode it is sized to
+ * `operating_reserve_months` of year-1 carry (debt service + operating expenses) and
+ * DERIVED from the model, so the figure — and therefore equity and IRR — is a pure
+ * function of the inputs and never depends on whether the UI happened to sync a value
+ * into `capex_reserve`. In "manual" mode (the default) it is the entered `capex_reserve`.
+ */
+export function resolveOperatingReserve(
+  purchase: PurchaseAssumptions,
+  year1DebtServiceAnnual: number,
+  year1OpexAnnual: number,
+): number {
+  if (purchase.operating_reserve_mode === "auto") {
+    const months = Math.max(0, purchase.operating_reserve_months ?? 6);
+    return Math.round((months * (year1DebtServiceAnnual + year1OpexAnnual)) / 12);
+  }
+  return purchase.capex_reserve || 0;
+}
+
+/**
  * P2-14: when the rent roll carries explicit per-unit `renovate` flags, collapse the
  * renovation program to a SINGLE line of `flaggedCount` units at the primary line's
  * cost and schedule. Both the cost pacing (calculateMonthCapexBreakdown) and the
@@ -2984,7 +3024,6 @@ function buildSensitivityGrid(
       };
 
       const adjustedClosing = computeClosingCosts(adjustedInputs.purchase);
-      const adjustedCapexReserve = adjustedInputs.purchase.capex_reserve || 0;
 
       // Skip invalid cap rates (zero or negative)
       if (adjustedInputs.exit.exit_cap_rate <= 0) {
@@ -2998,6 +3037,10 @@ function buildSensitivityGrid(
 
       // Use simplified approach: scale base case results
       const result = calculateUnderwritingSimplified(adjustedInputs);
+      // Operating reserve: auto-size from this cell's own year-1 carry (matches the
+      // headline resolveOperatingReserve), else the entered value — so an auto-mode
+      // deal's center cell ties to the headline regardless of stored capex_reserve.
+      const adjustedCapexReserve = resolveOperatingReserve(adjustedInputs.purchase, result.year1DebtServiceAnnual, result.year1OpexAnnual);
       // Equity off the DSCR/LTV-sized loan (Phase 4.1), not raw LTV proceeds.
       const adjustedOrigination = result.loanAmount * adjustedInputs.financing.origination_fee_rate;
       // Match the headline equity build (underwriting.ts total cost) — include the
@@ -3113,6 +3156,8 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   exitNOI: number;
   loanBalance: number;
   loanAmount: number;
+  year1DebtServiceAnnual: number;
+  year1OpexAnnual: number;
 } {
   const { purchase, financing, revenue, expenses, capex: rawCapex, exit } = inputs;
   // Honor the per-unit / named-project enable toggles (matches the main path), then
@@ -3170,6 +3215,10 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
   const annualCashFlows: number[] = [];
   const annualNOIs: number[] = [];
   const annualBelowNOI: number[] = [];
+  // Year-1 carry, surfaced so the sensitivity grid can auto-size the operating reserve
+  // the same way the headline does (resolveOperatingReserve).
+  let y1OpexAnnual = 0;
+  let y1DebtServiceAnnual = 0;
 
   for (let y = 0; y < exit.hold_period_years; y++) {
     const yearGrowth = Math.pow(1 + revenue.rent_growth_rate, y);
@@ -3227,6 +3276,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     const annualReserves = resolveOpexAnnual(oiS?.reserves, expenses.reserves_per_unit, "per_unit_annual", sCtx);
 
     const annualNOI = annualEGI - annualOpex;
+    if (y === 0) y1OpexAnnual = annualOpex;
 
     // Simplified CapEx (just projects + per-unit)
     let annualCapex = 0;
@@ -3268,6 +3318,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     for (let m = y * 12 + 1; m <= (y + 1) * 12; m++) {
       annualDS += m <= financing.io_period_months ? monthlyIO : monthlyDS;
     }
+    if (y === 0) y1DebtServiceAnnual = annualDS;
     // Holdback IO interest adds to debt service (so DSCR/cash flow reflect it).
     annualCashFlows.push(annualNOIs[y] - annualDS - holdbackInterestByYear[y] - annualBelowNOI[y]);
   }
@@ -3326,7 +3377,7 @@ function calculateUnderwritingSimplified(inputs: ScenarioInputs): {
     loanAmount, monthlyRate, amortMonths, totalMonths, financing.io_period_months
   ) + simHoldbackBalance; // outstanding IO holdback paid off at exit
 
-  return { annualCashFlows, exitNOI, loanBalance, loanAmount };
+  return { annualCashFlows, exitNOI, loanBalance, loanAmount, year1DebtServiceAnnual: y1DebtServiceAnnual, year1OpexAnnual: y1OpexAnnual };
 }
 
 // ─── Default Scenario Inputs ─────────────────────────────────
