@@ -167,6 +167,7 @@ export async function POST(req: NextRequest) {
             metrics: result.metrics,
             sensitivity: result.sensitivity,
             warnings: result.warnings,
+            tax: result.tax, // after-tax layer (present only when tax_assumptions set)
           },
         },
         { status: 201 }
@@ -302,6 +303,7 @@ export async function POST(req: NextRequest) {
           metrics: result.metrics,
           sensitivity: result.sensitivity,
           warnings: result.warnings,
+          tax: result.tax, // after-tax layer (present only when tax_assumptions set)
         },
       },
       { status: 201 }

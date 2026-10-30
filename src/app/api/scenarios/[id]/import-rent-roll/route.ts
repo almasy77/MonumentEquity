@@ -149,6 +149,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         metrics: result.metrics,
         sensitivity: result.sensitivity,
         warnings: result.warnings,
+        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
       },
       imported: { units: rentRoll.length, unit_types: unitMix.length },
     });

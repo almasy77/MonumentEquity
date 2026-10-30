@@ -16,6 +16,7 @@ import {
   Inbox,
   Archive,
   LogOut,
+  Briefcase,
 } from "lucide-react";
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/leads", label: "Leads", icon: Inbox, badgeKey: "leads" as const },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/comps", label: "Comps", icon: BarChart3 },
+  { href: "/vendors", label: "Vendors", icon: Briefcase },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/archived", label: "Archived", icon: Archive },
   { href: "/settings", label: "Settings", icon: Settings },

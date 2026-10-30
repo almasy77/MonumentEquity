@@ -22,6 +22,9 @@ import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { ImportOMDialog } from "@/components/deals/import-om-dialog";
 import { TaxImportDialog } from "@/components/deals/tax-import-dialog";
 import { DealFilesCard } from "@/components/deals/deal-files-card";
+import { DealVendors } from "@/components/deals/deal-vendors";
+import { ensureSeedVendors, listVendors, listDealVendorsByDeal } from "@/lib/vendor-store";
+import { dealPurchasePrice, renovationSpendFromCapex, type Vendor, type DealVendor } from "@/lib/vendors";
 import {
   ArrowLeft,
   Building2,
@@ -104,6 +107,16 @@ async function getScenarios(dealId: string): Promise<Scenario[]> {
   }
 }
 
+async function getVendorData(dealId: string): Promise<{ vendors: Vendor[]; links: DealVendor[] }> {
+  try {
+    await ensureSeedVendors();
+    const [vendors, links] = await Promise.all([listVendors(), listDealVendorsByDeal(dealId)]);
+    return { vendors, links };
+  } catch {
+    return { vendors: [], links: [] };
+  }
+}
+
 async function getContacts(ids: string[]): Promise<Contact[]> {
   if (ids.length === 0) return [];
   try {
@@ -128,12 +141,13 @@ export default async function DealDetailPage({
   const deal = await getDeal(id);
   if (!deal) notFound();
 
-  const [contacts, activities, tasks, checklists, scenarios] = await Promise.all([
+  const [contacts, activities, tasks, checklists, scenarios, vendorData] = await Promise.all([
     getContacts(deal.contact_ids || []),
     getActivitiesForDeal(id, 10),
     getTasks(id),
     getChecklists(id),
     getScenarios(id),
+    getVendorData(id),
   ]);
 
   // Default scenario for the Share/Export menu — prefer the Base Case, else the
@@ -141,6 +155,14 @@ export default async function DealDetailPage({
   // this the XLSX/SDA exports were disabled ("No scenario") even when scenarios exist.
   const activeScenarios = scenarios.filter((s) => s.is_active !== false);
   const exportScenarioId = (activeScenarios.find((s) => s.type === "base") ?? activeScenarios[0])?.id;
+
+  // Vendor eligibility inputs: best known price, and renovation spend from the
+  // export-default scenario (Base Case, else primary active).
+  const vendorPrice = dealPurchasePrice(deal);
+  const vendorPriceSource = deal.final_purchase_price ? "final price" : deal.bid_price ? "bid price" : "asking price";
+  const vendorScenario = activeScenarios.find((s) => s.id === exportScenarioId);
+  const vendorReno = renovationSpendFromCapex(vendorScenario?.capex_assumptions as Parameters<typeof renovationSpendFromCapex>[0]);
+  const vendorRenoSource = vendorScenario ? `${vendorScenario.name} scenario` : "no scenario";
 
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     `${deal.address}, ${deal.city}, ${deal.state} ${deal.zip || ""}`
@@ -255,6 +277,18 @@ export default async function DealDetailPage({
         <DealContacts dealId={id} contacts={contacts} contactIds={deal.contact_ids || []} />
         <NeighborhoodLinks deal={deal} />
       </div>
+
+      {/* Vendors — stage-triggered suggestions + quote tracking */}
+      <DealVendors
+        dealId={id}
+        stage={deal.stage}
+        vendors={vendorData.vendors}
+        links={vendorData.links}
+        purchasePrice={vendorPrice}
+        purchasePriceSource={vendorPriceSource}
+        renovationSpend={vendorReno}
+        renovationSource={vendorRenoSource}
+      />
 
       {/* Tasks & Checklists */}
       <div className="grid md:grid-cols-2 gap-6">
