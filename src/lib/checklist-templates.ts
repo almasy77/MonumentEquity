@@ -132,6 +132,8 @@ export const CLOSING_TEMPLATE: Omit<ChecklistItem, "completed" | "completed_at" 
   { id: "cl-15", label: "Post-close reserves confirmed ($100K+ minimum)", category: "Settlement" },
   { id: "cl-16", label: "Funds wired", category: "Settlement" },
   { id: "cl-17", label: "Closing documents signed", category: "Settlement" },
+  // Tax
+  { id: "cl-18", label: "Order cost segregation study before filing the return for the year placed in service (see Vendors)", category: "Tax" },
 ];
 
 // ─── Onboarding / First 100 Days (from playbook) ───────────

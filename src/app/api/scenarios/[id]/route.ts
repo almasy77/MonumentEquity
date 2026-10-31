@@ -83,6 +83,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
         metrics: result.metrics,
         sensitivity: result.sensitivity,
         warnings: result.warnings,
+        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
       },
     });
   } catch (err) {
@@ -219,6 +220,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
         metrics: result.metrics,
         sensitivity: result.sensitivity,
         warnings: result.warnings,
+        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
       },
     });
   } catch (err) {

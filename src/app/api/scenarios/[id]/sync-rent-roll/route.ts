@@ -99,6 +99,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
         metrics: result.metrics,
         sensitivity: result.sensitivity,
         warnings: result.warnings,
+        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
       },
     });
   } catch (err) {

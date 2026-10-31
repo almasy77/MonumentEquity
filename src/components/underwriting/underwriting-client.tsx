@@ -14,6 +14,7 @@ import { SensitivityGrid } from "./sensitivity-grid";
 import { ResultsChangedBanner } from "./results-changed-banner";
 import type { Deal, Scenario } from "@/lib/validations";
 import { resolveProformaBases } from "@/lib/underwriting";
+import { CostSegComparison } from "@/components/underwriting/cost-seg-comparison";
 import { computeTaxFlags } from "@/lib/tax-flags";
 import { describeScenario } from "@/lib/scenario-description";
 import { checkInputPlausibility } from "@/lib/input-checks";
@@ -929,6 +930,9 @@ function ScenarioAnalysis({
           </CardContent>
         </Card>
       )}
+
+      {/* Cost Seg vs. REPS — side-by-side lens (only when the tax layer is on) */}
+      {result.tax && <CostSegComparison scenario={scenario} />}
 
       {/* Sensitivity */}
       <SensitivityGrid

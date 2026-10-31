@@ -161,6 +161,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         metrics: result.metrics,
         sensitivity: result.sensitivity,
         warnings: result.warnings,
+        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
       },
       imported: { months: t12.months.length, total_noi: t12.total_noi },
     });
