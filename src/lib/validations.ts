@@ -197,6 +197,7 @@ export const dealSchema = z.object({
   owner_acquisition_price: z.number().optional(), // price the current owner paid (county sale record)
   owner_mailing_address: z.string().optional(), // mailing address per county records
   owner_notes: z.string().optional(), // e.g. "estate sale likely", "out-of-state owner"
+  owner_loan_balance_est: z.number().optional(), // ESTIMATED outstanding mortgage balance (amortized from deed record; not a live payoff)
 
   // Rent roll & T12
   rent_roll: z.array(rentRollUnitSchema).optional(),

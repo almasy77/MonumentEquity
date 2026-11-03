@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { RentCastAutofill } from "@/components/deals/rentcast-autofill";
+import { AttomMortgagePanel } from "@/components/deals/attom-mortgage-panel";
 import { Separator } from "@/components/ui/separator";
 import { EditableField } from "./editable-field";
 import { Building2, AlertTriangle, Info } from "lucide-react";
@@ -152,7 +153,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     const numericFields = [
       "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
       "tax_mill_rate", "tax_mill_assessed_pct", "tax_assessment_pct", "tax_market_value",
-      "assessed_value",
+      "assessed_value", "owner_loan_balance_est",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -310,7 +311,16 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Acquired For" value={deal.owner_acquisition_price?.toString() || ""} onSave={(v) => updateDeal("owner_acquisition_price", v)} type="number" prefix="$" placeholder="Price owner paid (county sale record)" />
           <EditableField label="Owner Mailing Address" value={deal.owner_mailing_address || ""} onSave={(v) => updateDeal("owner_mailing_address", v)} placeholder="Per county records" />
           <EditableField label="Ownership Notes" value={deal.owner_notes || ""} onSave={(v) => updateDeal("owner_notes", v)} placeholder="e.g. out-of-state owner" />
+          <EditableField label="Est. Mortgage Balance" value={deal.owner_loan_balance_est?.toString() || ""} onSave={(v) => updateDeal("owner_loan_balance_est", v)} type="number" prefix="$" placeholder="Estimated payoff (not live)" />
         </div>
+
+        {/* Existing debt on the property (seller position) — looked up from ATTOM deed records. */}
+        <AttomMortgagePanel
+          dealId={deal.id}
+          valueBasis={deal.tax_market_value ?? deal.asking_price}
+          savedBalanceEst={deal.owner_loan_balance_est}
+          onSaveBalance={(v) => updateDeal("owner_loan_balance_est", v)}
+        />
 
         {/* Notes */}
         <Separator className="bg-slate-800" />
