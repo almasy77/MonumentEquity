@@ -18,6 +18,7 @@ import { DueDiligenceClosing } from "@/components/deals/due-diligence-closing";
 import { NeighborhoodLinks } from "@/components/deals/neighborhood-links";
 import { DealContacts } from "@/components/deals/deal-contacts";
 import { DealCompsCard } from "@/components/deals/deal-comps-card";
+import { RentCastRentCard } from "@/components/deals/rentcast-rent-card";
 import { DealKPIBar } from "@/components/deals/deal-kpi-bar";
 import { ImportOMDialog } from "@/components/deals/import-om-dialog";
 import { TaxImportDialog } from "@/components/deals/tax-import-dialog";
@@ -271,6 +272,9 @@ export default async function DealDetailPage({
         dealAddress={deal.address}
         dealZip={deal.zip}
       />
+
+      {/* RentCast rent estimate + comps for this address */}
+      <RentCastRentCard dealId={deal.id} dealCity={deal.city} />
 
       {/* Contacts & Neighborhood */}
       <div className="grid md:grid-cols-2 gap-6">
