@@ -82,6 +82,78 @@ export class RentCastError extends Error {
   }
 }
 
+// ── Property records (GET /properties) ──
+export interface RentCastTaxAssessment { year?: number; value?: number; land?: number; improvements?: number }
+export interface RentCastProperty {
+  id?: string;
+  formattedAddress?: string;
+  propertyType?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFootage?: number;
+  lotSize?: number; // square feet
+  yearBuilt?: number;
+  county?: string;
+  lastSaleDate?: string;
+  lastSalePrice?: number;
+  features?: { unitCount?: number; [k: string]: unknown };
+  taxAssessments?: Record<string, RentCastTaxAssessment>;
+}
+
+/** Candidate deal fields derived from a RentCast property record (undefined = not found). */
+export interface RentCastDealFields {
+  units?: number;
+  year_built?: number;
+  square_footage?: number;
+  lot_size?: string;
+  property_type?: string;
+  assessed_value?: number;
+  owner_acquisition_price?: number;
+  owner_since?: string;
+  county?: string;
+}
+
+/** Fetch the property record for an address (first match). */
+export async function fetchPropertyRecord(address: string): Promise<RentCastProperty | null> {
+  const key = process.env.RENTCAST_API_KEY;
+  if (!key) throw new RentCastError("RENTCAST_API_KEY is not configured on the server.", 500);
+  const q = new URLSearchParams({ address, limit: "1" });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/properties?${q.toString()}`, { headers: { "X-Api-Key": key, Accept: "application/json" } });
+  } catch (e) {
+    throw new RentCastError(`RentCast request failed: ${(e as Error).message}`, 502);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new RentCastError(res.status === 401 ? "RentCast rejected the API key (401)." : `RentCast error ${res.status}: ${body.slice(0, 300)}`, res.status);
+  }
+  const data = (await res.json()) as RentCastProperty[] | RentCastProperty;
+  const rec = Array.isArray(data) ? data[0] : data;
+  return rec ?? null;
+}
+
+/** Map a RentCast property record to the deal fields we can pre-fill. */
+export function mapPropertyToDealFields(rec: RentCastProperty): RentCastDealFields {
+  // Latest tax assessment (highest year).
+  let latestAssessed: number | undefined;
+  if (rec.taxAssessments) {
+    const years = Object.keys(rec.taxAssessments).map(Number).filter((n) => !Number.isNaN(n));
+    if (years.length) latestAssessed = rec.taxAssessments[String(Math.max(...years))]?.value;
+  }
+  return {
+    units: rec.features?.unitCount,
+    year_built: rec.yearBuilt,
+    square_footage: rec.squareFootage,
+    lot_size: rec.lotSize ? `${rec.lotSize.toLocaleString()} SF` : undefined,
+    property_type: rec.propertyType,
+    assessed_value: latestAssessed,
+    owner_acquisition_price: rec.lastSalePrice,
+    owner_since: rec.lastSaleDate,
+    county: rec.county,
+  };
+}
+
 /**
  * Fetch a long-term rent estimate + rental comps. Throws RentCastError on a non-2xx
  * response (401 = bad/missing key) or when the key is not configured.

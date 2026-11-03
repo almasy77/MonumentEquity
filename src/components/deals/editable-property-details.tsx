@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
+import { RentCastAutofill } from "@/components/deals/rentcast-autofill";
 import { Separator } from "@/components/ui/separator";
 import { EditableField } from "./editable-field";
 import { Building2, AlertTriangle, Info } from "lucide-react";
@@ -151,6 +152,7 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     const numericFields = [
       "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
       "tax_mill_rate", "tax_mill_assessed_pct", "tax_assessment_pct", "tax_market_value",
+      "assessed_value",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
@@ -183,6 +185,23 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     <CollapsibleCard
       title="Property Details"
       icon={<Building2 className="h-4 w-4 text-blue-400" />}
+      headerRight={
+        <RentCastAutofill
+          dealId={deal.id}
+          current={{
+            units: deal.units,
+            year_built: deal.year_built,
+            square_footage: deal.square_footage,
+            lot_size: deal.lot_size,
+            property_type: deal.property_type,
+            county: deal.county,
+            assessed_value: (deal as unknown as { assessed_value?: number }).assessed_value,
+            owner_acquisition_price: deal.owner_acquisition_price,
+            owner_since: deal.owner_since,
+          }}
+          onApply={updateDeal}
+        />
+      }
     >
       <div className="space-y-3">
         {/* Key deal info — pricing and units */}
