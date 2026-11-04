@@ -14,6 +14,7 @@ import { ChecklistTemplateViewer } from "@/components/settings/checklist-templat
 import { TeamManagement } from "@/components/settings/team-management";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { StorageCleanupButton } from "@/components/settings/storage-cleanup-button";
+import { ConnectedApps } from "@/components/settings/connected-apps";
 import { getEntity } from "@/lib/db";
 import type { User } from "@/lib/validations";
 
@@ -87,6 +88,18 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ChecklistTemplateViewer />
+        </CardContent>
+      </Card>
+
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader>
+          <CardTitle className="text-white">Connected apps</CardTitle>
+          <CardDescription className="text-slate-400">
+            Claude connector access to your deals and scenarios
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ConnectedApps />
         </CardContent>
       </Card>
 

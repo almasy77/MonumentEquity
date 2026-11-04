@@ -3511,6 +3511,21 @@ export function buildUnitMixFromRentRoll(
   }];
 }
 
+
+/**
+ * Coerce a stored occupancy into a 0-1 fraction, or undefined when unusable.
+ * Accepts a fraction (0.92), a percent (92 or "92"), or a numeric string ("0.92").
+ * Values in (1, 100] are treated as percents; 0, negatives, NaN and > 100 are
+ * rejected so the caller falls back to the default vacancy.
+ */
+export function normalizeOccupancy(raw: unknown): number | undefined {
+  const n = typeof raw === "string" ? Number(raw) : raw;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return undefined;
+  if (n <= 1) return n;
+  if (n <= 100) return n / 100;
+  return undefined;
+}
+
 export function buildDefaultInputs(
   deal: DealData,
   defaults: Record<string, number>
@@ -3542,9 +3557,13 @@ export function buildDefaultInputs(
   // Revenue from rent roll
   const unitMix = buildUnitMixFromRentRoll(deal.rent_roll || [], deal.units);
 
-  // Vacancy from deal occupancy
-  const vacancyRate = deal.current_occupancy
-    ? 1 - deal.current_occupancy
+  // Vacancy from deal occupancy. `current_occupancy` is documented as a 0-1 fraction,
+  // but percent-style values (90, "92") reach the record through imports and API edits.
+  // Unnormalized, 90 became vacancy_rate = 1 - 90 = -89 (a -8900% vacancy that adds
+  // phantom revenue). normalizeOccupancy folds a percent into 0-1 and rejects the rest.
+  const occupancy = normalizeOccupancy(deal.current_occupancy);
+  const vacancyRate = occupancy !== undefined
+    ? 1 - occupancy
     : d.vacancy_rate ?? 0.07;
 
   // Expenses from deal / T12
