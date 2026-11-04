@@ -23,7 +23,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/leads", label: "Leads", icon: Inbox, badgeKey: "leads" as const },
-  { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/contacts", label: "Contacts", icon: Users, badgeKey: "contacts" as const },
   { href: "/comps", label: "Comps", icon: BarChart3 },
   { href: "/vendors", label: "Vendors", icon: Briefcase },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
@@ -31,13 +31,13 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function useLeadsCount(pathname: string): number {
+function useCount(url: string, pathname: string): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/leads/count");
+        const res = await fetch(url);
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) setCount(data.count ?? 0);
@@ -51,14 +51,16 @@ function useLeadsCount(pathname: string): number {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pathname]); // refresh on route change too
+  }, [url, pathname]); // refresh on route change too
   return count;
 }
 
 export function Sidebar() {
   const pathname = usePathname();
-  const leadsCount = useLeadsCount(pathname);
-  const badgeFor = (key?: "leads"): number => (key === "leads" ? leadsCount : 0);
+  const leadsCount = useCount("/api/leads/count", pathname);
+  const contactInboxCount = useCount("/api/contact-inbox/count", pathname);
+  const badgeFor = (key?: "leads" | "contacts"): number =>
+    key === "leads" ? leadsCount : key === "contacts" ? contactInboxCount : 0;
 
   return (
     <>

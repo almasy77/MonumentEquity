@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { CONTACT_TYPES, CONTACT_TYPE_LABELS, CONTACT_PRIORITIES, CONTACT_STATUSES, CONTACT_STATUS_LABELS } from "@/lib/constants";
+import { ContactCorrespondence } from "@/components/contacts/contact-correspondence";
 import type { Contact, PhoneEntry } from "@/lib/validations";
 
 const PHONE_LABELS = ["mobile", "office", "home", "fax", "other"];
@@ -439,6 +440,8 @@ export function EditContactDialog({
             </Button>
           </div>
         </form>
+
+        {open && <div className="mt-4"><ContactCorrespondence contactId={contact.id} /></div>}
       </DialogContent>
     </Dialog>
   );

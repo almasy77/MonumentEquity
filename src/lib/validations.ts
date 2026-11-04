@@ -582,3 +582,59 @@ export const pendingListingSchema = z.object({
 });
 
 export type PendingListing = z.infer<typeof pendingListingSchema>;
+
+// ─── Email Log (CRM correspondence) ─────────────────────────
+// An email conversation BCC'd/forwarded to the CRM inbound address and attached
+// to one or more external (non-staff) contacts. Stored at email_log:${id}; indexed
+// per contact at contact:emails:${contactId} (sorted by sent_at). Deduped by the
+// provider Message-ID at email_log:msgid:${messageId}.
+export const emailAttachmentMetaSchema = z.object({
+  name: z.string(),
+  content_type: z.string().optional(),
+  content_length: z.number().optional(),
+});
+
+export const emailLogSchema = z.object({
+  id: z.string().uuid(),
+  message_id: z.string().optional(), // provider Message-ID (dedup); absent on manual logs
+  direction: z.enum(["inbound", "outbound", "logged"]).default("logged"),
+  subject: z.string(),
+  from: z.string(),
+  from_name: z.string().optional(),
+  to: z.array(z.string()).default([]),
+  cc: z.array(z.string()).default([]),
+  text_body: z.string().default(""),
+  html_body: z.string().optional(),
+  snippet: z.string().optional(), // first ~280 chars, for list display
+  sent_at: z.string().datetime(), // original email Date header when available, else received_at
+  received_at: z.string().datetime(),
+  contact_ids: z.array(z.string().uuid()).default([]),
+  attachments: z.array(emailAttachmentMetaSchema).default([]),
+  source: z.enum(["bcc", "manual"]).default("bcc"),
+  source_email_id: z.string().optional(), // -> inbound_email:${id}
+  created_at: z.string().datetime(),
+});
+
+export type EmailLog = z.infer<typeof emailLogSchema>;
+
+// ─── Pending Contact (CRM inbox review queue) ───────────────
+// An external party found on a BCC'd email with no matching contact. Held for
+// human confirmation before a contact is created (unless auto-create is on).
+export const pendingContactSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  name: z.string().optional(), // display name from the email header
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  company: z.string().optional(), // guessed from the email domain
+  email_log_id: z.string().uuid(), // the correspondence that surfaced them
+  subject: z.string(),
+  from: z.string(),
+  received_at: z.string().datetime(),
+  status: z.enum(["pending", "approved", "rejected"]),
+  approved_contact_id: z.string().uuid().optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export type PendingContact = z.infer<typeof pendingContactSchema>;
