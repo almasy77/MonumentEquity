@@ -43,6 +43,26 @@ export function resourceUrl(req?: Request): string {
   return `${baseUrl(req)}${MCP_PATH}`;
 }
 
+/**
+ * Does a client-supplied RFC 8707 `resource` identify this MCP server? Clients differ in
+ * what they send (the full MCP URL, the bare origin, a trailing slash), so accept the
+ * canonical URL or the origin, compared case-insensitively on scheme/host and ignoring
+ * trailing slashes. Tokens are always bound to the canonical resourceUrl(), never to what
+ * the client sent.
+ */
+export function resourceMatches(provided: string, req?: Request): boolean {
+  const norm = (u: string) => {
+    try {
+      const url = new URL(u);
+      return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`.toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+  const p = norm(provided);
+  return p !== null && (p === norm(resourceUrl(req)) || p === norm(baseUrl(req)));
+}
+
 export function allowedRedirectHosts(): string[] {
   const raw = process.env.MCP_ALLOWED_REDIRECT_HOSTS || "claude.ai,claude.com";
   return raw

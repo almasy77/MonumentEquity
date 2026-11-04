@@ -8,7 +8,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getClient, type OAuthClient } from "./oauth-store";
-import { resourceUrl } from "./oauth-config";
+import { resourceMatches } from "./oauth-config";
 
 export interface AuthorizeParams {
   client_id: string;
@@ -51,7 +51,7 @@ export async function validateAuthorizeRequest(raw: Raw, req?: Request): Promise
     return fail("invalid_request", "PKCE with code_challenge_method=S256 is required.");
   }
   const resource = one(raw.resource);
-  if (resource && resource !== resourceUrl(req)) return fail("invalid_target", "Unknown resource.");
+  if (resource && !resourceMatches(resource, req)) return fail("invalid_target", "Unknown resource.");
 
   const state = one(raw.state);
   if (state && state.length > 2000) return fail("invalid_request", "state is too long.");

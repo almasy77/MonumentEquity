@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -17,7 +18,10 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Se
 
   if (mcpDisabled()) return <Shell title="Connector disabled" tone="error" body="The Claude connector is turned off for this app." />;
 
-  const v = await validateAuthorizeRequest(raw);
+  // Pass the request's headers so the public origin / resource resolve from the real host
+  // when MCP_PUBLIC_URL and NEXTAUTH_URL are unset (otherwise this fell back to localhost).
+  const reqLike = new Request("https://placeholder.invalid/oauth/authorize", { headers: await headers() });
+  const v = await validateAuthorizeRequest(raw, reqLike);
   if (!v.ok) return <Shell title="Can't connect" tone="error" body={v.description} />;
 
   const session = await auth();
