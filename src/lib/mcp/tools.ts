@@ -24,7 +24,9 @@ import { metricsFromResult, toEngineInputs } from "@/lib/engine-version";
 import {
   applyDealFieldUpdate,
   changeDealStatus,
+  clearStaleStatusReasons,
   createDealRecord,
+  staleStatusReasons,
 } from "@/lib/deal-service";
 import {
   applyScenarioUpdate,
@@ -384,7 +386,8 @@ export const TOOLS: ToolDef[] = [
   defineTool({
     name: "reactivate_deal",
     title: "Reactivate deal",
-    description: "Move a passed or archived deal back to active (same as the Reactivate button). Admin accounts only.",
+    description:
+      "Move a passed or archived deal back to active (like the Reactivate button) and clear its old pass/kill reason. If the deal is already active but still carries a stale pass_reason/kill_reason from an earlier reactivation, this clears those instead of failing. Admin accounts only.",
     inputSchema: { deal_id: id("Deal id") },
     annotations: WRITE_IDEMPOTENT,
     async run({ deal_id }, ctx) {
@@ -392,7 +395,11 @@ export const TOOLS: ToolDef[] = [
       if (!canChangeStatus(ctx)) return fail("forbidden", "Only admin accounts can change a deal's status.");
       const deal = await loadOwnedDeal(ctx, deal_id);
       if (!deal) return NOT_FOUND("deal");
-      if (deal.status === "active") return fail("conflict", "Deal is already active.");
+      if (deal.status === "active") {
+        if (staleStatusReasons(deal).length === 0) return fail("conflict", "Deal is already active.");
+        const { deal: cleaned, cleared } = await clearStaleStatusReasons(deal, ctx.userId, "connector");
+        return ok({ deal: dealSummary(cleaned), cleared_stale_fields: cleared });
+      }
       const updated = await changeDealStatus(deal, { status: "active" }, ctx.userId, "connector");
       return ok({ deal: dealSummary(updated) });
     },
