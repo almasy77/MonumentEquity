@@ -15,7 +15,9 @@ import { TeamManagement } from "@/components/settings/team-management";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { StorageCleanupButton } from "@/components/settings/storage-cleanup-button";
 import { ConnectedApps } from "@/components/settings/connected-apps";
+import { CrmEmailForm } from "@/components/settings/crm-email-form";
 import { getEntity } from "@/lib/db";
+import { getCrmEmailSettings } from "@/lib/crm-settings";
 import type { User } from "@/lib/validations";
 
 export default async function SettingsPage() {
@@ -26,6 +28,8 @@ export default async function SettingsPage() {
   const user = session?.user?.id
     ? await getEntity<User>(`user:${session.user.id}`)
     : null;
+
+  const crmEmail = await getCrmEmailSettings();
 
   if (!isAdmin) {
     return (
@@ -100,6 +104,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ConnectedApps />
+        </CardContent>
+      </Card>
+
+      <Card className="bg-slate-900 border-slate-800">
+        <CardHeader>
+          <CardTitle className="text-white">CRM Email Logging</CardTitle>
+          <CardDescription className="text-slate-400">
+            BCC the CRM inbound address on an email thread to attach it to the matching
+            contact. Choose what happens when the sender isn&apos;t a contact yet.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CrmEmailForm initialAutoCreate={crmEmail.autoCreate} inboundAddress={crmEmail.inboundAddress ?? null} />
         </CardContent>
       </Card>
 
