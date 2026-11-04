@@ -16,6 +16,11 @@ export default auth((req) => {
     pathname.startsWith("/api/seed") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
+    // App-router generated icons (src/app/{icon.svg,apple-icon.png}). Without these
+    // the browser's preferred SVG favicon and the iOS touch icon 307-redirect to
+    // /login for unauthenticated requests and never render.
+    pathname === "/icon.svg" ||
+    pathname === "/apple-icon.png" ||
     pathname === "/manifest.json" ||
     pathname === "/sw.js"
   ) {
@@ -33,5 +38,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|icons/).*)"],
 };
