@@ -65,9 +65,13 @@ export async function getCrmEmailSettings(): Promise<CrmEmailSettings> {
     .trim()
     .toLowerCase() || undefined;
 
+  // Default is auto-create: an unmatched external party becomes a contact
+  // immediately (the review inbox is still used when this is turned off). A
+  // Redis setting wins; otherwise an explicit env value wins; otherwise true.
+  const envAuto = process.env.CRM_AUTO_CREATE_CONTACTS;
   const autoCreate =
     stored?.auto_create ??
-    /^(1|true|yes)$/i.test(process.env.CRM_AUTO_CREATE_CONTACTS ?? "");
+    (envAuto != null && envAuto !== "" ? /^(1|true|yes)$/i.test(envAuto) : true);
 
   return { staffEmails, staffDomains, inboundAddress, autoCreate };
 }
