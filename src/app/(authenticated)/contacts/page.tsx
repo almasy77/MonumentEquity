@@ -1,6 +1,7 @@
 import { getRedis } from "@/lib/db";
 import { AddContactDialog } from "@/components/contacts/add-contact-dialog";
 import { ContactList } from "@/components/contacts/contact-list";
+import { ContactInbox } from "@/components/contacts/contact-inbox";
 import { ExportCSVButton } from "@/components/contacts/export-csv-button";
 import { Users } from "lucide-react";
 import type { Contact } from "@/lib/validations";
@@ -39,6 +40,8 @@ export default async function ContactsPage() {
           <AddContactDialog />
         </div>
       </div>
+
+      <ContactInbox />
 
       {contacts.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-16">
