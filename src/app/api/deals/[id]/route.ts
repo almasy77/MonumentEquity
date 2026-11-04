@@ -182,6 +182,16 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       updated_via: "web",
     };
 
+    // Reactivating (passed/dead -> active) drops the old pass/kill reason, unless this
+    // request supplies a new one. Left behind, it made an ACTIVE deal read as dead or
+    // passed to anything inspecting the record. The reason is not lost: the
+    // status_changed activity row logged above carries it. Only a status TRANSITION to
+    // active triggers this; ordinary edits to an already-active deal are untouched.
+    if (body.status === "active" && existing.status !== "active") {
+      if (body.pass_reason === undefined) delete updated.pass_reason;
+      if (body.kill_reason === undefined) delete updated.kill_reason;
+    }
+
     await redis.set(`deal:${id}`, JSON.stringify(updated));
 
     return NextResponse.json(updated);
