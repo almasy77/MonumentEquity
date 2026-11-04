@@ -336,3 +336,56 @@ describe("kill switch", () => {
     }
   });
 });
+
+describe("resource indicator handling (regression: consent page showed 'Unknown resource')", () => {
+  const params = async (resource?: string) => {
+    const { body: client } = await registerClient();
+    return { client_id: client.client_id, redirect_uri: REDIRECT, response_type: "code", code_challenge: pkcePair().challenge, code_challenge_method: "S256", ...(resource ? { resource } : {}) };
+  };
+  const hostReq = () => new Request("https://placeholder.invalid/x", { headers: { host: "app.monumentequity.com" } });
+
+  it.each([
+    ["the canonical MCP URL", `${ORIGIN}/api/mcp`],
+    ["a trailing slash", `${ORIGIN}/api/mcp/`],
+    ["the bare origin", ORIGIN],
+    ["different host casing", "https://App.MonumentEquity.com/api/mcp"],
+    ["no resource at all", undefined],
+  ])("accepts %s", async (_n, resource) => {
+    const { validateAuthorizeRequest } = await import("@/lib/mcp/authorize-request");
+    expect((await validateAuthorizeRequest(await params(resource))).ok).toBe(true);
+  });
+
+  it.each([["another host", "https://evil.example.com/api/mcp"], ["another path", `${ORIGIN}/api/other`], ["junk", "not a url"]])(
+    "rejects %s",
+    async (_n, resource) => {
+      const { validateAuthorizeRequest } = await import("@/lib/mcp/authorize-request");
+      const r = await validateAuthorizeRequest(await params(resource));
+      expect(r.ok).toBe(false);
+    }
+  );
+
+  it("resolves the origin from the request host when MCP_PUBLIC_URL/NEXTAUTH_URL are unset (the consent page case)", async () => {
+    const { validateAuthorizeRequest } = await import("@/lib/mcp/authorize-request");
+    const saved = process.env.MCP_PUBLIC_URL;
+    delete process.env.MCP_PUBLIC_URL;
+    delete process.env.NEXTAUTH_URL;
+    try {
+      const p = await params(`${ORIGIN}/api/mcp`);
+      expect((await validateAuthorizeRequest(p, hostReq())).ok).toBe(true);
+      // Without the request it can only guess localhost, which is exactly the bug.
+      expect((await validateAuthorizeRequest(p)).ok).toBe(false);
+    } finally {
+      process.env.MCP_PUBLIC_URL = saved;
+    }
+  });
+
+  it("token exchange accepts an equivalent resource spelling and still binds the token to the canonical audience", async () => {
+    const { body: client } = await registerClient();
+    const { verifier, challenge } = pkcePair();
+    const code = new URL((await approve(client.client_id, challenge)).headers.get("location")!).searchParams.get("code")!;
+    const res = await token(req("/api/oauth/token", form({ grant_type: "authorization_code", client_id: client.client_id, code, redirect_uri: REDIRECT, code_verifier: verifier, resource: `${ORIGIN}/api/mcp/` })));
+    expect(res.status).toBe(200);
+    const v = await verifyAccessToken((await res.json()).access_token);
+    expect(v?.resource).toBe(`${ORIGIN}/api/mcp`);
+  });
+});

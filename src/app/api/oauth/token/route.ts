@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { mcpDisabled, resourceUrl } from "@/lib/mcp/oauth-config";
+import { mcpDisabled, resourceMatches, resourceUrl } from "@/lib/mcp/oauth-config";
 import { json, oauthError, preflight, readParams } from "@/lib/mcp/http";
 import {
   OAuthError,
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
         client_id: clientId,
         redirect_uri: p.redirect_uri,
         code_verifier: p.code_verifier,
-        resource: p.resource,
+        // Accept equivalent spellings of our resource; anything else fails the store's check.
+        resource: p.resource && resourceMatches(p.resource, req) ? resourceUrl(req) : p.resource,
         expectedResource: resourceUrl(req),
       });
       return json(tokens);
