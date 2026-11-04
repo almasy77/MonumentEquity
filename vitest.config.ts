@@ -1,10 +1,13 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
-// Mirrors the "@/*" -> "src/*" alias from tsconfig.json so modules under test that use
-// the alias (API routes, the MCP connector) resolve the same way they do in Next.
+// Resolve the `@/` path alias (mapped to ./src in tsconfig) so tests can import
+// modules the same way the app does. Most existing tests use relative imports;
+// this adds alias support without changing anything else.
 export default defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
 });
