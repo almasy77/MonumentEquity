@@ -430,6 +430,36 @@ describe("pass_deal / reactivate_deal", () => {
     expect((await call(bryan, "pass_deal", { deal_id: deal.id })).isError).toBe(true);
   });
 
+  it("reactivating clears the old pass/kill reason from the record but keeps it in the activity history", async () => {
+    const deal = await seedDeal(h.redis, BRYAN.id, { kill_reason: "Marked dead" });
+    await call(bryan, "pass_deal", { deal_id: deal.id, reason: "DSCR 0.92 at ask" });
+    await call(bryan, "reactivate_deal", { deal_id: deal.id });
+    const stored = await h.redis.get<any>(`deal:${deal.id}`);
+    expect(stored.status).toBe("active");
+    expect(stored.pass_reason).toBeUndefined();
+    expect(stored.kill_reason).toBeUndefined();
+    const events = (await call(bryan, "get_deal_activity", { deal_id: deal.id })).data.events;
+    expect(events.find((e: any) => e.details?.new_status === "passed").details.reason).toBe("DSCR 0.92 at ask");
+  });
+
+  it("reactivate on an ACTIVE deal with stale reasons cleans them (fixes records reactivated before this change)", async () => {
+    const deal = await seedDeal(h.redis, BRYAN.id, { kill_reason: "Marked dead", pass_reason: "Passed on deal", market_notes: "keep me" });
+    const r = await call(bryan, "reactivate_deal", { deal_id: deal.id });
+    expect(r.isError).toBe(false);
+    expect(r.data.cleared_stale_fields.sort()).toEqual(["kill_reason", "pass_reason"]);
+    const stored = await h.redis.get<any>(`deal:${deal.id}`);
+    expect(stored).toMatchObject({ status: "active", stage: "lead", market_notes: "keep me", updated_via: "connector" });
+    expect(stored.pass_reason).toBeUndefined();
+    expect(stored.kill_reason).toBeUndefined();
+    // still in the active list and index, untouched
+    expect((await call(bryan, "list_deals")).data.deals.map((d: any) => d.id)).toContain(deal.id);
+    const ev = (await call(bryan, "get_deal_activity", { deal_id: deal.id })).data.events[0];
+    expect(ev).toMatchObject({ action: "deal_updated", actor: "connector" });
+    expect(ev.details.fields.sort()).toEqual(["kill_reason", "pass_reason"]);
+    // a second call has nothing to clean
+    expect((await call(bryan, "reactivate_deal", { deal_id: deal.id })).data.error.code).toBe("conflict");
+  });
+
   it("reactivate restores the deal to the active list and stage index; passing twice is a conflict", async () => {
     const deal = await seedDeal(h.redis, BRYAN.id);
     await call(bryan, "pass_deal", { deal_id: deal.id, reason: "first pass" });

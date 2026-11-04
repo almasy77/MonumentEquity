@@ -100,15 +100,22 @@ export async function changeDealStatus(
   const now = new Date().toISOString();
   await syncStatusIndexes(existing, change.status);
 
+  // Reactivating drops the old pass/kill reason: it described a state the deal is no
+  // longer in, and left behind it makes an active deal look dead or passed to anything
+  // that reads the raw record. The reason is not lost: the status_changed activity row
+  // written when the deal was passed/killed still carries it.
+  const { pass_reason: _pass, kill_reason: _kill, ...rest } = existing;
+  void _pass;
+  void _kill;
   const updated: Deal = {
-    ...existing,
+    ...(change.status === "active" ? rest : existing),
     status: change.status,
     ...(change.status === "passed" ? { pass_reason: change.reason } : {}),
     updated_at: now,
     last_activity_at: now,
     updated_by: userId,
     updated_via: via,
-  };
+  } as Deal;
   await getRedis().set(`deal:${existing.id}`, JSON.stringify(updated));
 
   await logActivity({
@@ -126,6 +133,47 @@ export async function changeDealStatus(
   });
 
   return updated;
+}
+
+/** Stale status-reason fields on a deal that is currently active (left by an earlier pass/kill + reactivate). */
+export function staleStatusReasons(deal: Deal): ("pass_reason" | "kill_reason")[] {
+  if (deal.status !== "active") return [];
+  return (["pass_reason", "kill_reason"] as const).filter((k) => deal[k] !== undefined && deal[k] !== null);
+}
+
+/**
+ * Remove stale pass/kill reasons from an ACTIVE deal without touching its status or
+ * indexes. Used by reactivate_deal on a deal that is already active but was reactivated
+ * before reactivation cleared these fields.
+ */
+export async function clearStaleStatusReasons(
+  existing: Deal,
+  userId: string,
+  via: ChangeSource
+): Promise<{ deal: Deal; cleared: string[] }> {
+  const cleared = staleStatusReasons(existing);
+  if (cleared.length === 0) return { deal: existing, cleared };
+  const now = new Date().toISOString();
+  const next: Record<string, unknown> = { ...existing };
+  for (const k of cleared) delete next[k];
+  const updated = {
+    ...next,
+    updated_at: now,
+    last_activity_at: now,
+    updated_by: userId,
+    updated_via: via,
+  } as unknown as Deal;
+  await getRedis().set(`deal:${existing.id}`, JSON.stringify(updated));
+  await logActivity({
+    deal_id: existing.id,
+    action: "deal_updated",
+    entity_type: "deal",
+    entity_id: existing.id,
+    details: { fields: cleared, note: "Cleared stale status reason(s) on an active deal" },
+    user_id: userId,
+    actor: via,
+  });
+  return { deal: updated, cleared };
 }
 
 /** Merge validated field edits into a deal and log which fields changed. */
