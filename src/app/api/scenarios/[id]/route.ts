@@ -12,7 +12,8 @@ import {
   metricsDiffer,
   type StoredMetrics,
 } from "@/lib/engine-version";
-import type { Scenario, Deal } from "@/lib/validations";
+import { applyScenarioUpdate, underwritingPayload } from "@/lib/scenario-service";
+import type { Scenario } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -114,114 +115,16 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const now = new Date().toISOString();
-
-    // Merge updates
-    const updated: Scenario = {
-      ...existing,
-      name: body.name ?? existing.name,
-      type: body.type ?? existing.type,
-      is_active: body.is_active ?? existing.is_active,
-      notes: body.notes !== undefined ? body.notes : (existing as Record<string, unknown>).notes,
-      purchase_assumptions: body.purchase_assumptions ?? existing.purchase_assumptions,
-      financing_assumptions: body.financing_assumptions ?? existing.financing_assumptions,
-      revenue_assumptions: body.revenue_assumptions ?? existing.revenue_assumptions,
-      expense_assumptions: body.expense_assumptions ?? existing.expense_assumptions,
-      capex_assumptions: body.capex_assumptions ?? existing.capex_assumptions,
-      exit_assumptions: body.exit_assumptions ?? existing.exit_assumptions,
-      depreciation_assumptions: body.depreciation_assumptions ?? (existing as Record<string, unknown>).depreciation_assumptions ?? {},
-      // tax_assumptions: explicit !== undefined check (not ??) because the form
-      // sends null to DISABLE the tax layer — ?? would resurrect the old value.
-      tax_assumptions: body.tax_assumptions !== undefined
-        ? body.tax_assumptions
-        : (existing as Record<string, unknown>).tax_assumptions,
-      pricing_views: body.pricing_views ?? (existing as Record<string, unknown>).pricing_views,
-      version: existing.version + 1,
-      updated_at: now,
-    };
-
-    // P3-9: stamp notes vs inputs change times so the UI can flag notes that predate
-    // an input change. The form sends everything on each save, so compare the merged
-    // values to the stored ones to tell a notes edit from an input edit.
-    const sc = updated as unknown as Record<string, unknown>;
-    const exSc = existing as unknown as Record<string, unknown>;
-    if (sc.notes !== exSc.notes) sc.notes_updated_at = now;
-    const INPUT_KEYS = [
-      "purchase_assumptions",
-      "financing_assumptions",
-      "revenue_assumptions",
-      "expense_assumptions",
-      "capex_assumptions",
-      "exit_assumptions",
-      "tax_assumptions",
-      "depreciation_assumptions",
-    ];
-    if (INPUT_KEYS.some((k) => JSON.stringify(sc[k]) !== JSON.stringify(exSc[k]))) {
-      sc.inputs_updated_at = now;
-    }
-
-    // Recalculate
-    const inputs = {
-      purchase: updated.purchase_assumptions,
-      financing: updated.financing_assumptions,
-      revenue: updated.revenue_assumptions,
-      expenses: updated.expense_assumptions,
-      capex: updated.capex_assumptions,
-      exit: updated.exit_assumptions,
-      tax: updated.tax_assumptions,
-      // Include depreciation so the PUT response carries metrics.depreciation +
-      // the land-allocation reconciliation warning (matches GET / clone / export).
-      depreciation: updated.depreciation_assumptions || undefined,
-    } as unknown as ScenarioInputs;
-
-    const result = calculateUnderwriting(inputs);
-
-    updated.monthly_pro_forma = []; // storage: recomputed on read
-    stampMetrics(updated, result); // P3-7: calculated_metrics + engine_version + metrics_calculated_at
-
-    // Save version snapshot
-    await redis.set(
-      `scenario_version:${id}:${existing.version}`,
-      JSON.stringify(existing)
+    const { scenario, result } = await applyScenarioUpdate(
+      existing,
+      body,
+      session.user.id,
+      "web"
     );
 
-    await redis.set(`scenario:${id}`, JSON.stringify(updated));
-
-    // Persist-back (FIX: bid-price desync): keep the deal-level bid in sync
-    // with the ACTIVE scenario's bid, so the deal headline and any deal-level
-    // export default never go stale when the bid is edited in the underwriting
-    // tab. Only the active scenario drives the deal-level bid. Non-fatal.
-    try {
-      const bid = (updated.purchase_assumptions as Record<string, unknown>)?.bid_price as number | undefined;
-      if (updated.is_active !== false && typeof bid === "number" && bid > 0) {
-        const deal = await redis.get<Deal>(`deal:${existing.deal_id}`);
-        if (deal && deal.bid_price !== bid) {
-          await redis.set(`deal:${existing.deal_id}`, JSON.stringify({ ...deal, bid_price: bid, updated_at: now }));
-        }
-      }
-    } catch (e) {
-      console.error("bid persist-back failed (non-fatal):", e);
-    }
-
-    await logActivity({
-      deal_id: existing.deal_id,
-      action: "scenario_updated",
-      entity_type: "scenario",
-      entity_id: id,
-      details: { name: updated.name, version: updated.version },
-      user_id: session.user.id,
-    });
-
     return NextResponse.json({
-      scenario: updated,
-      underwriting: {
-        monthly: result.monthly,
-        annual: result.annual,
-        metrics: result.metrics,
-        sensitivity: result.sensitivity,
-        warnings: result.warnings,
-        tax: result.tax, // after-tax layer (present only when tax_assumptions set)
-      },
+      scenario,
+      underwriting: underwritingPayload(result),
     });
   } catch (err) {
     console.error("PUT /api/scenarios/[id] error:", err);

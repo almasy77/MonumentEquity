@@ -14,6 +14,18 @@ export default auth((req) => {
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/cron") ||
     pathname.startsWith("/api/seed") ||
+    // MCP connector (Claude). These do their OWN auth and must not be redirected to
+    // /login: /api/mcp validates a Bearer token and answers 401 + WWW-Authenticate;
+    // the OAuth metadata/register/token/revoke endpoints are public by protocol; and
+    // /oauth/authorize is the consent page, which sends an unauthenticated visitor to
+    // /login itself so the full authorize query string survives the round trip.
+    // (/api/oauth/authorize and /api/oauth/grants stay behind the session gate.)
+    pathname.startsWith("/.well-known/") ||
+    pathname === "/api/mcp" ||
+    pathname === "/api/oauth/register" ||
+    pathname === "/api/oauth/token" ||
+    pathname === "/api/oauth/revoke" ||
+    pathname === "/oauth/authorize" ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     // App-router generated icons (src/app/{icon.svg,apple-icon.png}). Without these

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getRedis, addToIndex } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
+import { getRedis } from "@/lib/db";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
+import { createDealRecord } from "@/lib/deal-service";
 import type { Deal } from "@/lib/validations";
 
 // GET /api/deals — list all active deals (with optional pagination)
@@ -55,49 +55,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-
-    const deal: Deal = {
-      id,
-      user_id: session.user.id,
-      stage: body.stage || "lead",
-      status: "active",
-      address: body.address,
-      city: body.city,
-      state: body.state,
-      zip: body.zip || undefined,
-      county: body.county || undefined,
-      units: body.units,
-      year_built: body.year_built || undefined,
-      property_type: body.property_type || undefined,
-      square_footage: body.square_footage || undefined,
-      asking_price: body.asking_price,
-      bid_price: body.bid_price || undefined,
-      source: body.source,
-      source_url: body.source_url || undefined,
-      photos: body.photos || undefined,
-      market_notes: body.market_notes || undefined,
-      contact_ids: body.contact_ids || [],
-      created_by: session.user.id,
-      created_at: now,
-      updated_at: now,
-      last_activity_at: now,
-    };
-
-    const redis = getRedis();
-    await redis.set(`deal:${id}`, JSON.stringify(deal));
-    await addToIndex("deals:active", id, Date.now());
-    await addToIndex(`deals:by_stage:${deal.stage}`, id, Date.now());
-
-    await logActivity({
-      deal_id: id,
-      action: "deal_created",
-      entity_type: "deal",
-      entity_id: id,
-      details: { address: deal.address, units: deal.units, asking_price: deal.asking_price },
-      user_id: session.user.id,
-    });
+    const deal = await createDealRecord(body, session.user.id, "web");
 
     return NextResponse.json(deal, { status: 201 });
   } catch (err) {

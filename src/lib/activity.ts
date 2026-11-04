@@ -8,6 +8,12 @@ export interface ActivityEntry {
   entity_id: string;
   details?: Record<string, unknown>;
   user_id: string;
+  /**
+   * Where the change came from: "web" (a signed-in user in the app UI) or
+   * "connector" (Claude, via the MCP server, acting as that user). Rows written
+   * before this field existed have no actor and were made through the web UI.
+   */
+  actor?: "web" | "connector";
   timestamp: string;
 }
 
@@ -16,7 +22,7 @@ export async function logActivity(
 ): Promise<void> {
   const id = crypto.randomUUID();
   const timestamp = new Date().toISOString();
-  const activity: ActivityEntry = { ...entry, id, timestamp };
+  const activity: ActivityEntry = { ...entry, actor: entry.actor ?? "web", id, timestamp };
 
   const redis = getRedis();
   await redis.set(`activity:${id}`, JSON.stringify(activity));
@@ -26,13 +32,14 @@ export async function logActivity(
 
 export async function getActivitiesForDeal(
   dealId: string,
-  limit: number = 20
+  limit: number = 20,
+  offset: number = 0
 ): Promise<ActivityEntry[]> {
   const redis = getRedis();
   const ids = await redis.zrange(
     `activities:by_deal:${dealId}`,
-    0,
-    limit - 1,
+    offset,
+    offset + limit - 1,
     { rev: true }
   );
   if (ids.length === 0) return [];

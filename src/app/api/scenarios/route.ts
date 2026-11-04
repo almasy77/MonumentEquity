@@ -3,20 +3,14 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
-import { calculateUnderwriting, buildDefaultInputs, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
 import { stampMetrics } from "@/lib/engine-version";
+import {
+  SCENARIO_TYPE_PRESETS,
+  createScenarioFromDefaults,
+  underwritingPayload,
+} from "@/lib/scenario-service";
 import type { Scenario, Deal } from "@/lib/validations";
-
-// Scenario-type growth-rate presets. Applied both when creating a scenario from
-// defaults and when a clone is RETYPED to one of these types (e.g. Renovation
-// seeded from Base) so the two paths produce the same starting assumptions.
-const SCENARIO_TYPE_PRESETS: Record<string, { rent_growth_rate?: number; tax_escalation_rate?: number; vacancy_rate?: number; exit_cap_rate?: number }> = {
-  upside: { rent_growth_rate: 0.05, tax_escalation_rate: 0.015, vacancy_rate: 0.05, exit_cap_rate: 0.06 },
-  downside: { rent_growth_rate: 0.01, tax_escalation_rate: 0.03, vacancy_rate: 0.10, exit_cap_rate: 0.08 },
-  value_add: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
-  renovation: { rent_growth_rate: 0.04, tax_escalation_rate: 0.02, vacancy_rate: 0.08 },
-  // marketing / current are filled from documents — no growth-rate preset.
-};
 
 // GET /api/scenarios?deal_id=xxx — list scenarios for a deal
 export async function GET(req: NextRequest) {
@@ -143,6 +137,8 @@ export async function POST(req: NextRequest) {
         },
         created_at: now,
         updated_at: now,
+        updated_by: session.user.id,
+        updated_via: "web",
       };
       stampMetrics(cloned, result); // P3-7: engine_version + metrics_calculated_at
 
@@ -180,132 +176,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    // Fetch user's default assumptions
-    const user = await redis.get<{ default_assumptions?: Record<string, number> }>(
-      `user:${session.user.id}`
+    const { scenario, result } = await createScenarioFromDefaults(
+      deal,
+      body,
+      session.user.id,
+      "web"
     );
-    const defaults = user?.default_assumptions ?? {};
-
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-
-    // Build default inputs from deal data + user defaults
-    const defaultInputs = buildDefaultInputs(
-      {
-        asking_price: deal.asking_price,
-        units: deal.units,
-        loi_amount: deal.loi_amount,
-        bid_price: deal.bid_price,
-        earnest_money: deal.earnest_money,
-        ltv: deal.ltv,
-        interest_rate: deal.interest_rate,
-        loan_term_years: deal.loan_term_years,
-        amortization_years: deal.amortization_years,
-        io_period_months: deal.io_period_months,
-        origination_fee_rate: deal.origination_fee_rate,
-        transaction_costs: deal.transaction_costs,
-        rent_roll: deal.rent_roll,
-        current_occupancy: deal.current_occupancy,
-        current_noi: deal.current_noi,
-        current_annual_taxes: deal.current_annual_taxes,
-        current_annual_insurance: deal.current_annual_insurance,
-        t12: deal.t12,
-        buy_box_scores: deal.buy_box_scores,
-      },
-      defaults
-    );
-
-    // Apply scenario-type-specific growth rate presets
-    const scenarioType = body.type || "base";
-    const preset = SCENARIO_TYPE_PRESETS[scenarioType] || {};
-
-    // Merge any provided overrides (explicit overrides > type presets > defaults)
-    const inputs: ScenarioInputs = {
-      purchase: { ...defaultInputs.purchase, ...body.purchase_assumptions },
-      financing: { ...defaultInputs.financing, ...body.financing_assumptions },
-      revenue: {
-        ...defaultInputs.revenue,
-        ...(preset.rent_growth_rate !== undefined ? { rent_growth_rate: preset.rent_growth_rate } : {}),
-        ...(preset.vacancy_rate !== undefined ? { vacancy_rate: preset.vacancy_rate } : {}),
-        ...body.revenue_assumptions,
-      },
-      expenses: {
-        ...defaultInputs.expenses,
-        ...(preset.tax_escalation_rate !== undefined ? { tax_escalation_rate: preset.tax_escalation_rate } : {}),
-        ...body.expense_assumptions,
-      },
-      capex: {
-        ...defaultInputs.capex,
-        ...body.capex_assumptions,
-        projects: body.capex_assumptions?.projects ?? defaultInputs.capex.projects,
-      },
-      exit: {
-        ...defaultInputs.exit,
-        ...(preset.exit_cap_rate !== undefined ? { exit_cap_rate: preset.exit_cap_rate } : {}),
-        ...body.exit_assumptions,
-      },
-      depreciation: body.depreciation_assumptions || undefined,
-    };
-
-    // Run calculations
-    const result = calculateUnderwriting(inputs);
-
-    const scenario: Scenario = {
-      id,
-      deal_id: body.deal_id,
-      name: body.name || "Base Case",
-      type: body.type || "base",
-      version: 1,
-      is_active: true,
-      purchase_assumptions: inputs.purchase as unknown as Record<string, unknown>,
-      financing_assumptions: inputs.financing as unknown as Record<string, unknown>,
-      revenue_assumptions: inputs.revenue as unknown as Record<string, unknown>,
-      expense_assumptions: inputs.expenses as unknown as Record<string, unknown>,
-      capex_assumptions: {
-        ...inputs.capex,
-        projects: inputs.capex.projects,
-      },
-      exit_assumptions: inputs.exit as unknown as Record<string, unknown>,
-      depreciation_assumptions: (inputs.depreciation || {}) as unknown as Record<string, unknown>,
-      monthly_pro_forma: [], // storage: recomputed on read, never persisted
-      calculated_metrics: {
-        irr: result.metrics.irr ?? undefined,
-        cash_on_cash: result.metrics.average_cash_on_cash,
-        dscr: result.metrics.year1_dscr,
-        equity_multiple: result.metrics.equity_multiple,
-        going_in_cap: result.metrics.going_in_cap,
-        stabilized_cap: result.metrics.stabilized_cap,
-      },
-      created_at: now,
-      updated_at: now,
-    };
-    stampMetrics(scenario, result); // P3-7: engine_version + metrics_calculated_at
-
-    await redis.set(`scenario:${id}`, JSON.stringify(scenario));
-    await addToIndex(`scenarios:by_deal:${body.deal_id}`, id, Date.now());
-
-    await logActivity({
-      deal_id: body.deal_id,
-      action: "scenario_created",
-      entity_type: "scenario",
-      entity_id: id,
-      details: { name: scenario.name, type: scenario.type },
-      user_id: session.user.id,
-    });
 
     // Return scenario + full underwriting result
     return NextResponse.json(
-      {
-        scenario,
-        underwriting: {
-          monthly: result.monthly,
-          annual: result.annual,
-          metrics: result.metrics,
-          sensitivity: result.sensitivity,
-          warnings: result.warnings,
-          tax: result.tax, // after-tax layer (present only when tax_assumptions set)
-        },
-      },
+      { scenario, underwriting: underwritingPayload(result) },
       { status: 201 }
     );
   } catch (err) {

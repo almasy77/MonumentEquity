@@ -300,6 +300,10 @@ export const dealSchema = z.object({
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   last_activity_at: z.string().datetime(),
+  // Who last changed the record and through which surface (web UI vs. the MCP
+  // connector acting as that user). Optional: absent on records that predate it.
+  updated_by: z.string().optional(),
+  updated_via: z.enum(["web", "connector"]).optional(),
 });
 
 export type Deal = z.infer<typeof dealSchema>;
@@ -464,6 +468,9 @@ export const scenarioSchema = z.object({
 
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
+  // Last editor + surface (web UI vs. MCP connector). Optional on older records.
+  updated_by: z.string().optional(),
+  updated_via: z.enum(["web", "connector"]).optional(),
 });
 
 export type Scenario = z.infer<typeof scenarioSchema>;

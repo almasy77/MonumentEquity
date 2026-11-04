@@ -4,6 +4,7 @@ import { getRedis, addToIndex, removeFromIndex, getFromIndex, scanKeys } from "@
 import { logActivity } from "@/lib/activity";
 import { DEAL_STAGES, STAGE_LABELS, type DealStage } from "@/lib/constants";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
+import { syncStatusIndexes } from "@/lib/deal-service";
 import { extractImageFromUrl } from "@/lib/ai-extract";
 import { deleteBlobUrl } from "@/lib/blob-helpers";
 import type { Deal, Contact } from "@/lib/validations";
@@ -57,7 +58,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     // and exports consume, rejecting malformed types (e.g. asking_price: "abc")
     // before they reach a calculation. (Deliberately a targeted guard, not a full
     // schema strip — that would risk dropping legitimate editor fields.)
-    for (const k of ["id", "user_id", "created_by", "created_at", "updated_at", "last_activity_at"]) {
+    for (const k of ["id", "user_id", "created_by", "created_at", "updated_at", "last_activity_at", "updated_by", "updated_via"]) {
       delete (body as Record<string, unknown>)[k];
     }
     const isNum = (v: unknown) => typeof v === "number" && isFinite(v);
@@ -139,14 +140,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
     // Handle status change (dead/passed)
     if (body.status && body.status !== existing.status) {
-      if (body.status === "dead" || body.status === "passed") {
-        await removeFromIndex("deals:active", id);
-        await removeFromIndex(`deals:by_stage:${existing.stage}`, id);
-      } else if (existing.status !== "active" && body.status === "active") {
-        await addToIndex("deals:active", id, Date.now());
-        const stage = body.stage || existing.stage;
-        await addToIndex(`deals:by_stage:${stage}`, id, Date.now());
-      }
+      await syncStatusIndexes(existing, body.status, body.stage);
 
       await logActivity({
         deal_id: id,
@@ -184,6 +178,8 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       created_at: existing.created_at,
       updated_at: now,
       last_activity_at: now,
+      updated_by: session.user.id,
+      updated_via: "web",
     };
 
     await redis.set(`deal:${id}`, JSON.stringify(updated));
