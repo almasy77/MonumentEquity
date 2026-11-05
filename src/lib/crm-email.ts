@@ -344,3 +344,63 @@ export async function createPendingContact(params: {
 export async function clearPendingContactEmail(email: string): Promise<void> {
   try { await getRedis().del(pendingContactEmailKey(email)); } catch { /* non-fatal */ }
 }
+
+export interface InboundProcessResult {
+  status: "logged" | "no_external";
+  attached: number; // matched contacts the log was attached to
+  created: number; // contacts auto-created
+  queued: number; // pending contacts queued for review
+}
+
+/**
+ * Vendor-agnostic core shared by every inbound webhook (Postmark, Resend, …):
+ * given the thread's participants and a built email log, attach the log to every
+ * external contact that matches and, for the rest, auto-create or queue per settings.
+ * Does nothing (and saves no log) when only staff are on the thread.
+ */
+export async function processInboundEmail(
+  participants: Participant[],
+  log: EmailLog,
+  settings: CrmEmailSettings,
+): Promise<InboundProcessResult> {
+  const external = selectExternalParticipants(participants, settings);
+  if (external.length === 0) return { status: "no_external", attached: 0, created: 0, queued: 0 };
+
+  const matches = await findContactsByEmails(external.map((p) => p.email));
+
+  const matchedContactIds: string[] = [];
+  for (const p of external) {
+    const contact = matches.get(p.email);
+    if (contact) matchedContactIds.push(contact.id);
+  }
+  await saveEmailLog(log, matchedContactIds);
+
+  let created = 0;
+  let queued = 0;
+  for (const p of external) {
+    if (matches.has(p.email)) continue;
+    if (settings.autoCreate) {
+      const parsed = parsePersonName(p.name, p.email);
+      const contact = await createContactFromParticipant({
+        email: p.email,
+        first_name: parsed.first_name,
+        last_name: parsed.last_name,
+        company: guessCompanyFromEmail(p.email),
+      });
+      await linkEmailToContact(log.id, contact.id);
+      created++;
+    } else {
+      const open = await findOpenPendingContact(p.email);
+      if (open) continue;
+      await createPendingContact({
+        participant: p,
+        emailLogId: log.id,
+        subject: log.subject,
+        from: log.from,
+        receivedAt: log.received_at,
+      });
+      queued++;
+    }
+  }
+  return { status: "logged", attached: matchedContactIds.length, created, queued };
+}

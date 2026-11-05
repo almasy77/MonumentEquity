@@ -3,18 +3,9 @@ import { getRedis } from "@/lib/db";
 import { getCrmEmailSettings } from "@/lib/crm-settings";
 import {
   extractParticipants,
-  selectExternalParticipants,
   buildEmailLog,
-  saveEmailLog,
-  linkEmailToContact,
-  findContactsByEmails,
   findProcessedMessage,
-  createPendingContact,
-  createContactFromParticipant,
-  findOpenPendingContact,
-  parsePersonName,
-  guessCompanyFromEmail,
-  normalizeEmail,
+  processInboundEmail,
 } from "@/lib/crm-email";
 
 /**
@@ -65,7 +56,6 @@ export async function POST(req: Request) {
 
     const settings = await getCrmEmailSettings();
     const participants = extractParticipants(body);
-    const external = selectExternalParticipants(participants, settings);
 
     const log = buildEmailLog({
       messageId,
@@ -84,54 +74,12 @@ export async function POST(req: Request) {
       sourceEmailId: emailId,
     });
 
-    if (external.length === 0) {
+    const result = await processInboundEmail(participants, log, settings);
+
+    if (result.status === "no_external") {
       // Only staff on the thread (or no parseable participants) — nothing to attach.
       await redis.set(`inbound_email:${emailId}`, JSON.stringify({ id: emailId, kind: "crm", message_id: messageId, received_at: now, status: "no_external" }));
       return NextResponse.json({ status: "no_external_parties" });
-    }
-
-    const matches = await findContactsByEmails(external.map((p) => p.email));
-
-    const matchedContactIds: string[] = [];
-    const created: { contact_id: string; email: string }[] = [];
-    const queued: { pending_id: string; email: string }[] = [];
-
-    // Save the log first (attach matched contacts below via its id).
-    for (const p of external) {
-      const contact = matches.get(p.email);
-      if (contact) matchedContactIds.push(contact.id);
-    }
-    await saveEmailLog(log, matchedContactIds);
-
-    // Unmatched external parties → auto-create or queue for confirmation.
-    for (const p of external) {
-      if (matches.has(p.email)) continue;
-
-      if (settings.autoCreate) {
-        const parsed = parsePersonName(p.name, p.email);
-        const contact = await createContactFromParticipant({
-          email: p.email,
-          first_name: parsed.first_name,
-          last_name: parsed.last_name,
-          company: guessCompanyFromEmail(p.email),
-        });
-        // Re-attach the just-saved log to the new contact.
-        await linkEmailToContact(log.id, contact.id);
-        created.push({ contact_id: contact.id, email: p.email });
-      } else {
-        // Avoid piling up duplicate pending entries for the same person; the
-        // conversation is still saved as an email log regardless.
-        const open = await findOpenPendingContact(p.email);
-        if (open) continue;
-        const pc = await createPendingContact({
-          participant: p,
-          emailLogId: log.id,
-          subject: log.subject,
-          from: normalizeEmail(log.from),
-          receivedAt: now,
-        });
-        queued.push({ pending_id: pc.id, email: p.email });
-      }
     }
 
     await redis.set(
@@ -142,9 +90,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       status: "logged",
       email_log_id: log.id,
-      attached: matchedContactIds.length,
-      created: created.length,
-      queued: queued.length,
+      attached: result.attached,
+      created: result.created,
+      queued: result.queued,
     });
   } catch (err) {
     console.error("CRM email webhook error:", err);
