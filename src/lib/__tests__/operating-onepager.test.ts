@@ -20,7 +20,7 @@ function fixture() {
     tax_assumptions: inp.tax, depreciation_assumptions: inp.depreciation,
   } as unknown as Scenario;
   const deal = {
-    id: "d1", address: "934 E Gay St", city: "Columbus", state: "OH", units: 12, source: "broker",
+    id: "d1", address: "200 Sample St", city: "Columbus", state: "OH", units: 12, source: "broker",
     t12: { total_egi: 200_000, total_opex: 90_000, total_noi: 110_000 },
   } as unknown as Deal;
   return { deal, scenario };
@@ -59,7 +59,7 @@ describe("operating one-pager", () => {
       capex_assumptions: inp.capex, exit_assumptions: inp.exit,
       tax_assumptions: inp.tax, depreciation_assumptions: inp.depreciation,
     } as unknown as Scenario;
-    const deal = { id: "d1", address: "934 E Gay St", city: "Columbus", state: "OH", units: 12, source: "broker" } as unknown as Deal;
+    const deal = { id: "d1", address: "200 Sample St", city: "Columbus", state: "OH", units: 12, source: "broker" } as unknown as Deal;
 
     const html = buildOperatingOnePager(deal, scenario);
     expect(html).toContain("8.0% of EGI"); // billed rate, not 8.5%

@@ -16,7 +16,7 @@ async function loiText(opts: {
   scenario?: Partial<Scenario>;
 }): Promise<string> {
   const deal = {
-    id: "d1", address: "934 E Gay St", city: "Columbus", state: "OH", zip: "43203",
+    id: "d1", address: "200 Sample St", city: "Columbus", state: "OH", zip: "43203",
     units: 25, asking_price: 3_100_000, source: "broker", ...opts.deal,
   } as unknown as Deal;
   const purchase = { purchase_price: 3_100_000, closing_cost_rate: 0.02, earnest_money: 0, ...opts.purchase } as unknown as PurchaseAssumptions;

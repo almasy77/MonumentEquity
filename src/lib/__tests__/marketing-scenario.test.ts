@@ -17,7 +17,7 @@ import type { OMExtractedData } from "../om-extract";
 
 const DEAL = {
   id: "d1",
-  address: "934 E Gay St",
+  address: "200 Sample St",
   city: "Columbus",
   state: "OH",
   units: 10,

@@ -26,7 +26,7 @@ function scenarioFrom(inp: ScenarioInputs): Scenario {
   } as unknown as Scenario;
 }
 
-const DEAL = { id: "d1", address: "934 E Gay St", city: "Columbus", state: "OH", units: 12 } as unknown as Deal;
+const DEAL = { id: "d1", address: "200 Sample St", city: "Columbus", state: "OH", units: 12 } as unknown as Deal;
 
 describe("buildShareScenarioData", () => {
   it("maps assumptions, pro forma, sensitivity, and a metric strip that ties to the engine", () => {
