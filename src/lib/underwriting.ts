@@ -180,7 +180,7 @@ export type RubsBasis =
   | "utilities_gas";
 
 /**
- * Change C (Manny, Nov 2026): is an NOI item DOCUMENTED today (T12 / rent roll — we
+ * Change C (lender review, Nov 2026): is an NOI item DOCUMENTED today (T12 / rent roll — we
  * pay for it) or part of OUR PLAN (our profit — we don't pay the seller for it)?
  * Display/pricing metadata only: the engine never reads these tags. Untagged items
  * that don't trace to the T12 or rent roll show as "untagged" in the NOI bridge.

@@ -1,5 +1,5 @@
 /**
- * Change C (Manny Lou, Nov 2026): "pay for what is documented today; what our plan
+ * Change C (lender review, Nov 2026): "pay for what is documented today; what our plan
  * adds is our profit."
  *
  * Builds the documented → plan → Year-1 → stabilized NOI bridge for a scenario and
