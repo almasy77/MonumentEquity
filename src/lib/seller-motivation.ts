@@ -1,5 +1,5 @@
 /**
- * Change E (Manny Lou, Nov 2026): structured seller-motivation signals.
+ * Change E (lender review, Nov 2026): structured seller-motivation signals.
  *
  * Stored on the deal: listed_date, original_asking_price, price_cut_count,
  * tax_delinquent (+ note). Derived here, never stored: days on market, total price
@@ -64,7 +64,7 @@ export function stateFromAddress(addr: string | null | undefined): string | null
   if (beforeZip) {
     const s = normalizeState(beforeZip[1]);
     if (s) return s;
-    // "Pittsburgh PA" captured as one chunk: try its last word.
+    // "Harrisburg PA" captured as one chunk: try its last word.
     const last = beforeZip[1].trim().split(" ").pop();
     const s2 = normalizeState(last);
     if (s2) return s2;

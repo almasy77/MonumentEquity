@@ -6,7 +6,7 @@ const NOW = new Date("2026-11-23T12:00:00Z");
 
 describe("seller-motivation signals (Change E)", () => {
   it("parses the owner's state from common mailing-address shapes", () => {
-    expect(stateFromAddress("PO Box 99938, Pittsburgh, PA 15233")).toBe("PA");
+    expect(stateFromAddress("PO Box 1234, Harrisburg, PA 17101")).toBe("PA");
     expect(stateFromAddress("123 Main St, Columbus, OH 43215-1234")).toBe("OH");
     expect(stateFromAddress("55 Water St New York NY 10041")).toBe("NY");
     expect(stateFromAddress("9 Elm Rd, Naples, Florida 34102")).toBe("FL");
@@ -22,34 +22,34 @@ describe("seller-motivation signals (Change E)", () => {
     const s = deriveSellerSignals(
       {
         state: "PA",
-        asking_price: 1_575_000,
-        listed_date: "2026-04-21",
-        original_asking_price: 1_750_000,
+        asking_price: 1_080_000,
+        listed_date: "2026-06-01",
+        original_asking_price: 1_200_000,
         price_cut_count: 1,
         tax_delinquent: true,
         tax_delinquent_note: " 2025 school tax unpaid ",
         owner_mailing_address: "88 Bay St, Tampa, FL 33602",
-        owner_since: "2016-09-22",
+        owner_since: "2014-03-10",
       },
       NOW,
     );
-    expect(s.days_on_market).toBe(216);
+    expect(s.days_on_market).toBe(175);
     expect(s.price_cut_pct).toBeCloseTo(0.1, 10);
     expect(s.out_of_state_owner).toBe(true);
     expect(s.owner_state).toBe("FL");
-    expect(s.owner_hold_years).toBeCloseTo(10.17, 2);
+    expect(s.owner_hold_years).toBeCloseTo(12.71, 2);
     expect(s.tax_delinquent_note).toBe("2025 school tax unpaid");
     expect(sellerSignalChips(s).map((c) => c.label)).toEqual([
-      "216 DOM",
+      "175 DOM",
       "1 price cut (−10%)",
       "Tax delinquent",
       "Out-of-state owner (FL)",
-      "Held 10.2 yrs",
+      "Held 12.7 yrs",
     ]);
   });
 
   it("in-state owner and unknowns produce no false signals", () => {
-    const s = deriveSellerSignals({ state: "Pennsylvania", owner_mailing_address: "PO Box 99938, Pittsburgh, PA 15233" }, NOW);
+    const s = deriveSellerSignals({ state: "Pennsylvania", owner_mailing_address: "PO Box 1234, Harrisburg, PA 17101" }, NOW);
     expect(s.out_of_state_owner).toBe(false);
     expect(s.days_on_market).toBeNull();
     expect(s.tax_delinquent).toBeNull();
