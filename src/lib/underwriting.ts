@@ -179,6 +179,14 @@ export type RubsBasis =
   | "utilities_water"
   | "utilities_gas";
 
+/**
+ * Change C (Manny, Nov 2026): is an NOI item DOCUMENTED today (T12 / rent roll — we
+ * pay for it) or part of OUR PLAN (our profit — we don't pay the seller for it)?
+ * Display/pricing metadata only: the engine never reads these tags. Untagged items
+ * that don't trace to the T12 or rent roll show as "untagged" in the NOI bridge.
+ */
+export type NoiBasisTag = "documented" | "plan";
+
 export interface OtherIncomeLineItem {
   label: string; // "RUBS - Electric", "Laundry", "Parking", "Pet rent"
   kind: "flat" | "rubs"; // flat = $/mo fixed; rubs = recovery % of a utility expense
@@ -188,6 +196,7 @@ export interface OtherIncomeLineItem {
   rubs_basis?: RubsBasis; // kind="rubs"; default "utilities_total"
   source_note?: string; // e.g. "T-12 Jun25-May26 actual"
   recurring?: boolean; // default true; false = in-period only, EXCLUDED from exit value
+  basis?: NoiBasisTag; // Change C: documented vs plan (unset = inferred from source_note/label)
 }
 
 export interface OtherIncomeAssumptions {
@@ -200,6 +209,10 @@ export interface RevenueAssumptions {
   other_income_sublines?: OtherIncomeSublines; // optional itemization; engine ignores (reads the total)
   rubs?: RubsAssumptions; // structured mode REPLACES other_income_sublines.utility_reimbursement
   other_income?: OtherIncomeAssumptions; // itemized line items; supersedes rubs + flat when present
+  // Change C tags (display/pricing only): rents marked above in-place, and the
+  // renovation rent premium.
+  rent_markup_basis?: NoiBasisTag;
+  renovation_premium_basis?: NoiBasisTag;
   vacancy_rate: number;
   bad_debt_rate: number;
   concessions_rate: number; // the value the engine bills (Less: Concessions = GPR × this)
@@ -265,6 +278,11 @@ export interface ServicesBreakdown {
 }
 
 export type OpexInputMode = "total_annual" | "per_unit_annual" | "per_unit_monthly" | "pct_egi" | "pct_gpr";
+
+/** Expense lines the NOI bridge can compare against the T12 baseline. */
+export type ExpenseResetLine =
+  | "payroll" | "repairs_maintenance" | "insurance" | "utilities"
+  | "admin_legal_marketing" | "contract_services";
 
 export interface OpexInput {
   value: number;
@@ -791,6 +809,10 @@ export interface ExpenseAssumptions {
   reserves_per_unit: number; // annual
   opex_inputs?: OpexInputs;
   opex_rent_basis?: RentBasis;
+  // Change C tags (display/pricing only): a modeled property tax below the documented
+  // bill (e.g. a post-sale appeal), and per-line expense cuts below the T12 baseline.
+  property_tax_basis?: NoiBasisTag;
+  expense_reset_basis?: Partial<Record<ExpenseResetLine, NoiBasisTag>>;
   // T12 baseline — scenario-local operating history used to seed expense fields
   t12_baseline?: {
     gross_potential_rent?: number;

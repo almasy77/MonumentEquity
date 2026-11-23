@@ -2,6 +2,7 @@ import type { Deal, Scenario } from "./validations";
 import type { SensitivityCell } from "./underwriting";
 import { calculateUnderwriting, dscrBasisLabel, type DealMetrics } from "./underwriting";
 import { scenarioToInputs } from "./scenario-inputs";
+import { buildNoiBridge, type NoiBridge } from "./noi-bridge";
 
 // Builds the read-only, seller/partner-facing data for one scenario on the public
 // share page. Recomputes from stored inputs (the same calculateUnderwriting the app
@@ -42,6 +43,9 @@ export interface ShareScenarioData {
   proforma: ShareProFormaYear[];
   sensitivity: SensitivityCell[];
   basePurchasePrice: number;
+  // Change C: documented → plan → Year-1 → stabilized NOI, plus the two prices.
+  // null when it can't be computed (never blocks the rest of the card).
+  bridge: NoiBridge | null;
 }
 
 const usd = (n: number): string =>
@@ -70,6 +74,15 @@ export function loanSizingRows(m: DealMetrics): ShareAssumption[] {
         : `LTV binds: ${usd(m.ltv_loan_amount)} (DSCR max ${usd(dscrLoan)})`,
     },
   ];
+}
+
+function safeBridge(inputs: ReturnType<typeof scenarioToInputs>, deal: Deal, s: Scenario): NoiBridge | null {
+  try {
+    const target = ((s as unknown as { pricing_views?: { target_irr?: number } }).pricing_views ?? {}).target_irr;
+    return buildNoiBridge(inputs, { deal, target_irr: target });
+  } catch {
+    return null;
+  }
 }
 
 export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioData {
@@ -120,6 +133,7 @@ export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioDa
       proforma,
       sensitivity: r.sensitivity ?? [],
       basePurchasePrice: inputs.purchase.purchase_price,
+      bridge: safeBridge(inputs, deal, s),
     };
   } catch {
     // Compute failed (e.g. malformed stored inputs) — fall back to the stored
@@ -141,6 +155,7 @@ export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioDa
       proforma: [],
       sensitivity: [],
       basePurchasePrice: 0,
+      bridge: null,
     };
   }
 }

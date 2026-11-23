@@ -198,6 +198,8 @@ const otherIncomeItems = z
       label: z.string().min(1).max(100).describe('e.g. "Laundry", "Parking", "Pet rent", "RUBS - Electric"'),
       monthly: z.number().min(0).finite().describe("Dollars per month for the whole property"),
       recurring: z.boolean().optional().describe("false = one-time / in-period only; excluded from exit value. Default true."),
+      basis: z.enum(["documented", "plan"]).optional().describe("documented = in the T12 / rent roll today (we pay for it); plan = income our business plan adds (our profit). Omit if unknown: lines citing the T12, rent roll or an in-place lease count as documented, others show as untagged in the NOI bridge."),
+      source_note: z.string().max(200).optional().describe('Where the number comes from, e.g. "T-12 Jul25-Jun26".'),
     })
   )
   .max(40)
