@@ -30,7 +30,7 @@ describe("check (j) — reassessment basis ties to billed rate", () => {
   });
 
   it("FAILS (not n/a) when mill_rate has drifted from the billed effective rate", () => {
-    // 295 Thurman signature: mill_rate 75 but effective 2.198% (≈62.8 eff mills).
+    // Field-bug signature: mill_rate 75 but effective 2.198% (≈62.8 eff mills).
     const j = setup({ enabled: true, assessment_ratio: 0.35, mill_rate: 75, effective_tax_rate: 0.02198, phase_in_month: 1 });
     expect(j.pass).toBe(false);
     expect(j.detail).toMatch(/disagree/);
