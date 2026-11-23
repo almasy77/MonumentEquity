@@ -85,7 +85,7 @@ export interface FinancingAssumptions {
   //  - "year1_projected": the modeled year-1 NOI.
   //  - "manual": a user-entered NOI (manual_sizing_noi).
   //  - "documented": the seller's documented NOI (the deal's current NOI, else the
-  //    Pricing Views seller NOI) — what a lender sizes on (Manny, Nov 2026).
+  //    Pricing Views seller NOI) — what a lender sizes on (lender review, Nov 2026).
   //  - "lesser_of": min(documented, year1_projected).
   // documented / lesser_of fall back to year-1 projected with a warning when no
   // documented NOI exists.
@@ -1178,7 +1178,7 @@ export interface DealMetrics {
   dscr_loan_amount: number | null; // DSCR-sized proceeds (null when sizing disabled)
   dscr_sizing_noi?: number; // P2-3: the annual NOI the DSCR loan was sized on
   dscr_sizing_basis?: DscrSizingBasis; // the basis requested (stored, or year1_projected when unset)
-  // Engine v5 (Manny loan-sizing fix): every sizing input, so outside readers can
+  // Engine v5 (lender loan-sizing fix): every sizing input, so outside readers can
   // reconcile the loan.
   dscr_sizing_basis_applied?: DscrSizingResolution["applied"]; // the NOI actually used
   dscr_floor?: number; // the floor applied
