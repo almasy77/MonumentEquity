@@ -103,10 +103,14 @@ describe("engine v5 — DSCR sizing on documented in-place NOI", () => {
     }
   });
 
-  it("deal current NOI is the documented fallback when Pricing Views has none", () => {
-    const r = calculateUnderwriting(inputs("lincoln-base", { floor: 1.3, basis: "documented" }, { current_noi: 60000 }, true));
+  it("deal current NOI wins over Pricing Views seller NOI (Bryan, Nov 23)", () => {
+    const r = calculateUnderwriting(inputs("lincoln-base", { floor: 1.3, basis: "documented" }, { current_noi: 60000 }));
     expect(r.metrics.documented_noi).toBe(60000);
     expect(r.metrics.documented_noi_source).toBe("deal_current_noi");
+    // No current NOI → Pricing Views seller NOI is the fallback.
+    const pv = calculateUnderwriting(inputs("lincoln-base", { floor: 1.3, basis: "documented" }, {}));
+    expect(pv.metrics.documented_noi).toBe(67542);
+    expect(pv.metrics.documented_noi_source).toBe("seller_proforma_noi");
   });
 
   it("unset floor resolves to 1.30 (Bryan, Nov 2026); explicit floor wins", () => {

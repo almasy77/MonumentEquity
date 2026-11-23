@@ -84,8 +84,8 @@ export interface FinancingAssumptions {
   //    ramp off (current rents at stated vacancy with modeled expenses).
   //  - "year1_projected": the modeled year-1 NOI.
   //  - "manual": a user-entered NOI (manual_sizing_noi).
-  //  - "documented": the seller's documented NOI (Pricing Views seller NOI, else the
-  //    deal's current NOI) — what a lender sizes on (Manny, Nov 2026).
+  //  - "documented": the seller's documented NOI (the deal's current NOI, else the
+  //    Pricing Views seller NOI) — what a lender sizes on (Manny, Nov 2026).
   //  - "lesser_of": min(documented, year1_projected).
   // documented / lesser_of fall back to year-1 projected with a warning when no
   // documented NOI exists.
@@ -991,10 +991,13 @@ export function resolveDscrFloor(financing: Pick<FinancingAssumptions, "dscr_flo
 }
 
 export function resolveDocumentedNOI(ctx: SizingContext | undefined): { noi: number; source: DocumentedNoiSource } | null {
-  const seller = ctx?.seller_proforma_noi;
-  if (typeof seller === "number" && seller > 0) return { noi: seller, source: "seller_proforma_noi" };
+  // Deal current NOI first (Bryan, Nov 23): it is the seller-reported in-place
+  // figure. Pricing Views "seller pro-forma NOI" can hold a broker projection, so it
+  // is only the fallback.
   const current = ctx?.deal_current_noi;
   if (typeof current === "number" && current > 0) return { noi: current, source: "deal_current_noi" };
+  const seller = ctx?.seller_proforma_noi;
+  if (typeof seller === "number" && seller > 0) return { noi: seller, source: "seller_proforma_noi" };
   return null;
 }
 
@@ -1180,7 +1183,7 @@ export interface DealMetrics {
   dscr_sizing_basis_applied?: DscrSizingResolution["applied"]; // the NOI actually used
   dscr_floor?: number; // the floor applied
   dscr_floor_source?: "explicit" | "default"; // stored on the scenario vs DEFAULT_DSCR_FLOOR
-  documented_noi?: number | null; // seller pro-forma NOI, else deal current NOI
+  documented_noi?: number | null; // deal current NOI, else Pricing Views seller NOI
   documented_noi_source?: DocumentedNoiSource | null;
   dscr_loan_amount_documented?: number | null; // DSCR proceeds on documented NOI (null = none)
   dscr_loan_amount_year1?: number | null; // DSCR proceeds on year-1 projected NOI
@@ -1981,7 +1984,7 @@ export function calculateUnderwriting(
         : "ltv",
     };
     const fallbackWarning = sizing.fell_back
-      ? `DSCR sizing basis "${sizing.basis === "lesser_of" ? "lesser of documented / year-1" : "documented"}" has no documented NOI (enter the seller NOI in Pricing Views or the deal's Current NOI) — sized on year-1 projected NOI $${Math.round(sizingNOI).toLocaleString()} instead`
+      ? `DSCR sizing basis "${sizing.basis === "lesser_of" ? "lesser of documented / year-1" : "documented"}" has no documented NOI (enter the deal's Current NOI or the seller NOI in Pricing Views) — sized on year-1 projected NOI $${Math.round(sizingNOI).toLocaleString()} instead`
       : null;
     if (binds) {
       const resized = calculateUnderwriting(inputs, { loanOverride: dscrLoan });

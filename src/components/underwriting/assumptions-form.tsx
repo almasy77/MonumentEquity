@@ -1798,7 +1798,7 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   )}
                   {f.size_to_dscr !== false && (
                     <div className="w-40">
-                      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="Which NOI the lender sizes the DSCR loan on. Documented = the seller's NOI (Pricing Views seller NOI, else the deal's Current NOI) — what a lender funds at close. Lesser of = the lower of documented and Year-1 projected. Year-1 projected = the first modeled operating year. Modeled in-place = this scenario's rents with the lease-up ramp off. Manual = a number you enter.">
+                      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="Which NOI the lender sizes the DSCR loan on. Documented = the seller's NOI (the deal's Current NOI, else the Pricing Views seller NOI) — what a lender funds at close. Lesser of = the lower of documented and Year-1 projected. Year-1 projected = the first modeled operating year. Modeled in-place = this scenario's rents with the lease-up ramp off. Manual = a number you enter.">
                         Sizing NOI basis
                       </label>
                       <select
