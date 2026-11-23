@@ -7,6 +7,7 @@ import { RentCastAutofill } from "@/components/deals/rentcast-autofill";
 import { AttomMortgagePanel } from "@/components/deals/attom-mortgage-panel";
 import { Separator } from "@/components/ui/separator";
 import { EditableField } from "./editable-field";
+import { SellerSignalChips } from "./seller-signal-chips";
 import { Building2, AlertTriangle, Info } from "lucide-react";
 import type { Deal } from "@/lib/validations";
 import { computeTaxFlags } from "@/lib/tax-flags";
@@ -153,12 +154,12 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
     const numericFields = [
       "units", "year_built", "square_footage", "asking_price", "owner_acquisition_price",
       "tax_mill_rate", "tax_mill_assessed_pct", "tax_assessment_pct", "tax_market_value",
-      "assessed_value", "owner_loan_balance_est",
+      "assessed_value", "owner_loan_balance_est", "original_asking_price", "price_cut_count",
     ];
     if (numericFields.includes(field)) {
       parsed = value ? Number(value.replace(/,/g, "")) : undefined;
     }
-    const boolFields = ["tax_abatement_present", "tax_cauv", "tax_reappraisal_in_progress"];
+    const boolFields = ["tax_abatement_present", "tax_cauv", "tax_reappraisal_in_progress", "tax_delinquent"];
     if (boolFields.includes(field)) {
       parsed = value === "true" ? true : value === "false" ? undefined : value;
     }
@@ -313,6 +314,27 @@ export function EditablePropertyDetails({ deal }: { deal: Deal }) {
           <EditableField label="Ownership Notes" value={deal.owner_notes || ""} onSave={(v) => updateDeal("owner_notes", v)} placeholder="e.g. out-of-state owner" />
           <EditableField label="Est. Mortgage Balance" value={deal.owner_loan_balance_est?.toString() || ""} onSave={(v) => updateDeal("owner_loan_balance_est", v)} type="number" prefix="$" placeholder="Estimated payoff (not live)" />
         </div>
+
+        {/* Seller motivation (Change E) — stored facts; DOM, cut %, out-of-state and hold
+            years are derived for the chips. Display only: no scoring, no gates. */}
+        <Separator className="bg-slate-800" />
+        <h4 className="text-sm font-medium text-white">Seller Motivation</h4>
+        <SellerSignalChips deal={deal} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <EditableField label="Listed Date" value={deal.listed_date || ""} onSave={(v) => updateDeal("listed_date", v)} type="date" placeholder="When it hit the market" />
+          <EditableField label="Original Asking Price" value={deal.original_asking_price?.toString() || ""} onSave={(v) => updateDeal("original_asking_price", v)} type="number" prefix="$" placeholder="Before any cuts" />
+          <EditableField label="Price Cuts" value={deal.price_cut_count?.toString() || ""} onSave={(v) => updateDeal("price_cut_count", v)} type="number" placeholder="Count" />
+          <EditableField label="Tax Delinquency Note" value={deal.tax_delinquent_note || ""} onSave={(v) => updateDeal("tax_delinquent_note", v)} placeholder="e.g. 2025 school tax unpaid" />
+        </div>
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!deal.tax_delinquent}
+            onChange={(e) => updateDeal("tax_delinquent", e.target.checked ? "true" : "false")}
+            className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-blue-500"
+          />
+          Tax delinquent
+        </label>
 
         {/* Existing debt on the property (seller position) — looked up from ATTOM deed records. */}
         <AttomMortgagePanel

@@ -12,6 +12,7 @@ import { ChecklistPanel } from "@/components/checklists/checklist-panel";
 import { AdminOnly } from "@/components/layout/admin-only";
 import { BuyBoxScorecard } from "@/components/deals/buy-box-scorecard";
 import { EditablePropertyDetails } from "@/components/deals/editable-property-details";
+import { SellerSignalChips } from "@/components/deals/seller-signal-chips";
 import { DealPhoto, DealPhotoActions } from "@/components/deals/deal-photo";
 import { SellerBrokerFinancials } from "@/components/deals/seller-broker-financials";
 import { DueDiligenceClosing } from "@/components/deals/due-diligence-closing";
@@ -204,6 +205,9 @@ export default async function DealDetailPage({
                 {deal.city}, {deal.state} {deal.zip || ""}
               </a>
             </p>
+            <div className="mt-2">
+              <SellerSignalChips deal={deal} />
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Link
