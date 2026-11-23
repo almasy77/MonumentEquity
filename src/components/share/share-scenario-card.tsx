@@ -4,7 +4,6 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SensitivityGrid } from "@/components/underwriting/sensitivity-grid";
-import { NoiBridgeTable } from "@/components/underwriting/noi-bridge-table";
 import type { ShareScenarioData, ShareProFormaYear } from "@/lib/share-scenario";
 
 // Read-only, seller/partner-facing scenario card for the public share page. The
@@ -103,15 +102,6 @@ export function ShareScenarioCard({ data }: { data: ShareScenarioData }) {
           )}
 
           {/* Pro Forma */}
-          {data.bridge && (
-            <div>
-              <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                NOI Bridge: documented vs plan
-              </h5>
-              <NoiBridgeTable bridge={data.bridge} />
-            </div>
-          )}
-
           {proforma.length > 0 && (
             <section>
               <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">

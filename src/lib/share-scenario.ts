@@ -2,8 +2,12 @@ import type { Deal, Scenario } from "./validations";
 import type { SensitivityCell } from "./underwriting";
 import { calculateUnderwriting, dscrBasisLabel, type DealMetrics } from "./underwriting";
 import { scenarioToInputs } from "./scenario-inputs";
-import { buildNoiBridge, type NoiBridge } from "./noi-bridge";
 
+// Change C: the documented-vs-plan NOI bridge is deliberately NOT built here. Share
+// links can reach sellers, and itemizing our plan upside (tax appeal, renovation
+// premium) with its value invites them to charge for it (Bryan, Nov 23). The bridge
+// lives on the Underwrite page only; keep it out of this payload, not just the UI.
+//
 // Builds the read-only, seller/partner-facing data for one scenario on the public
 // share page. Recomputes from stored inputs (the same calculateUnderwriting the app
 // and Excel export use) so the shared assumptions / pro forma / sensitivity always
@@ -43,9 +47,6 @@ export interface ShareScenarioData {
   proforma: ShareProFormaYear[];
   sensitivity: SensitivityCell[];
   basePurchasePrice: number;
-  // Change C: documented → plan → Year-1 → stabilized NOI, plus the two prices.
-  // null when it can't be computed (never blocks the rest of the card).
-  bridge: NoiBridge | null;
 }
 
 const usd = (n: number): string =>
@@ -74,15 +75,6 @@ export function loanSizingRows(m: DealMetrics): ShareAssumption[] {
         : `LTV binds: ${usd(m.ltv_loan_amount)} (DSCR max ${usd(dscrLoan)})`,
     },
   ];
-}
-
-function safeBridge(inputs: ReturnType<typeof scenarioToInputs>, deal: Deal, s: Scenario): NoiBridge | null {
-  try {
-    const target = ((s as unknown as { pricing_views?: { target_irr?: number } }).pricing_views ?? {}).target_irr;
-    return buildNoiBridge(inputs, { deal, target_irr: target });
-  } catch {
-    return null;
-  }
 }
 
 export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioData {
@@ -133,7 +125,6 @@ export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioDa
       proforma,
       sensitivity: r.sensitivity ?? [],
       basePurchasePrice: inputs.purchase.purchase_price,
-      bridge: safeBridge(inputs, deal, s),
     };
   } catch {
     // Compute failed (e.g. malformed stored inputs) — fall back to the stored
@@ -155,7 +146,6 @@ export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioDa
       proforma: [],
       sensitivity: [],
       basePurchasePrice: 0,
-      bridge: null,
     };
   }
 }
