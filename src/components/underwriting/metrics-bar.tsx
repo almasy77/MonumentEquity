@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { DealMetrics } from "@/lib/underwriting";
+import { DEFAULT_DSCR_FLOOR, type DealMetrics } from "@/lib/underwriting";
 
 // Placeholder thresholds — UNSOURCED. Confirm against lender term sheets before
 // treating these as authoritative debt-yield underwriting gates.
@@ -46,7 +46,7 @@ export function MetricsBar({ metrics }: { metrics: DealMetrics }) {
       label: "DSCR (Yr 1)",
       title: "Debt Service Coverage Ratio — Year 1 NOI / Year 1 Debt Service",
       value: metrics.year1_dscr.toFixed(2),
-      color: metricColor(metrics.year1_dscr, { good: 1.25, warn: 1.0, reverse: true }),
+      color: metricColor(metrics.year1_dscr, { good: metrics.dscr_floor ?? DEFAULT_DSCR_FLOOR, warn: 1.0, reverse: true }),
     },
     {
       label: "Debt Yield (Yr 1)",

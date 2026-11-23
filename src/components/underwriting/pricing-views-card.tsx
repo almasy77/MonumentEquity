@@ -101,7 +101,7 @@ export function PricingViewsCard({
         year1NOI: a0?.noi,
         stabilizedNOI: aN?.noi,
         // GRM uses CURRENT in-place gross rent, not the pro-forma (market/renovated) gpr.
-        grossRentAnnual: currentGrossScheduledRentAnnual(scenarioToInputs(scenario).revenue.unit_mix),
+        grossRentAnnual: currentGrossScheduledRentAnnual(scenarioToInputs(scenario, deal).revenue.unit_mix),
         askingPrice: deal.asking_price,
         offerPrice: purchase.bid_price || purchase.loi_amount || purchase.purchase_price,
       },
@@ -113,8 +113,8 @@ export function PricingViewsCard({
   const solved = useMemo(() => {
     const t = inputs.target_irr;
     if (!(typeof t === "number" && isFinite(t) && t > 0)) return { target: null as number | null, price: null as number | null };
-    return { target: t, price: solvePriceForIRR(scenarioToInputs(scenario), t) };
-  }, [scenario, inputs.target_irr]);
+    return { target: t, price: solvePriceForIRR(scenarioToInputs(scenario, deal), t) };
+  }, [scenario, deal, inputs.target_irr]);
 
   const marker = (v: number | null) => {
     if (v === null || !views.range) return null;

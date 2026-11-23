@@ -25,7 +25,7 @@ function yearsSince(iso?: string): number | undefined {
 
 export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
   const d = deal as unknown as Record<string, number | string | undefined>;
-  const inputs = scenarioToInputs(scenario);
+  const inputs = scenarioToInputs(scenario, deal);
   const result = calculateUnderwriting(inputs);
   const a0 = result.annual[0];
   const aN = result.annual[result.annual.length - 1];

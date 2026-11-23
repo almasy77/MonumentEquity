@@ -4,7 +4,7 @@ import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { normalizeT12 } from "@/lib/import-normalize";
 import { fetchBlobFile, persistDealFile, guessContentType } from "@/lib/blob-helpers";
-import { calculateUnderwriting, buildExpensesFromT12, sumT12Field, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, buildExpensesFromT12, sumT12Field, type ScenarioInputs, sizingContextFor } from "@/lib/underwriting";
 import { stampMetrics } from "@/lib/engine-version";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -122,6 +122,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     };
 
     const inputs = {
+      sizing_context: sizingContextFor(updated, deal), // engine v5: documented NOI for DSCR sizing
       purchase: updated.purchase_assumptions,
       financing: updated.financing_assumptions,
       revenue: updated.revenue_assumptions,

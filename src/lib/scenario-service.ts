@@ -10,6 +10,7 @@ import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import {
   calculateUnderwriting,
+  sizingContextFor,
   buildDefaultInputs,
   type ScenarioInputs,
 } from "@/lib/underwriting";
@@ -102,6 +103,9 @@ export async function createScenarioFromDefaults(
 
   // Merge any provided overrides (explicit overrides > type presets > defaults)
   const inputs: ScenarioInputs = {
+    // Engine v5: a new scenario has no Pricing Views yet; the deal's current NOI is
+    // the documented-NOI source for DSCR sizing until a seller NOI is entered.
+    sizing_context: sizingContextFor(null, deal),
     purchase: { ...defaultInputs.purchase, ...body.purchase_assumptions },
     financing: { ...defaultInputs.financing, ...body.financing_assumptions },
     revenue: {
@@ -240,8 +244,10 @@ export async function applyScenarioUpdate(
     sc.inputs_updated_at = now;
   }
 
-  // Recalculate
+  // Recalculate. Engine v5: the deal's current NOI is a documented-NOI source.
+  const sizingDeal = await redis.get<Deal>(`deal:${existing.deal_id}`);
   const inputs = {
+    sizing_context: sizingContextFor(updated, sizingDeal),
     purchase: updated.purchase_assumptions,
     financing: updated.financing_assumptions,
     revenue: updated.revenue_assumptions,

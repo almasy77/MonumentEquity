@@ -1,0 +1,336 @@
+{
+ "purchase_assumptions": {
+  "purchase_price": 950000,
+  "closing_cost_rate": 0.03,
+  "earnest_money": 25000,
+  "cost_seg_study_cost": 4000,
+  "bid_price": 950000,
+  "loi_amount": 950000
+ },
+ "financing_assumptions": {
+  "ltv": 0.7,
+  "interest_rate": 0.075,
+  "amortization_years": 30,
+  "loan_term_years": 5,
+  "io_period_months": 0,
+  "origination_fee_rate": 0.01,
+  "loan_type": "bank",
+  "size_to_dscr": true,
+  "dscr_floor": 1.3,
+  "dscr_sizing_basis": "year1_projected"
+ },
+ "revenue_assumptions": {
+  "unit_mix": [
+   {
+    "count": 1,
+    "current_rent": 759,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 10"
+   },
+   {
+    "count": 1,
+    "current_rent": 775,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 11"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 12"
+   },
+   {
+    "count": 1,
+    "current_rent": 737,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 13"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 14"
+   },
+   {
+    "count": 1,
+    "current_rent": 850,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 15"
+   },
+   {
+    "count": 1,
+    "current_rent": 968,
+    "market_rent": 968,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 16"
+   },
+   {
+    "count": 1,
+    "current_rent": 867,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 17"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 18"
+   },
+   {
+    "count": 1,
+    "current_rent": 785,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 19"
+   },
+   {
+    "count": 1,
+    "current_rent": 737,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 20"
+   },
+   {
+    "count": 1,
+    "current_rent": 830,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 21"
+   },
+   {
+    "count": 1,
+    "current_rent": 1002,
+    "market_rent": 1002,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 22"
+   },
+   {
+    "count": 1,
+    "current_rent": 867,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 23"
+   },
+   {
+    "count": 1,
+    "current_rent": 976,
+    "market_rent": 976,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 24"
+   },
+   {
+    "count": 1,
+    "current_rent": 759,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 25"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 26 (vacant)"
+   },
+   {
+    "count": 1,
+    "current_rent": 753,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 01"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 02 (vacant)"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 03"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 04"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 05"
+   },
+   {
+    "count": 1,
+    "current_rent": 735,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 06"
+   },
+   {
+    "count": 1,
+    "current_rent": 953,
+    "market_rent": 953,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 07"
+   },
+   {
+    "count": 1,
+    "current_rent": 899,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 08"
+   },
+   {
+    "count": 1,
+    "current_rent": 850,
+    "market_rent": 925,
+    "renovated_rent_premium": 75,
+    "type": "1BR/1BA",
+    "unit_number": "Unit 09"
+   }
+  ],
+  "other_income_monthly": 1515,
+  "vacancy_rate": 0.07,
+  "bad_debt_rate": 0.02,
+  "concessions_rate": 0,
+  "rent_growth_rate": 0.03,
+  "rent_ramp": {
+   "enabled": true,
+   "mode": "linear",
+   "absorption_months": 24,
+   "turn_downtime_months": 0,
+   "max_turns_per_month": 2,
+   "initial_vacant_units": 2,
+   "vacant_leaseup_months": 3
+  },
+  "other_income": {
+   "line_items": [
+    {
+     "label": "Utility billbacks (in place, T12)",
+     "kind": "flat",
+     "monthly_amount": 883,
+     "entry_period": "mo",
+     "recurring": true
+    },
+    {
+     "label": "Late/MTM/misc fees (T12)",
+     "kind": "flat",
+     "monthly_amount": 632,
+     "entry_period": "mo",
+     "recurring": true
+    }
+   ]
+  }
+ },
+ "expense_assumptions": {
+  "management_fee_rate": 0.08,
+  "payroll_annual": 6000,
+  "repairs_maintenance_per_unit": 1000,
+  "turnover_cost_per_unit": 1500,
+  "turnover_rate": 0.35,
+  "insurance_per_unit": 600,
+  "property_tax_total": 20731,
+  "tax_escalation_rate": 0.02,
+  "expense_escalation_rate": 0.03,
+  "utilities_per_unit": 1650,
+  "admin_legal_marketing": 6000,
+  "contract_services": 20000,
+  "reserves_per_unit": 350
+ },
+ "capex_assumptions": {
+  "per_unit_cost": 6500,
+  "units_to_renovate": 12,
+  "renovation_start_month": 1,
+  "renovation_end_month": 24,
+  "renovation_downtime_enabled": true,
+  "renovation_downtime_months": 1,
+  "units_per_month": 1,
+  "projects": [
+   {
+    "category": "tax",
+    "cost": 18439,
+    "duration_months": 12,
+    "name": "Year-1 tax at current $900K assessment, before owner appeal lands",
+    "start_month": 1
+   },
+   {
+    "cost": 20000,
+    "duration_months": 3,
+    "name": "Unit 08 leak + bath-ceiling moisture/mold (12, 13, 20, 02)",
+    "start_month": 1
+   },
+   {
+    "cost": 15000,
+    "duration_months": 2,
+    "name": "Unit 02 trash-out and restore",
+    "start_month": 1
+   },
+   {
+    "cost": 15000,
+    "duration_months": 10,
+    "name": "HVAC / water heater / smoke-CO contingency",
+    "start_month": 2
+   }
+  ],
+  "capital_reserve_total": 0,
+  "capital_reserve_per_unit": 0
+ },
+ "exit_assumptions": {
+  "hold_period_years": 5,
+  "exit_cap_rate": 0.09,
+  "selling_cost_rate": 0.04
+ },
+ "depreciation_assumptions": {},
+ "pricing_views": {
+  "target_cap": 0.08,
+  "seller_proforma_noi": 67542,
+  "seller_cap": 0.0386,
+  "market_cagr": 0.03,
+  "target_irr": 0.15,
+  "price_per_unit": 69000,
+  "price_per_sf": 93,
+  "assessment_ratio": 0.5014
+ },
+ "_source": "Lincoln Terrace scenario b49f190f as stored on 2026-11-20 (inputs only; notes and tax layer omitted). Do not edit: acceptance fixture for engine v5 DSCR sizing."
+}

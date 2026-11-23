@@ -25,7 +25,8 @@ describe("Phase 4.1: DSCR-aware loan sizing", () => {
     expect(m.loan_amount).toBeCloseTo(m.dscr_loan_amount!, 0);
     expect(m.loan_amount).toBeLessThan(m.ltv_loan_amount);
     // Resized loan lands exactly on the floor.
-    expect(m.year1_dscr).toBeCloseTo(1.25, 4);
+    // Unset floor → DEFAULT_DSCR_FLOOR (1.30x since engine v5; was 1.25x).
+    expect(m.year1_dscr).toBeCloseTo(1.30, 4);
     // Surfaced to the user, not silent.
     expect(r.warnings.some((w) => w.includes("Loan sized by DSCR"))).toBe(true);
   });

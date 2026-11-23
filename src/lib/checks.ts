@@ -5,7 +5,7 @@
  */
 import type { Deal } from "./validations";
 import type { ScenarioInputs, UnderwritingResult } from "./underwriting";
-import { propertyTaxForMonthV2, propertyTaxScenarioInForce, calculateLoanBalance } from "./underwriting";
+import { propertyTaxForMonthV2, propertyTaxScenarioInForce, calculateLoanBalance, resolveDscrFloor, dscrBasisLabel } from "./underwriting";
 import { jurisdictionRulesFor } from "./property-tax-jurisdictions";
 
 export interface ReconciliationCheck {
@@ -111,11 +111,11 @@ export function computeReconciliationChecks(
   }
 
   // (e) Loan sizing — mirror the engine EXACTLY: DSCR sizing only applies when
-  // size_to_dscr !== false, and the floor is financing.dscr_floor (default 1.25).
-  // (Hardcoding 1.25 / always applying DSCR false-FAILed deals with a lower floor
-  // or DSCR sizing turned off.)
+  // size_to_dscr !== false, and the floor is resolveDscrFloor (stored, else 1.30x
+  // since engine v5). (Hardcoding a floor / always applying DSCR false-FAILed deals
+  // with a lower floor or DSCR sizing turned off.)
   {
-    const floor = inputs.financing.dscr_floor ?? 1.25;
+    const floor = resolveDscrFloor(inputs.financing).floor;
     const dscrSizing = inputs.financing.size_to_dscr !== false;
     const ltvLoan = inputs.purchase.purchase_price * inputs.financing.ltv;
     const monthlyRate = inputs.financing.interest_rate / 12;
@@ -132,7 +132,9 @@ export function computeReconciliationChecks(
     const maxLoan = dscrSizing ? Math.min(ltvLoan, dscrLoan) : ltvLoan;
     const pass = m.loan_amount <= maxLoan + 1;
     const extraEquity = pass ? 0 : m.loan_amount - maxLoan;
-    const basisLabel = sizingBasis === "in_place" ? "in-place" : sizingBasis === "manual" ? "manual" : "year-1";
+    const basisLabel = m.dscr_sizing_basis_applied
+      ? dscrBasisLabel(m.dscr_sizing_basis_applied)
+      : sizingBasis === "in_place" ? "modeled in-place" : sizingBasis === "manual" ? "manual" : "year-1 projected";
     const label = dscrSizing ? `Loan within min(LTV, DSCR ${floor}x on ${basisLabel} NOI)` : "Loan within LTV (DSCR sizing off)";
     checks.push({
       id: "e", name: label, pass,

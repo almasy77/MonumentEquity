@@ -32,6 +32,7 @@ const FIELDS: Array<{
   { key: "loan_term_years", label: "Loan Term", suffix: "yrs", step: "1" },
   { key: "io_period_months", label: "IO Period", suffix: "months", step: "1" },
   { key: "origination_fee_rate", label: "Origination Fee", suffix: "%", step: "0.1", pct: true },
+  { key: "dscr_floor", label: "DSCR Floor (loan sizing)", suffix: "x", step: "0.05" },
   { key: "closing_cost_rate", label: "Closing Costs", suffix: "%", step: "0.1", pct: true },
   { key: "selling_cost_rate", label: "Selling Costs", suffix: "%", step: "0.1", pct: true },
   { key: "hold_period_years", label: "Hold Period", suffix: "yrs", step: "1" },

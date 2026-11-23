@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, removeFromIndex, scanKeys } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
-import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, sizingContextFor, type ScenarioInputs } from "@/lib/underwriting";
 import {
   ENGINE_VERSION,
   ENGINE_CHANGE_REASONS,
@@ -13,7 +13,7 @@ import {
   type StoredMetrics,
 } from "@/lib/engine-version";
 import { applyScenarioUpdate, underwritingPayload } from "@/lib/scenario-service";
-import type { Scenario } from "@/lib/validations";
+import type { Deal, Scenario } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -32,8 +32,12 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Engine v5: the deal's current NOI is a documented-NOI source for DSCR sizing.
+    const deal = await redis.get<Deal>(`deal:${scenario.deal_id}`);
+
     // Recalculate to get full result (monthly, annual, sensitivity, warnings)
     const inputs = {
+      sizing_context: sizingContextFor(scenario, deal), // engine v5: documented NOI for DSCR sizing
       purchase: scenario.purchase_assumptions,
       financing: scenario.financing_assumptions,
       revenue: scenario.revenue_assumptions,
