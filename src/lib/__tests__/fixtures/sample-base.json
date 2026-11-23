@@ -1,9 +1,9 @@
 {
  "purchase_assumptions": {
-  "purchase_price": 1750000,
+  "purchase_price": 1989750,
   "closing_cost_rate": 0.03,
-  "earnest_money": 25000,
-  "cost_seg_study_cost": 4000
+  "earnest_money": 28425,
+  "cost_seg_study_cost": 4548
  },
  "financing_assumptions": {
   "ltv": 0.7,
@@ -19,215 +19,215 @@
  "revenue_assumptions": {
   "unit_mix": [
    {
-    "unit_number": "Unit 10",
+    "unit_number": "U01",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 759,
-    "market_rent": 899,
+    "current_rent": 863,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 11",
+    "unit_number": "U02",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 775,
-    "market_rent": 899,
+    "current_rent": 881,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 12",
+    "unit_number": "U03",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 13",
+    "unit_number": "U04",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 737,
-    "market_rent": 899,
+    "current_rent": 838,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 14",
+    "unit_number": "U05",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 15",
+    "unit_number": "U06",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 850,
-    "market_rent": 899,
+    "current_rent": 966,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 16",
+    "unit_number": "U07",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 968,
-    "market_rent": 968,
+    "current_rent": 1101,
+    "market_rent": 1101,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 17",
+    "unit_number": "U08",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 867,
-    "market_rent": 899,
+    "current_rent": 986,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 18",
+    "unit_number": "U09",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 19",
+    "unit_number": "U10",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 785,
-    "market_rent": 899,
+    "current_rent": 893,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 20",
+    "unit_number": "U11",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 737,
-    "market_rent": 899,
+    "current_rent": 838,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 21",
+    "unit_number": "U12",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 830,
-    "market_rent": 899,
+    "current_rent": 944,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 22",
+    "unit_number": "U13",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 1002,
-    "market_rent": 1002,
+    "current_rent": 1139,
+    "market_rent": 1139,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 23",
+    "unit_number": "U14",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 867,
-    "market_rent": 899,
+    "current_rent": 986,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 24",
+    "unit_number": "U15",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 976,
-    "market_rent": 976,
+    "current_rent": 1110,
+    "market_rent": 1110,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 25",
+    "unit_number": "U16",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 759,
-    "market_rent": 899,
+    "current_rent": 863,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 26 (vacant)",
+    "unit_number": "U17",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 01",
+    "unit_number": "U18",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 753,
-    "market_rent": 899,
+    "current_rent": 856,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 02 (vacant)",
+    "unit_number": "U19",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 03",
+    "unit_number": "U20",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 04",
+    "unit_number": "U21",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 05",
+    "unit_number": "U22",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 06",
+    "unit_number": "U23",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 735,
-    "market_rent": 899,
+    "current_rent": 836,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 07",
+    "unit_number": "U24",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 953,
-    "market_rent": 953,
+    "current_rent": 1084,
+    "market_rent": 1084,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 08",
+    "unit_number": "U25",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 899,
-    "market_rent": 899,
+    "current_rent": 1022,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    },
    {
-    "unit_number": "Unit 09",
+    "unit_number": "U26",
     "type": "1BR/1BA",
     "count": 1,
-    "current_rent": 850,
-    "market_rent": 899,
+    "current_rent": 966,
+    "market_rent": 1022,
     "renovated_rent_premium": 0
    }
   ],
-  "other_income_monthly": 1840,
+  "other_income_monthly": 2093,
   "vacancy_rate": 0.1,
   "bad_debt_rate": 0.015,
   "concessions_rate": 0,
@@ -244,23 +244,23 @@
   "other_income": {
    "line_items": [
     {
-     "label": "Utility billbacks (in place, T12)",
+     "label": "Utility billback (T12)",
      "kind": "flat",
-     "monthly_amount": 883,
+     "monthly_amount": 1004,
      "entry_period": "mo",
      "recurring": true
     },
     {
-     "label": "Late/MTM/misc fees (T12)",
+     "label": "Fees (T12)",
      "kind": "flat",
-     "monthly_amount": 632,
+     "monthly_amount": 719,
      "entry_period": "mo",
      "recurring": true
     },
     {
-     "label": "Cable payment (one-time, T12)",
+     "label": "One-time payment (T12)",
      "kind": "flat",
-     "monthly_amount": 325,
+     "monthly_amount": 370,
      "entry_period": "mo",
      "recurring": false
     }
@@ -269,18 +269,18 @@
  },
  "expense_assumptions": {
   "management_fee_rate": 0.052,
-  "payroll_annual": 10895,
-  "repairs_maintenance_per_unit": 1768,
+  "payroll_annual": 12388,
+  "repairs_maintenance_per_unit": 2010,
   "turnover_cost_per_unit": 0,
   "turnover_rate": 0,
-  "insurance_per_unit": 262,
-  "property_tax_total": 30970,
+  "insurance_per_unit": 298,
+  "property_tax_total": 35213,
   "tax_escalation_rate": 0.02,
   "expense_escalation_rate": 0.03,
-  "utilities_per_unit": 1649,
-  "admin_legal_marketing": 6289,
-  "contract_services": 27931,
-  "reserves_per_unit": 350
+  "utilities_per_unit": 1875,
+  "admin_legal_marketing": 7151,
+  "contract_services": 31758,
+  "reserves_per_unit": 398
  },
  "capex_assumptions": {
   "per_unit_cost": 0,
@@ -302,10 +302,10 @@
  "depreciation_assumptions": {},
  "pricing_views": {
   "target_cap": 0.085,
-  "seller_proforma_noi": 67542,
+  "seller_proforma_noi": 76795,
   "seller_cap": 0.0386,
   "market_cagr": 0.03,
   "target_irr": 0.15
  },
- "_source": "Lincoln Terrace scenario 6cf449a1 as stored on 2026-11-20 (inputs only; notes and tax layer omitted). Do not edit: acceptance fixture for engine v5 DSCR sizing."
+ "_source": "Anonymized test fixture: a real scenario's shape with every dollar figure rescaled and all names removed. Do not edit; regenerate expected values if it changes."
 }
