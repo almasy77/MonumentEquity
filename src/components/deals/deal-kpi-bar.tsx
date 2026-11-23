@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ChevronDown } from "lucide-react";
 import { DEFAULT_DSCR_FLOOR, resolveDocumentedNOI, sizingContextFor, type DealMetrics } from "@/lib/underwriting";
-import { computeOfferVsValue, describeDelta, scenarioOffer, MANNY_DISCOUNT_TO_VALUE } from "@/lib/offer-value";
+import { computeOfferVsValue, describeDelta, scenarioOffer, RULE_OF_THUMB_DISCOUNT_TO_VALUE } from "@/lib/offer-value";
 import type { Scenario } from "@/lib/validations";
 
 function fmt(n: number | null | undefined, type: "pct" | "money" | "mult"): string {
@@ -80,7 +80,7 @@ export function DealKPIBar({
   }
 
   // Change D: offer vs ask and offer vs value (in-place NOI ÷ Pricing Views target cap).
-  // Manny's ~20% below value is shown as context, never as a gate.
+  // The lender's ~20%-below-value rule of thumb is shown as context, never as a gate.
   const sc = loaded ?? selectedScenario;
   const ov = computeOfferVsValue({
     offer: scenarioOffer(sc?.purchase_assumptions as { bid_price?: number; loi_amount?: number; purchase_price?: number } | undefined),
@@ -101,7 +101,7 @@ export function DealKPIBar({
       value: describeDelta(ov.offer_vs_value),
       color: "text-white",
       title: ov.value != null
-        ? `Value ${fmt(ov.value, "money")} = in-place NOI ${fmt(ov.in_place_noi, "money")} (${ov.noi_source === "deal_current_noi" ? "deal current NOI" : "Pricing Views seller NOI"}) ÷ ${(ov.value_cap! * 100).toFixed(2)}% target cap. Context: ~${MANNY_DISCOUNT_TO_VALUE * 100}% below value = ${fmt(ov.rule_of_thumb_price, "money")} (rule of thumb, not a gate).`
+        ? `Value ${fmt(ov.value, "money")} = in-place NOI ${fmt(ov.in_place_noi, "money")} (${ov.noi_source === "deal_current_noi" ? "deal current NOI" : "Pricing Views seller NOI"}) ÷ ${(ov.value_cap! * 100).toFixed(2)}% target cap. Context: ~${RULE_OF_THUMB_DISCOUNT_TO_VALUE * 100}% below value = ${fmt(ov.rule_of_thumb_price, "money")} (rule of thumb, not a gate).`
         : ov.missing.includes("target_cap") ? "Set a Target cap in Pricing Views" : "Needs in-place NOI (deal Current NOI or Pricing Views seller NOI)",
     },
     {

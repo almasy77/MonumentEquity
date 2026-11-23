@@ -1,16 +1,16 @@
 /**
- * Change D (Manny Lou, Nov 2026): offer vs ask and offer vs value.
+ * Change D (lender review, Nov 2026): offer vs ask and offer vs value.
  *
  * Value on in-place NOI = documented in-place NOI ÷ the scenario's target cap
  * (Pricing Views `target_cap`). The documented NOI is the same one the loan sizes
  * on (deal current NOI, else Pricing Views seller NOI), so value and debt agree.
  *
- * Manny's rule of thumb (~20% below value on in-place income) is CONTEXT ONLY: it is
+ * The lender's rule of thumb (~20% below value on in-place income) is CONTEXT ONLY: it is
  * reported as a reference price, never used as a gate.
  */
 import type { DocumentedNoiSource } from "./underwriting";
 
-export const MANNY_DISCOUNT_TO_VALUE = 0.2;
+export const RULE_OF_THUMB_DISCOUNT_TO_VALUE = 0.2;
 
 export interface OfferVsValue {
   offer: number | null;
@@ -58,7 +58,7 @@ export function computeOfferVsValue(args: {
     value_cap: cap,
     value,
     offer_vs_value: offer != null && value != null ? offer / value - 1 : null,
-    rule_of_thumb_price: value != null ? value * (1 - MANNY_DISCOUNT_TO_VALUE) : null,
+    rule_of_thumb_price: value != null ? value * (1 - RULE_OF_THUMB_DISCOUNT_TO_VALUE) : null,
     missing,
   };
 }

@@ -1,39 +1,40 @@
 /**
  * Change D: offer vs ask and offer vs value (value = in-place NOI ÷ target cap).
- * Lincoln Terrace figures: ask $1.75M, offer $950K, seller NOI $67,542, target cap 8.0%.
+ * Anonymized figures (a real case's ratios, dollars rescaled): ask $1,989,750,
+ * offer $1,080,150, documented NOI $76,795, target cap 8.0%.
  */
 import { describe, it, expect } from "vitest";
 import { computeOfferVsValue, describeDelta, scenarioOffer } from "../offer-value";
 
-const lincoln = {
-  offer: 950_000,
-  ask: 1_750_000,
-  documented: { noi: 67_542, source: "seller_proforma_noi" as const },
+const sample = {
+  offer: 1_080_150,
+  ask: 1_989_750,
+  documented: { noi: 76_795, source: "seller_proforma_noi" as const },
   targetCap: 0.08,
 };
 
 describe("offer vs ask / offer vs value (Change D)", () => {
-  it("Lincoln Offer: 45.7% below ask, 12.5% ABOVE value on in-place NOI", () => {
-    const r = computeOfferVsValue(lincoln);
-    expect(r.offer_vs_ask).toBeCloseTo(950 / 1750 - 1, 10);
-    expect(r.value).toBeCloseTo(844_275, 6);
-    expect(r.offer_vs_value).toBeCloseTo(950_000 / 844_275 - 1, 10);
+  it("offer 45.7% below ask, 12.5% ABOVE value on in-place NOI", () => {
+    const r = computeOfferVsValue(sample);
+    expect(r.offer_vs_ask).toBeCloseTo(1_080_150 / 1_989_750 - 1, 10);
+    expect(r.value).toBeCloseTo(959_937.5, 6);
+    expect(r.offer_vs_value).toBeCloseTo(1_080_150 / 959_937.5 - 1, 10);
     expect(describeDelta(r.offer_vs_ask)).toBe("45.7% below");
     expect(describeDelta(r.offer_vs_value)).toBe("12.5% above");
-    // Manny's ~20% below value: context only.
-    expect(r.rule_of_thumb_price).toBeCloseTo(675_420, 6);
+    // ~20% below value rule of thumb: context only.
+    expect(r.rule_of_thumb_price).toBeCloseTo(767_950, 6);
     expect(r.missing).toEqual([]);
   });
 
   it("no target cap or no NOI → value is null and the gap is named", () => {
-    expect(computeOfferVsValue({ ...lincoln, targetCap: undefined }).missing).toEqual(["target_cap"]);
-    const noNoi = computeOfferVsValue({ ...lincoln, documented: null });
+    expect(computeOfferVsValue({ ...sample, targetCap: undefined }).missing).toEqual(["target_cap"]);
+    const noNoi = computeOfferVsValue({ ...sample, documented: null });
     expect(noNoi.value).toBeNull();
     expect(noNoi.offer_vs_value).toBeNull();
     expect(noNoi.offer_vs_ask).not.toBeNull(); // ask comparison still works
     expect(noNoi.missing).toEqual(["in_place_noi"]);
     // A cap entered as a whole number (8 instead of 0.08) is rejected, not used.
-    expect(computeOfferVsValue({ ...lincoln, targetCap: 8 }).value).toBeNull();
+    expect(computeOfferVsValue({ ...sample, targetCap: 8 }).value).toBeNull();
   });
 
   it("scenarioOffer prefers bid, then LOI, then purchase price", () => {
