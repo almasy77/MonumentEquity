@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ChevronDown } from "lucide-react";
-import { DEFAULT_DSCR_FLOOR, type DealMetrics } from "@/lib/underwriting";
+import { DEFAULT_DSCR_FLOOR, resolveDocumentedNOI, sizingContextFor, type DealMetrics } from "@/lib/underwriting";
+import { computeOfferVsValue, describeDelta, scenarioOffer, RULE_OF_THUMB_DISCOUNT_TO_VALUE } from "@/lib/offer-value";
 import type { Scenario } from "@/lib/validations";
 
 function fmt(n: number | null | undefined, type: "pct" | "money" | "mult"): string {
@@ -27,13 +28,20 @@ function metricColor(value: number | null, thresholds?: { good: number; warn: nu
 const DEBT_YIELD_THRESHOLDS = { good: 0.10, warn: 0.08 };
 
 interface ScenarioWithResult {
-  scenario: { id: string };
+  scenario: Scenario;
   underwriting: { metrics: DealMetrics };
 }
 
-export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
+export function DealKPIBar({
+  scenarios,
+  deal,
+}: {
+  scenarios: Scenario[];
+  deal?: { asking_price?: number; current_noi?: number | null };
+}) {
   const [selectedId, setSelectedId] = useState<string>(scenarios[0]?.id ?? "");
   const [metrics, setMetrics] = useState<DealMetrics | null>(null);
+  const [loaded, setLoaded] = useState<Scenario | null>(null);
   const [loading, setLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -47,6 +55,7 @@ export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
         if (res.ok) {
           const data: ScenarioWithResult = await res.json();
           setMetrics(data.underwriting.metrics);
+          setLoaded(data.scenario);
         }
       } catch {
         // ignore
@@ -70,7 +79,31 @@ export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
     );
   }
 
-  const items = [
+  // Change D: offer vs ask and offer vs value (in-place NOI ÷ Pricing Views target cap).
+  // The lender's ~20%-below-value rule of thumb is shown as context, never as a gate.
+  const sc = loaded ?? selectedScenario;
+  const ov = computeOfferVsValue({
+    offer: scenarioOffer(sc?.purchase_assumptions as { bid_price?: number; loi_amount?: number; purchase_price?: number } | undefined),
+    ask: deal?.asking_price,
+    documented: resolveDocumentedNOI(sizingContextFor(sc, deal)),
+    targetCap: ((sc?.pricing_views ?? {}) as { target_cap?: number }).target_cap,
+  });
+
+  const items: { label: string; value: string; color: string; title?: string }[] = [
+    {
+      label: "Offer vs Ask",
+      value: describeDelta(ov.offer_vs_ask),
+      color: "text-white",
+      title: ov.offer != null && ov.ask != null ? `Offer ${fmt(ov.offer, "money")} vs ask ${fmt(ov.ask, "money")}` : "Needs an offer and an asking price",
+    },
+    {
+      label: ov.value_cap != null ? `Offer vs Value @ ${(ov.value_cap * 100).toFixed(2)}% cap` : "Offer vs Value",
+      value: describeDelta(ov.offer_vs_value),
+      color: "text-white",
+      title: ov.value != null
+        ? `Value ${fmt(ov.value, "money")} = in-place NOI ${fmt(ov.in_place_noi, "money")} (${ov.noi_source === "deal_current_noi" ? "deal current NOI" : "Pricing Views seller NOI"}) ÷ ${(ov.value_cap! * 100).toFixed(2)}% target cap. Context: ~${RULE_OF_THUMB_DISCOUNT_TO_VALUE * 100}% below value = ${fmt(ov.rule_of_thumb_price, "money")} (rule of thumb, not a gate).`
+        : ov.missing.includes("target_cap") ? "Set a Target cap in Pricing Views" : "Needs in-place NOI (deal Current NOI or Pricing Views seller NOI)",
+    },
     {
       label: "IRR",
       value: fmt(metrics.irr, "pct"),
@@ -108,7 +141,8 @@ export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
     },
     {
       label: "NOI (Yr 1)",
-      value: fmt(metrics.going_in_cap && metrics.total_cost ? metrics.going_in_cap * metrics.total_cost : null, "money"),
+      // going_in_cap = Year-1 NOI ÷ purchase price (was × total cost, which overstated NOI).
+      value: fmt(metrics.going_in_cap && metrics.purchase_price ? metrics.going_in_cap * metrics.purchase_price : null, "money"),
       color: "text-white",
     },
     {
@@ -159,7 +193,7 @@ export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {items.map((item) => (
-          <Card key={item.label} className="bg-slate-800/50 border-slate-700/50">
+          <Card key={item.label} className="bg-slate-800/50 border-slate-700/50" title={item.title}>
             <CardContent className="p-2.5">
               <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">
                 {item.label}

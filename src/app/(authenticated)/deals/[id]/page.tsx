@@ -247,7 +247,7 @@ export default async function DealDetailPage({
       </div>
 
       {/* Dynamic KPIs — from active scenario with selector */}
-      <DealKPIBar scenarios={scenarios.filter(s => s.is_active !== false)} />
+      <DealKPIBar scenarios={scenarios.filter(s => s.is_active !== false)} deal={deal} />
 
       {/* Deal Photo */}
       <DealPhoto dealId={id} photos={deal.photos} />

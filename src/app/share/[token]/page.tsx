@@ -7,6 +7,7 @@ import { STAGE_LABELS } from "@/lib/constants";
 import type { Deal, Scenario, ShareLink } from "@/lib/validations";
 import { ShareScenarioCard } from "@/components/share/share-scenario-card";
 import { buildShareScenarioData } from "@/lib/share-scenario";
+import { describeDelta } from "@/lib/offer-value";
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -120,6 +121,13 @@ export default async function SharePage({
                 <p className="text-lg font-bold text-green-400">
                   {formatCurrency(deal.bid_price)}
                 </p>
+                {/* Change D: offer vs ask only. Offer vs value (and the cap behind it)
+                    stays internal: share links can reach sellers (Bryan, Nov 23). */}
+                {deal.asking_price > 0 && (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {describeDelta(deal.bid_price / deal.asking_price - 1)} ask
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
