@@ -20,6 +20,7 @@ import { getRedis, scanDealKeys } from "@/lib/db";
 import { getActivitiesForDeal } from "@/lib/activity";
 import { DEAL_SOURCES, SCENARIO_TYPES } from "@/lib/constants";
 import { calculateUnderwriting } from "@/lib/underwriting";
+import { deriveSellerSignals } from "@/lib/seller-motivation";
 import { metricsFromResult, toEngineInputs } from "@/lib/engine-version";
 import {
   applyDealFieldUpdate,
@@ -186,6 +187,13 @@ export const DEAL_UPDATE_FIELDS = z.strictObject({
   // Ownership (county records)
   owner_name: z.string().max(200).nullable().optional(),
   owner_since: z.string().max(40).nullable().optional(),
+  // Seller motivation (Change E). Days on market, total cut, out-of-state owner and
+  // hold years are derived and returned by get_deal as seller_signals.
+  listed_date: z.string().max(40).nullable().optional().describe("ISO date the listing went live, e.g. 2026-04-15"),
+  original_asking_price: z.number().positive().finite().nullable().optional().describe("First asking price, before any cuts"),
+  price_cut_count: z.number().int().min(0).nullable().optional(),
+  tax_delinquent: z.boolean().nullable().optional(),
+  tax_delinquent_note: z.string().max(500).nullable().optional(),
   owner_acquisition_price: z.number().min(0).finite().nullable().optional(),
   owner_mailing_address: z.string().max(300).nullable().optional(),
   owner_notes: z.string().max(5000).nullable().optional(),
@@ -292,7 +300,8 @@ export const TOOLS: ToolDef[] = [
       const deal = await loadOwnedDeal(ctx, deal_id);
       if (!deal) return NOT_FOUND("deal");
       const scenarios = await loadScenarios(deal.id);
-      return ok({ deal, scenarios: scenarios.map(scenarioSummary) });
+      // Change E: derived, read-only seller-motivation signals (never stored).
+      return ok({ deal, seller_signals: deriveSellerSignals(deal), scenarios: scenarios.map(scenarioSummary) });
     },
   }),
 

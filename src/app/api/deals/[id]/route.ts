@@ -68,10 +68,16 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     if (body.units !== undefined && !(isNum(body.units) && body.units > 0)) {
       return NextResponse.json({ error: "units must be a positive number" }, { status: 400 });
     }
-    for (const k of ["bid_price", "current_noi", "square_footage", "year_built"] as const) {
+    for (const k of ["bid_price", "current_noi", "square_footage", "year_built", "original_asking_price"] as const) {
       if (body[k] !== undefined && body[k] !== null && !isNum(body[k])) {
         return NextResponse.json({ error: `${k} must be a number` }, { status: 400 });
       }
+    }
+    if (body.price_cut_count !== undefined && body.price_cut_count !== null && !(Number.isInteger(body.price_cut_count) && body.price_cut_count >= 0)) {
+      return NextResponse.json({ error: "price_cut_count must be a whole number ≥ 0" }, { status: 400 });
+    }
+    if (body.tax_delinquent !== undefined && body.tax_delinquent !== null && typeof body.tax_delinquent !== "boolean") {
+      return NextResponse.json({ error: "tax_delinquent must be true or false" }, { status: 400 });
     }
     for (const k of ["photos", "files", "rent_roll", "contact_ids", "amenities"] as const) {
       if (body[k] !== undefined && body[k] !== null && !Array.isArray(body[k])) {

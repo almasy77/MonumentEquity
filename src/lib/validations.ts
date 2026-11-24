@@ -199,6 +199,15 @@ export const dealSchema = z.object({
   owner_notes: z.string().optional(), // e.g. "estate sale likely", "out-of-state owner"
   owner_loan_balance_est: z.number().optional(), // ESTIMATED outstanding mortgage balance (amortized from deed record; not a live payoff)
 
+  // Seller motivation (Change E). Stored facts only; days on market, total price cut,
+  // out-of-state owner and hold years are DERIVED (src/lib/seller-motivation.ts).
+  // Display only: no scoring, no gates.
+  listed_date: z.string().optional(), // ISO date the listing went live
+  original_asking_price: z.number().optional(), // first asking price, before any cuts
+  price_cut_count: z.number().int().min(0).optional(),
+  tax_delinquent: z.boolean().optional(),
+  tax_delinquent_note: z.string().optional(), // e.g. "2025 school tax unpaid, $8.1K"
+
   // Rent roll & T12
   rent_roll: z.array(rentRollUnitSchema).optional(),
   rent_roll_date: z.string().optional(), // date rent roll was generated

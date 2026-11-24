@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
+import { SellerSignalChips } from "@/components/deals/seller-signal-chips";
 import { Building2, Camera } from "lucide-react";
 import { PhotoUploadModal } from "@/components/deals/photo-upload-modal";
 import type { Deal } from "@/lib/validations";
@@ -79,6 +80,9 @@ export function DealCard({ deal }: { deal: Deal }) {
             <span className="text-xs text-slate-500">
               {formatCurrency(pricePerUnit)}/unit
             </span>
+          </div>
+          <div className="mt-2">
+            <SellerSignalChips deal={deal} compact />
           </div>
           <div className="flex items-center justify-between mt-2">
             <Badge variant="outline" className="text-xs border-slate-600 text-slate-400">
