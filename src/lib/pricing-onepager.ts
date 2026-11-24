@@ -1,5 +1,5 @@
 import type { Deal, Scenario } from "./validations";
-import { calculateUnderwriting, currentGrossScheduledRentAnnual } from "./underwriting";
+import { calculateUnderwriting, currentGrossScheduledRentAnnual, resolveDocumentedNOI } from "./underwriting";
 import { scenarioToInputs } from "./scenario-inputs";
 import { computePricingViews, type PricingViewInputs } from "./pricing-views";
 
@@ -27,6 +27,10 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
   const d = deal as unknown as Record<string, number | string | undefined>;
   const inputs = scenarioToInputs(scenario, deal);
   const result = calculateUnderwriting(inputs);
+  // Change C, seller-facing: state the documented income we priced. The plan items
+  // and the "price with plan" stay internal (Underwrite page, partner share page):
+  // itemizing our upside for the seller invites them to charge for it.
+  const docNOI = resolveDocumentedNOI(inputs.sizing_context);
   const a0 = result.annual[0];
   const aN = result.annual[result.annual.length - 1];
   const purchase = (scenario.purchase_assumptions ?? {}) as Record<string, number | undefined>;
@@ -171,6 +175,9 @@ export function buildPricingOnePager(deal: Deal, scenario: Scenario): string {
       </div>
     </div>`
       : ""}
+
+  ${docNOI ? `<h2>Income we priced</h2>
+  <p class="lead">Our price is based on the property's documented in-place income: ${usd(docNOI.noi)} of net operating income (${docNOI.source === "deal_current_noi" ? "seller-reported current NOI" : "seller's stated NOI"}). Income we expect to add through our own plan is not included in the price we are offering.</p>` : ""}
 
   <footer>
     <span>Monument Equity LLC · Prepared ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>

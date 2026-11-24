@@ -53,6 +53,9 @@ describe("buildShareScenarioData", () => {
     expect(d.sensitivity.length).toBeGreaterThan(0);
     expect(d.sensitivity).toEqual(engine.sensitivity);
     expect(d.basePurchasePrice).toBe(inp.purchase.purchase_price);
+    // Change C: the documented-vs-plan NOI bridge never reaches the public share
+    // payload (share links can go to sellers).
+    expect(JSON.stringify(d)).not.toMatch(/bridge|price_with_plan|price_documented/i);
 
     // Assumptions are present and formatted (a partner-facing list).
     expect(d.assumptions.length).toBeGreaterThan(6);

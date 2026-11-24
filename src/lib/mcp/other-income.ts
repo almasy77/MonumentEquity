@@ -13,6 +13,9 @@ export interface OtherIncomeItemInput {
   monthly: number;
   /** false = one-time / in-period only; excluded from exit value. Default true. */
   recurring?: boolean;
+  /** Change C: documented (T12 / rent roll today) vs plan (our upside). */
+  basis?: "documented" | "plan";
+  source_note?: string;
 }
 
 export function applyOtherIncomeItems(
@@ -25,6 +28,8 @@ export function applyOtherIncomeItems(
     monthly_amount: i.monthly,
     entry_period: "mo" as const,
     recurring: i.recurring ?? true,
+    ...(i.basis ? { basis: i.basis } : {}),
+    ...(i.source_note ? { source_note: i.source_note } : {}),
   }));
   const monthly = Math.round(items.reduce((s, i) => s + i.monthly, 0) * 100) / 100;
   return {

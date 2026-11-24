@@ -10,6 +10,7 @@ import { MetricsBar } from "./metrics-bar";
 import { OperatingView } from "./operating-view";
 import { ProFormaTable } from "./pro-forma-table";
 import { PricingViewsCard } from "./pricing-views-card";
+import { NoiBridgeCard } from "./noi-bridge-card";
 import { SensitivityGrid } from "./sensitivity-grid";
 import { ResultsChangedBanner } from "./results-changed-banner";
 import type { Deal, Scenario } from "@/lib/validations";
@@ -836,6 +837,9 @@ function ScenarioAnalysis({
 
       {/* Pricing Views — valuation triangulation for the seller conversation */}
       <PricingViewsCard deal={deal} result={result} scenario={scenario} onUpdate={onUpdate} />
+
+      {/* NOI Bridge (Change C) — documented vs plan NOI and the two prices */}
+      <NoiBridgeCard deal={deal} scenario={scenario} onUpdate={onUpdate} />
 
       {/* After-Tax (TAX_TREATMENT_SPEC) — only when the scenario has tax assumptions */}
       {result.tax && (
