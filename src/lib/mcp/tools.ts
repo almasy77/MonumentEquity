@@ -208,7 +208,7 @@ const otherIncomeItems = z
 
 const SECTIONS = {
   purchase_assumptions: assumptions("Purchase inputs (e.g. purchase_price, bid_price, closing_cost_rate)."),
-  financing_assumptions: assumptions("Financing inputs (ltv, interest_rate, amortization_years, loan_term_years, io_period_months, ...)."),
+  financing_assumptions: assumptions("Financing inputs (ltv, interest_rate, amortization_years, loan_term_years, io_period_months, dscr_floor (default 1.30), dscr_sizing_basis: lesser_of | documented | year1_projected | in_place (modeled) | manual, ...). documented = the deal current_noi, else the seller NOI in pricing_views.seller_proforma_noi."),
   revenue_assumptions: assumptions(
     "Revenue inputs: unit_mix rows [{type, count, current_rent, market_rent, renovated_rent_premium}], vacancy_rate (fraction, 0.07 = 7%), bad_debt_rate, concessions_rate, rent_growth_rate, other_income_monthly. Prefer other_income_items for other income."
   ),
@@ -433,7 +433,7 @@ export const TOOLS: ToolDef[] = [
     async run({ scenario_id, include_monthly, include_sensitivity }, ctx) {
       const found = await loadOwnedScenario(ctx, scenario_id);
       if (!found) return NOT_FOUND("scenario");
-      const result = calculateUnderwriting(toEngineInputs(found.scenario));
+      const result = calculateUnderwriting(toEngineInputs(found.scenario, found.deal));
       const uw = underwritingPayload(result);
       return ok({
         // Report the freshly computed headline metrics (not persisted by a read).

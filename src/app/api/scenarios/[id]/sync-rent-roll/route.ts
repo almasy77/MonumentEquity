@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { calculateUnderwriting, buildUnitMixFromRentRoll, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, buildUnitMixFromRentRoll, type ScenarioInputs, sizingContextFor } from "@/lib/underwriting";
 import { stampMetrics } from "@/lib/engine-version";
 import type { Scenario, Deal } from "@/lib/validations";
 
@@ -57,6 +57,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     };
 
     const inputs = {
+      sizing_context: sizingContextFor(updated, deal), // engine v5: documented NOI for DSCR sizing
       purchase: updated.purchase_assumptions,
       financing: updated.financing_assumptions,
       revenue: updated.revenue_assumptions,

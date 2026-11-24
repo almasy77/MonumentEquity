@@ -1,6 +1,6 @@
 import type { Deal, Scenario } from "./validations";
 import type { SensitivityCell } from "./underwriting";
-import { calculateUnderwriting } from "./underwriting";
+import { calculateUnderwriting, dscrBasisLabel, type DealMetrics } from "./underwriting";
 import { scenarioToInputs } from "./scenario-inputs";
 
 // Builds the read-only, seller/partner-facing data for one scenario on the public
@@ -48,10 +48,34 @@ const usd = (n: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
 
+/**
+ * Engine v5: show the floor, the NOI basis and the NOI used, so an outside reader
+ * (lender, partner) can reconcile the loan amount by hand. Empty when DSCR sizing
+ * is off.
+ */
+export function loanSizingRows(m: DealMetrics): ShareAssumption[] {
+  if (m.dscr_floor == null || m.dscr_sizing_noi == null || !m.dscr_sizing_basis_applied) return [];
+  const source = m.dscr_sizing_basis_applied === "documented"
+    ? (m.documented_noi_source === "deal_current_noi" ? ", seller-reported current NOI" : ", seller NOI")
+    : "";
+  const basis = m.dscr_sizing_basis === "lesser_of" ? `lesser of documented / year-1 → ${dscrBasisLabel(m.dscr_sizing_basis_applied)}` : dscrBasisLabel(m.dscr_sizing_basis_applied);
+  const dscrLoan = m.dscr_loan_amount ?? 0;
+  return [
+    { label: "DSCR Floor", value: `${m.dscr_floor.toFixed(2)}x` },
+    { label: "Sizing NOI", value: `${usd(m.dscr_sizing_noi)} (${basis}${source})` },
+    {
+      label: "Loan Sizing",
+      value: m.loan_sizing_constraint === "dscr"
+        ? `DSCR binds: ${usd(dscrLoan)} vs LTV ${usd(m.ltv_loan_amount)}`
+        : `LTV binds: ${usd(m.ltv_loan_amount)} (DSCR max ${usd(dscrLoan)})`,
+    },
+  ];
+}
+
 export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioData {
   const units = deal.units || 0;
   try {
-    const inputs = scenarioToInputs(s);
+    const inputs = scenarioToInputs(s, deal);
     const r = calculateUnderwriting(inputs);
     const m = r.metrics;
     const assumptions: ShareAssumption[] = [
@@ -66,6 +90,7 @@ export function buildShareScenarioData(deal: Deal, s: Scenario): ShareScenarioDa
       { label: "Exit Cap Rate", value: pct(inputs.exit.exit_cap_rate) },
       { label: "Rent Growth", value: pct(inputs.revenue.rent_growth_rate) },
       { label: "Vacancy", value: pct(inputs.revenue.vacancy_rate) },
+      ...loanSizingRows(m),
       { label: "Total Equity", value: usd(m.total_equity) },
     ];
     const proforma: ShareProFormaYear[] = r.annual.map((a) => ({

@@ -932,7 +932,7 @@ function ScenarioAnalysis({
       )}
 
       {/* Cost Seg vs. REPS — side-by-side lens (only when the tax layer is on) */}
-      {result.tax && <CostSegComparison scenario={scenario} />}
+      {result.tax && <CostSegComparison scenario={scenario} deal={deal} />}
 
       {/* Sensitivity */}
       <SensitivityGrid

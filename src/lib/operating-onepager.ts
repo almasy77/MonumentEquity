@@ -26,7 +26,7 @@ interface Row {
 }
 
 export function buildOperatingOnePager(deal: Deal, scenario: Scenario): string {
-  const inputs = scenarioToInputs(scenario);
+  const inputs = scenarioToInputs(scenario, deal);
   const result = calculateUnderwriting(inputs);
   const a0 = result.annual[0];
   const units = deal.units || 0;

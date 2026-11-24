@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getRedis, addToIndex } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { safeJson, isErrorResponse } from "@/lib/api-helpers";
-import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, sizingContextFor, type ScenarioInputs } from "@/lib/underwriting";
 import { stampMetrics } from "@/lib/engine-version";
 import {
   SCENARIO_TYPE_PRESETS,
@@ -101,7 +101,9 @@ export async function POST(req: NextRequest) {
         ...(clonePreset.exit_cap_rate !== undefined ? { exit_cap_rate: clonePreset.exit_cap_rate } : {}),
       };
 
+      const sourceDeal = await redis.get<Deal>(`deal:${source.deal_id}`);
       const inputs = {
+        sizing_context: sizingContextFor(source, sourceDeal), // engine v5: documented NOI for DSCR sizing
         purchase: source.purchase_assumptions,
         financing: source.financing_assumptions,
         revenue: clonedRevenue,

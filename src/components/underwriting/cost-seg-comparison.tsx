@@ -13,14 +13,14 @@ const usd = (n: number | null) => (n === null ? "—" : `$${Math.round(n).toLoca
  * Side-by-side: no cost seg / cost seg with REPS / cost seg without REPS.
  * Read-only lens over the saved scenario; hurdles stay on pre-tax IRR.
  */
-export function CostSegComparison({ scenario }: { scenario: Scenario }) {
+export function CostSegComparison({ scenario, deal }: { scenario: Scenario; deal?: { current_noi?: number | null } | null }) {
   const comparison = useMemo(() => {
     try {
-      return compareCostSegScenarios(scenarioToInputs(scenario));
+      return compareCostSegScenarios(scenarioToInputs(scenario, deal));
     } catch {
       return null;
     }
-  }, [scenario]);
+  }, [scenario, deal]);
 
   if (!comparison) return null;
   const { rows, exit_via_1031 } = comparison;

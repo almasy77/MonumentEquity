@@ -12,11 +12,13 @@
  *   2. add a one-line reason under that version in ENGINE_CHANGE_REASONS,
  *   3. add a row to CHANGELOG-engine.md.
  */
-import { calculateUnderwriting, type ScenarioInputs } from "./underwriting";
+import { calculateUnderwriting, sizingContextFor, type ScenarioInputs } from "./underwriting";
+
+export { sizingContextFor };
 import type { Scenario } from "./validations";
 
 /** Current engine version. Bump when engine math can move returns. */
-export const ENGINE_VERSION = 4;
+export const ENGINE_VERSION = 5;
 
 /**
  * Why each version differs from the one before it. Shown in the "results changed"
@@ -28,6 +30,7 @@ export const ENGINE_CHANGE_REASONS: Record<number, string> = {
   2: "Turnover cost now reads from the OpEx inputs you edit (P1-1); lease-up deals that showed a turnover cost different from the legacy field are corrected",
   3: "Cash-on-cash and equity multiple are now computed on TOTAL equity invested (equity at close plus every capital call), per industry best practice; capex-heavy deals that previously showed these on closing equity only will read lower",
   4: "Auto-sized operating reserves are now derived by the engine from year-1 carry, not read from a UI-synced field; an auto-mode scenario whose stored reserve was stale (e.g. never synced) now reflects the correct reserve in equity and IRR",
+  5: "DSCR loan sizing: a scenario with no stored DSCR floor now sizes at 1.30x (was 1.25x), and the sensitivity grid now sizes on the same NOI basis as the headline loan; deals whose loan was DSCR-limited show a smaller loan, more equity and different returns",
 };
 
 export interface StoredMetrics {
@@ -50,9 +53,10 @@ export interface PreviousMetrics extends StoredMetrics {
  * Adapt a stored scenario to the engine's input shape. This is the single place the
  * *_assumptions → engine field rename lives; every compute site goes through it.
  */
-export function toEngineInputs(scenario: Scenario): ScenarioInputs {
+export function toEngineInputs(scenario: Scenario, deal?: { current_noi?: number | null } | null): ScenarioInputs {
   const s = scenario as unknown as Record<string, unknown>;
   return {
+    sizing_context: sizingContextFor(scenario, deal),
     purchase: s.purchase_assumptions,
     financing: s.financing_assumptions,
     revenue: s.revenue_assumptions,
@@ -77,8 +81,8 @@ export function metricsFromResult(result: ReturnType<typeof calculateUnderwritin
 }
 
 /** Compute the stored metrics blob straight from a scenario. */
-export function computeScenarioMetrics(scenario: Scenario): StoredMetrics {
-  return metricsFromResult(calculateUnderwriting(toEngineInputs(scenario)));
+export function computeScenarioMetrics(scenario: Scenario, deal?: { current_noi?: number | null } | null): StoredMetrics {
+  return metricsFromResult(calculateUnderwriting(toEngineInputs(scenario, deal)));
 }
 
 /**
@@ -89,8 +93,9 @@ export function computeScenarioMetrics(scenario: Scenario): StoredMetrics {
 export function stampMetrics(
   scenario: Scenario,
   result?: ReturnType<typeof calculateUnderwriting>,
+  deal?: { current_noi?: number | null } | null,
 ): void {
-  const metrics = result ? metricsFromResult(result) : computeScenarioMetrics(scenario);
+  const metrics = result ? metricsFromResult(result) : computeScenarioMetrics(scenario, deal);
   const s = scenario as unknown as Record<string, unknown>;
   s.calculated_metrics = metrics;
   s.engine_version = ENGINE_VERSION;

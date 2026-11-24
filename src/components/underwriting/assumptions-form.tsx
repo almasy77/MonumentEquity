@@ -9,7 +9,7 @@ import { ChevronDown, ChevronRight, Trash2, RefreshCw, Check, Loader2, Plus, X, 
 import type { Scenario, T12Statement, RentComp, RentRollUnit } from "@/lib/validations";
 import type { ScenarioInputs, CapexProject, DepreciationAssumptions, ClosingCostMode, OpexInputMode, OpexInput, OpexInputs, UtilitiesSublines, ServicesSublines, RentBasis, RentRampAssumptions, OtherIncomeSublines, OtherIncomeLineItem, RubsBasis, UnitMix, UnitDetail, TaxReassessment, PropertyTaxAssumptions, RenovationLine, ReassessmentStep } from "@/lib/underwriting";
 import { defaultAssessmentRatioFor } from "@/lib/property-tax-jurisdictions";
-import { sumClosingCostBreakdown, applyTurnoverRate } from "@/lib/underwriting";
+import { sumClosingCostBreakdown, applyTurnoverRate, DEFAULT_DSCR_FLOOR } from "@/lib/underwriting";
 import { jurisdictionRulesFor } from "@/lib/property-tax-jurisdictions";
 import { TAX_DEFAULTS } from "@/lib/tax";
 import type { TaxAssumptions } from "@/lib/tax";
@@ -1788,12 +1788,17 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                   </button>
                   {f.size_to_dscr !== false && (
                     <div className="w-28">
-                      <NumField label="DSCR Floor" value={f.dscr_floor ?? 1.25} suffix="x" onChange={(v) => { setF({ ...f, dscr_floor: v }); markDirty(); }} />
+                      <NumField label="DSCR Floor" value={f.dscr_floor ?? DEFAULT_DSCR_FLOOR} suffix="x" onChange={(v) => { setF({ ...f, dscr_floor: v }); markDirty(); }} />
+                      {f.dscr_floor == null && (
+                        <span className="text-[10px] text-amber-400" title="This scenario stores no floor, so it uses the house default. Edit the field to pin it.">
+                          default {DEFAULT_DSCR_FLOOR.toFixed(2)}x (not pinned)
+                        </span>
+                      )}
                     </div>
                   )}
                   {f.size_to_dscr !== false && (
                     <div className="w-40">
-                      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="Which NOI the lender sizes the DSCR loan on. In-place = today's rents (strictest, what a lender funds at close). Year-1 projected = the first operating year. Manual = a number you enter.">
+                      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1" title="Which NOI the lender sizes the DSCR loan on. Documented = the seller's NOI (the deal's Current NOI, else the Pricing Views seller NOI) — what a lender funds at close. Lesser of = the lower of documented and Year-1 projected. Year-1 projected = the first modeled operating year. Modeled in-place = this scenario's rents with the lease-up ramp off. Manual = a number you enter.">
                         Sizing NOI basis
                       </label>
                       <select
@@ -1801,8 +1806,10 @@ export function AssumptionsForm({ scenario, onUpdate, onDelete, loading, dealT12
                         onChange={(e) => { setF({ ...f, dscr_sizing_basis: e.target.value as NonNullable<typeof f.dscr_sizing_basis> }); markDirty(); }}
                         className="w-full bg-slate-800 border border-slate-700 text-white text-xs h-9 rounded px-2"
                       >
-                        <option value="in_place">In-place NOI</option>
+                        <option value="lesser_of">Lesser of documented / Year-1</option>
+                        <option value="documented">Documented (seller) NOI</option>
                         <option value="year1_projected">Year-1 projected</option>
+                        <option value="in_place">Modeled in-place NOI</option>
                         <option value="manual">Manual NOI</option>
                       </select>
                     </div>

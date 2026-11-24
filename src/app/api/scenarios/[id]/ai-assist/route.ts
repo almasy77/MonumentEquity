@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
-import { calculateUnderwriting, type ScenarioInputs } from "@/lib/underwriting";
+import { calculateUnderwriting, sizingContextFor, type ScenarioInputs } from "@/lib/underwriting";
 import { stampMetrics } from "@/lib/engine-version";
 import { logActivity } from "@/lib/activity";
 import { applyAssumptionEdits, type EditOp } from "@/lib/assumption-edits";
-import type { Scenario } from "@/lib/validations";
+import type { Deal, Scenario } from "@/lib/validations";
 
 export const maxDuration = 60;
 
@@ -156,7 +156,9 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       updated_at: now,
     };
 
+    const deal = await redis.get<Deal>(`deal:${scenario.deal_id}`);
     const inputs = {
+      sizing_context: sizingContextFor(updatedScenario, deal), // engine v5: documented NOI for DSCR sizing
       purchase: updatedScenario.purchase_assumptions,
       financing: updatedScenario.financing_assumptions,
       revenue: updatedScenario.revenue_assumptions,
@@ -177,7 +179,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
 
     updatedScenario.monthly_pro_forma = []; // storage: recomputed on read
-    stampMetrics(updatedScenario, result); // P3-7: metrics + engine_version + timestamp
+    stampMetrics(updatedScenario, result, deal); // P3-7: metrics + engine_version + timestamp
 
     await redis.set(`scenario_version:${id}:${scenario.version}`, JSON.stringify(scenario));
     await redis.set(`scenario:${id}`, JSON.stringify(updatedScenario));

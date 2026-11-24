@@ -10,7 +10,7 @@
 import ExcelJS from "exceljs";
 import type { Deal } from "./validations";
 import { computeTaxFlags } from "./tax-flags";
-import { applyCapexToggles, resolveProformaBases, getRenovationLines } from "./underwriting";
+import { applyCapexToggles, resolveProformaBases, getRenovationLines, dscrBasisLabel, DEFAULT_DSCR_FLOOR } from "./underwriting";
 import type {
   ScenarioInputs,
   UnderwritingResult,
@@ -235,7 +235,7 @@ function buildSummarySheet(
   // counts, and recomputing here from CF+sale only would drop it.
   addLabelValueWithHurdle(ws, "Equity Multiple", m.equity_multiple, MULT_FMT, 2.0, true);
   addLabelValueWithHurdle(ws, "Average Cash-on-Cash", m.average_cash_on_cash, PCT_FMT, 0.08, true);
-  addLabelValueWithHurdle(ws, "Year 1 DSCR", m.year1_dscr, '0.00', 1.25, true);
+  addLabelValueWithHurdle(ws, "Year 1 DSCR", m.year1_dscr, '0.00', m.dscr_floor ?? DEFAULT_DSCR_FLOOR, true);
   addLabelValue(ws, "Going-In Cap Rate", m.going_in_cap, PCT_FMT);
   addLabelValue(ws, "Stabilized Cap Rate", m.stabilized_cap, PCT_FMT);
   ws.addRow([]);
@@ -258,6 +258,14 @@ function buildSummarySheet(
   );
   if (m.loan_sizing_constraint === "dscr") {
     addLabelValue(ws, "LTV Proceeds (not funded)", m.ltv_loan_amount, CURRENCY_FMT);
+  }
+  // Engine v5: the inputs behind the DSCR limb, so the loan reconciles by hand.
+  if (m.dscr_floor != null && m.dscr_sizing_noi != null && m.dscr_sizing_basis_applied) {
+    addLabelValue(ws, `DSCR Sizing NOI (${dscrBasisLabel(m.dscr_sizing_basis_applied)}${m.dscr_sizing_basis === "lesser_of" ? ", lesser of documented / year-1" : ""})`, m.dscr_sizing_noi, CURRENCY_FMT);
+    addLabelValue(ws, "DSCR Floor", m.dscr_floor, '0.00"x"');
+    if (m.loan_sizing_constraint !== "dscr" && m.dscr_loan_amount != null) {
+      addLabelValue(ws, "DSCR Proceeds (not binding)", m.dscr_loan_amount, CURRENCY_FMT);
+    }
   }
   addLabelValue(ws, "Down Payment", m.down_payment, CURRENCY_FMT);
   addLabelValue(ws, "Total Equity", m.total_equity, CURRENCY_FMT);

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { auth } from "@/lib/auth";
 import { getRedis } from "@/lib/db";
-import { calculateUnderwriting } from "@/lib/underwriting";
+import { calculateUnderwriting, sizingContextFor } from "@/lib/underwriting";
 import type { ScenarioInputs } from "@/lib/underwriting";
 import { fillSdaTemplate } from "@/lib/sda-template-fill";
 import { buildSdaWrites, orderScenariosForSda, type SdaScenarioColumnInput } from "@/lib/sda-fill-mapping";
@@ -11,8 +11,9 @@ import type { Deal, Scenario } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ dealId: string }> };
 
-function scenarioToInputs(scenario: Scenario): ScenarioInputs {
+function scenarioToInputs(scenario: Scenario, deal: Deal): ScenarioInputs {
   return {
+    sizing_context: sizingContextFor(scenario, deal), // engine v5: documented NOI for DSCR sizing
     purchase: scenario.purchase_assumptions,
     financing: scenario.financing_assumptions,
     revenue: scenario.revenue_assumptions,
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const ordered = orderScenariosForSda(scenarios).slice(0, 4);
 
     const columns: SdaScenarioColumnInput[] = ordered.map((s) => {
-      const inputs = scenarioToInputs(s);
+      const inputs = scenarioToInputs(s, deal);
       return {
         name: s.name,
         type: s.type,

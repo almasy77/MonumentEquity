@@ -136,6 +136,7 @@ export const DEFAULT_ASSUMPTIONS = {
   loan_term_years: 5,
   io_period_months: 0,
   origination_fee_rate: 0.01,
+  dscr_floor: 1.3, // engine v5 (Nov 2026): lender sizing floor; was an implicit 1.25
   closing_cost_rate: 0.02,
   selling_cost_rate: 0.02,
 } as const;
@@ -146,7 +147,7 @@ export const BUY_BOX = {
   min_units: 6,
   max_units: 20,
   max_rehab_per_unit: 20000,
-  min_dscr: 1.25,
+  min_dscr: 1.3, // matches DEFAULT_DSCR_FLOOR (engine v5)
   min_yield_on_cost: 0.08,
   min_neighborhood_score: 6.75,
   min_cash_reserve_after_close: 100000,

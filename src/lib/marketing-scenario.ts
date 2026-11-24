@@ -15,6 +15,7 @@ import { logActivity } from "./activity";
 import {
   buildDefaultInputs,
   calculateUnderwriting,
+  sizingContextFor,
   type ScenarioInputs,
   type UnitMix,
   type ExpenseAssumptions,
@@ -219,6 +220,9 @@ export async function createOrUpdateMarketingScenario(
   if (!hasMarketingProForma(data)) return null;
 
   const inputs = buildMarketingScenarioInputs(deal, data);
+  // Engine v5: a new marketing scenario has no Pricing Views yet, so the deal's
+  // current NOI is the only documented-NOI source for DSCR sizing.
+  inputs.sizing_context = sizingContextFor(null, deal);
   const result = calculateUnderwriting(inputs);
   const now = new Date().toISOString();
   const redis = getRedis();

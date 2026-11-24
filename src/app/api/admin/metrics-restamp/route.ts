@@ -122,7 +122,7 @@ async function buildCandidates(opts: { minStageIndex: number; includeDead: boole
 
     let fresh: StoredMetrics;
     try {
-      fresh = metricsFromResult(calculateUnderwriting(toEngineInputs(s)));
+      fresh = metricsFromResult(calculateUnderwriting(toEngineInputs(s, eligibleDeals.get(dealId))));
     } catch {
       continue; // a scenario that can't compute is left untouched
     }
@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
         };
       }
       // Re-stamp from a fresh compute (recompute inside stampMetrics via the scenario).
-      stampMetrics(scenario);
+      stampMetrics(scenario, undefined, c.deal);
       try {
         await redis.set(`scenario:${c.row.scenario_id}`, JSON.stringify(scenario));
         applied.push(c.row);

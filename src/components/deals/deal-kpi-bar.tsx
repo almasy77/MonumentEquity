@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ChevronDown } from "lucide-react";
-import type { DealMetrics } from "@/lib/underwriting";
+import { DEFAULT_DSCR_FLOOR, type DealMetrics } from "@/lib/underwriting";
 import type { Scenario } from "@/lib/validations";
 
 function fmt(n: number | null | undefined, type: "pct" | "money" | "mult"): string {
@@ -84,7 +84,7 @@ export function DealKPIBar({ scenarios }: { scenarios: Scenario[] }) {
     {
       label: "DSCR",
       value: metrics.year1_dscr.toFixed(2),
-      color: metricColor(metrics.year1_dscr, { good: 1.25, warn: 1.0 }),
+      color: metricColor(metrics.year1_dscr, { good: metrics.dscr_floor ?? DEFAULT_DSCR_FLOOR, warn: 1.0 }),
     },
     {
       label: "Debt Yield (Yr 1)",
